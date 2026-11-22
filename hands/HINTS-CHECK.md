@@ -20,7 +20,7 @@ Checked 2026-11-22 against `stage/hints/TO-CHECK.md`, with `drive.mjs` `screen` 
 - Start chat FAB: **confirmed**, Button text "Start chat". There's also a "Gemini" FAB above it.
 - Top: "Search messages" (button desc), account avatar "Signed in as …".
 - Conversation rows: "Conversation Icon" avatars with name/snippet/date TextViews; the list is a RecyclerView desc "Conversation list".
-- Field hint and send button inside a chat: **not checked** (needs opening a conversation).
+- Inside a chat: field is an EditText with hint **"Text message"** (**confirmed**; an SMS thread, so not "RCS message"). The send button appears only once there's text, desc **"Send SMS"**; when empty that spot is "Show record a voice message screen". Also "Show attach content screen", "Show attach emoji and stickers screen", "Show attach media screen".
 
 ## WhatsApp (com.whatsapp)
 - Bottom tabs "Chats" (desc "Chats, N new notifications"), "Updates", "Communities", "Calls": **confirmed**.
