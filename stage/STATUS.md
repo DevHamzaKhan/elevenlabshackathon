@@ -37,6 +37,8 @@
 
 - Item 4c–4g (James H): `messages.md`, `whatsapp.md`, `maps.md`, `spotify.md`, `settings.md` fixed from the first `HINTS-CHECK.md`; `TO-CHECK.md` cut to the 16 labels still unchecked (home screen, in-app screens, Clock, Calendar, YouTube).
 
+- Item 4 second pass (James H): `messages.md` updated from Hands' in-chat check ("Text message" hint, "Send SMS", the attach and voice buttons); that line removed from `TO-CHECK.md`.
+
 ## Doing now
 - Nothing. Item 4 first pass done; a second pass waits for Hands to check the new `TO-CHECK.md`.
 

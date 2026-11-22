@@ -7,7 +7,6 @@ Home: app icons are nodes whose text is the app name (not only a description)
 Home: the page dots above the dock have a description like "Page 2 of 3"
 Home: Gmail is inside a folder named "Google" on the S21, or on which page it sits
 Home: swipe up from the middle opens the app drawer, with a field labelled "Search" at the top
-Messages: inside a conversation, the text field hint ("RCS message", "Text message" or "Chat message") and a send button described "Send…" once text is typed
 WhatsApp: inside a chat, the field hint "Message", and "Voice message" turning into "Send" once text is typed
 Maps: after a search, a place sheet with "Directions", "Start", "Call", "Save", "Share"
 Spotify: on the Search tab, the field "What do you want to listen to?"
