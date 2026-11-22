@@ -10,3 +10,69 @@
 {"type":"wire","from":"mouth","to":"mind","at":0,"dt":500,"msg":{"type":"say_started","re":"m1"}}
 {"type":"wire","from":"mouth","to":"mind","at":0,"dt":3200,"msg":{"type":"spoke","text":"Hey! You've got three new things. Sarah emailed: she's running late and wants to push to three."}}
 {"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m1"}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":1600,"msg":{"type":"heard","text":"Reply to Sarah and tell her 3 works."}}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":300,"msg":{"type":"say","to":"mouth","id":"m2","text":"On it."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":400,"msg":{"type":"spoke","text":"On it."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m2"}}
+{"type":"task","to":"watch","task":"t1","title":"Reply to Sarah","status":"started","dt":300}
+{"type":"plan","to":"watch","task":"t1","dt":900,"steps":[{"n":1,"do":"Go to the home screen","why":"Start from a known place"},{"n":2,"do":"Find Gmail on the home screens","why":"Sarah's message is an email"},{"n":3,"do":"Open Sarah's email","why":"To reply in the same thread"},{"n":4,"do":"Write the reply","why":"Tell her 3 works"},{"n":5,"do":"Send it","why":"So Sarah gets the answer"}]}
+{"type":"step","to":"watch","task":"t1","n":1,"status":"running","dt":500}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":200,"msg":{"type":"say","to":"mouth","id":"m3","text":"Going to the home screen first, so I start from a known place."}}
+{"type":"wire","from":"mind","to":"hands","at":0,"dt":0,"msg":{"type":"act","to":"hands","id":"m4","do":"key","name":"home"}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":450,"msg":{"type":"say_started","re":"m3"}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":600,"msg":{"type":"act_result","re":"m4","ok":true}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":1900,"msg":{"type":"spoke","text":"Heading to the home screen first, so I start from a known place."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m3"}}
+{"type":"step","to":"watch","task":"t1","n":1,"status":"done","dt":200}
+{"type":"step","to":"watch","task":"t1","n":2,"status":"running","dt":300}
+{"type":"wire","from":"mind","to":"hands","at":0,"dt":200,"msg":{"type":"screen","to":"hands","id":"m5"}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":400,"msg":{"type":"screen_result","re":"m5","app":"com.sec.android.app.launcher","size":[1080,2400],"nodes":[{"n":0,"text":"Phone","desc":"","cls":"TextView","bounds":[60,2050,260,2250],"tap":true,"edit":false,"scroll":false},{"n":1,"text":"Messages","desc":"","cls":"TextView","bounds":[300,2050,500,2250],"tap":true,"edit":false,"scroll":false},{"n":2,"text":"Camera","desc":"","cls":"TextView","bounds":[820,2050,1020,2250],"tap":true,"edit":false,"scroll":false}]}}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":900,"msg":{"type":"say","to":"mouth","id":"m6","text":"Gmail isn't on this page, so I'm swiping to the next one."}}
+{"type":"wire","from":"mind","to":"hands","at":0,"dt":0,"msg":{"type":"act","to":"hands","id":"m7","do":"swipe","dir":"left"}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":450,"msg":{"type":"say_started","re":"m6"}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":800,"msg":{"type":"act_result","re":"m7","ok":true}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":1700,"msg":{"type":"spoke","text":"Gmail's not on this page, so I'm swiping to the next one."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m6"}}
+{"type":"wire","from":"mind","to":"hands","at":0,"dt":200,"msg":{"type":"screen","to":"hands","id":"m8"}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":400,"msg":{"type":"screen_result","re":"m8","app":"com.sec.android.app.launcher","size":[1080,2400],"nodes":[{"n":0,"text":"Gmail","desc":"","cls":"TextView","bounds":[300,820,500,1020],"tap":true,"edit":false,"scroll":false},{"n":1,"text":"Calendar","desc":"","cls":"TextView","bounds":[560,820,760,1020],"tap":true,"edit":false,"scroll":false}]}}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":900,"msg":{"type":"say","to":"mouth","id":"m9","text":"There's Gmail. Tapping it to open your inbox."}}
+{"type":"wire","from":"mind","to":"hands","at":0,"dt":0,"msg":{"type":"act","to":"hands","id":"m10","do":"tap","on":{"text":"Gmail"}}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":450,"msg":{"type":"say_started","re":"m9"}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":1100,"msg":{"type":"act_result","re":"m10","ok":true}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":1200,"msg":{"type":"spoke","text":"There's Gmail. Opening your inbox."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m9"}}
+{"type":"step","to":"watch","task":"t1","n":2,"status":"done","dt":200}
+{"type":"step","to":"watch","task":"t1","n":3,"status":"running","dt":300}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":900,"msg":{"type":"say","to":"mouth","id":"m11","text":"Opening Sarah Chen's email, the newest one at the top."}}
+{"type":"wire","from":"mind","to":"hands","at":0,"dt":0,"msg":{"type":"act","to":"hands","id":"m12","do":"tap","on":{"text":"Sarah Chen"}}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":450,"msg":{"type":"say_started","re":"m11"}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":1000,"msg":{"type":"act_result","re":"m12","ok":true}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":1400,"msg":{"type":"spoke","text":"Opening Sarah's email, the newest one at the top."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m11"}}
+{"type":"step","to":"watch","task":"t1","n":3,"status":"done","dt":200}
+{"type":"step","to":"watch","task":"t1","n":4,"status":"running","dt":300}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":900,"msg":{"type":"say","to":"mouth","id":"m13","text":"I'm looking for the word 'Reply' to answer Sarah."}}
+{"type":"wire","from":"mind","to":"hands","at":0,"dt":0,"msg":{"type":"act","to":"hands","id":"m14","do":"tap","on":{"text":"Reply"}}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":450,"msg":{"type":"say_started","re":"m13"}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":900,"msg":{"type":"act_result","re":"m14","ok":true}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":1300,"msg":{"type":"spoke","text":"Looking for 'Reply' to answer Sarah."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m13"}}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":300,"msg":{"type":"say","to":"mouth","id":"m15","text":"Writing: \"Hi Sarah, 3 works for me. See you then!\""}}
+{"type":"wire","from":"mind","to":"hands","at":0,"dt":0,"msg":{"type":"act","to":"hands","id":"m16","do":"type","text":"Hi Sarah, 3 works for me. See you then!"}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":450,"msg":{"type":"say_started","re":"m15"}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":700,"msg":{"type":"act_result","re":"m16","ok":true}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":2200,"msg":{"type":"spoke","text":"I'm writing: Hi Sarah, three works for me. See you then!"}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m15"}}
+{"type":"step","to":"watch","task":"t1","n":4,"status":"done","dt":200}
+{"type":"step","to":"watch","task":"t1","n":5,"status":"running","dt":300}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":900,"msg":{"type":"say","to":"mouth","id":"m17","text":"Tapping Send so Sarah gets it."}}
+{"type":"wire","from":"mind","to":"hands","at":0,"dt":0,"msg":{"type":"act","to":"hands","id":"m18","do":"tap","on":{"text":"Send"}}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":450,"msg":{"type":"say_started","re":"m17"}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":800,"msg":{"type":"act_result","re":"m18","ok":true}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":900,"msg":{"type":"spoke","text":"Tapping Send so Sarah gets it."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m17"}}
+{"type":"step","to":"watch","task":"t1","n":5,"status":"done","dt":200}
+{"type":"task","to":"watch","task":"t1","title":"Reply to Sarah","status":"done","dt":300}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":200,"msg":{"type":"say","to":"mouth","id":"m19","text":"Sent. I told Sarah 3 works."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":1500,"msg":{"type":"spoke","text":"Done. I told Sarah three works."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m19"}}

@@ -4,9 +4,10 @@
 - 0.1 STATUS.md.
 - 1.1 `dashboard/replay.mjs`: pretend hub on :8765 for `/watch`, any token, plays `story.jsonl` on a loop (`--speed`, `--once`, `--story`), sends peers/task/plan snapshot to late joiners. Tested with a Node WebSocket client.
 - 1.2 `story.jsonl` part 1: peers connecting, three notifications, wake, digest whisper and spoken greeting.
+- 1.3 `story.jsonl` part 2: email reply task, 5-step plan, say+act sent together per step, scenic route (home, swipe, tap Gmail).
 
 ## Doing now
-- 1.3 `story.jsonl`: the email reply task.
+- 1.4 `story.jsonl`: the phone call and sleep.
 
 ## Open
 Core (James H's AI, in order):
