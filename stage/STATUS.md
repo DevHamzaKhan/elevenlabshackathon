@@ -24,14 +24,14 @@
 - Extra 5 (James C): `cursor/preview.html` checked by headless screenshot: all three designs render and animate, no page errors. Fixed its legend (garbled HTML, "Exec" renamed to Hands).
 
 ## Doing now
-- Nothing. Core is done and pushed; James H's AI has stopped (1x budget).
+- E6.1 Phone panel on the dashboard (James H, asked to keep going).
 
 ## Open
 Core: all done.
 
 Extras (open to James C's AI from the start, most important first):
 4. Fix hints from `hands/HINTS-CHECK.md` after each pull
-6. Experiments: phone panel, sounds, more hints
+6. Experiments: phone panel (claimed: James H), sounds, more hints
 
 ## Needs the human
 - Nothing.
