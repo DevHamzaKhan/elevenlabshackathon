@@ -68,7 +68,7 @@
   </div>
 </header>
 <main id="phones"></main>
-<p class="legend"><i></i> marks the hotspot: the exact centre (24, 24) of the 48 × 48 drawable, where Exec touches. Sources: <code>ring.svg</code>, <code>glow.svg</code>, <code>bobby.svg</code> (and matching <code>cursor_*.xml</code>).</p>
+<p class="legend"><i></i> marks the hotspot: the exact centre (24, 24) of the 48 × 48 drawable, where Exec touches. Sources: <code>ring.svg</code>, <code>glow.svg</code>, <code>bobby.svg</code> (and matching <code>(and matching <code>cursor_*.xml</code>)lt;name(and matching <code>cursor_*.xml</code>)gt;/cursor.xml</code>).</p>
 
 <template id="phone-tpl">
   <figure>
@@ -110,7 +110,7 @@ function setup(design, i) {
   const screen = node.querySelector(".screen");
   const cur = node.querySelector(".cursor");
   const hot = node.querySelector(".hot");
-  cur.src = design.name + ".svg";
+  cur.src = design.name + "/" + design.name + ".svg";
   node.querySelector("figcaption").innerHTML =
     (design.rec ? '<span class="rec">Recommended · cursor.xml</span>' : "") +
     `<b>${design.title}</b><span>${design.note} · ${design.name}.svg</span>`;
