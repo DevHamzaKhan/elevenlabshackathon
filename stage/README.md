@@ -7,6 +7,7 @@ Everything that makes Bobby easy to watch: a live dashboard, the cursor art, and
 | `dashboard/` | `index.html`, the live dashboard, and `replay.mjs`, a pretend hub that plays `story.jsonl` |
 | `hints/` | Per-app notes the Mind reads (`home.md`, `gmail.md`, …) plus `TO-CHECK.md` for Hands |
 | `cursor/` | Cursor designs, each `<name>/cursor.xml` + SVG. `CHOSEN` names the one the app uses. `preview.html` shows them moving. |
+| `sounds/` | `wake.wav`, `done.wav`, `failed.wav`, made by `node tools/sounds.mjs` (edit the notes there to retune) |
 | `tools/` | `shot.mjs` (headless screenshot of the dashboard), `check.mjs` (used by `check.sh`) |
 
 ## Setup
