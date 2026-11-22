@@ -1,6 +1,6 @@
 # Spotify (com.spotify.music)
 
-- **Bottom tabs:** "Home", "Search", "Your Library", and sometimes "Premium" or "Create". A mini-player bar sits just above them while something is playing.
+- **Bottom tabs:** described "Home, Tab 1 of 5", "Search, Tab 2 of 5", "Your Library, Tab 3 of 5", "Premium, Tab 4 of 5". Target them by name, such as `{"text":"Search, Tab"}`. A plain `{"text":"Search"}` can hit something else first. The tab nodes aren't marked tappable (their containers are), but tapping them works. The mini-player bar ("Now Playing Bar") sits just above the tabs while something is playing.
 - **Find music:** tap the "Search" tab → tap the field "What do you want to listen to?" → `type` the song, artist or playlist with no `on` → tap the matching row. Chips below the field ("Songs", "Artists", "Playlists", "Albums", "Podcasts") narrow the results.
 - **Result rows:** each row holds the title and the kind, such as "Song • Taylor Swift" or "Artist". Tapping a song row plays it. Tapping an artist, album or playlist opens its page.
 - **Artist, album or playlist page:** the big green round button near the top is "Play" (its description may be "Play" or "Play playlist"). "Shuffle" sits next to it. Tap "Play".
