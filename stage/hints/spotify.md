@@ -1,17 +1,14 @@
 # Spotify (com.spotify.music)
 
-- Bottom tabs: "Home", "Search", "Your Library", sometimes "Premium"/"Create".
-- **Search**: tap "Search" tab → tap the field "What do you want to listen to?" → `type` → results with filter chips ("Songs", "Artists", "Playlists", "Albums", "Podcasts").
-- Result rows: title + type ("Song • Artist"). Tapping a song row plays it (on Free it may shuffle the artist/playlist instead).
-- Artist/playlist/album pages: big green "Play" button (desc "Play" / "Play playlist"), "Shuffle", "Follow"/"Save to Your Library".
-- Mini-player above the bottom tabs: track name, "Play"/"Pause", "Connect to a device". Tap the track name to open Now Playing with "Pause", "Next", "Previous", "Shuffle", "Repeat", "Like".
+- **Bottom tabs:** "Home", "Search", "Your Library", and sometimes "Premium" or "Create". A mini-player bar sits just above them while something is playing.
+- **Find music:** tap the "Search" tab → tap the field "What do you want to listen to?" → `type` the song, artist or playlist with no `on` → tap the matching row. Chips below the field ("Songs", "Artists", "Playlists", "Albums", "Podcasts") narrow the results.
+- **Result rows:** each row holds the title and the kind, such as "Song • Taylor Swift" or "Artist". Tapping a song row plays it. Tapping an artist, album or playlist opens its page.
+- **Artist, album or playlist page:** the big green round button near the top is "Play" (its description may be "Play" or "Play playlist"). "Shuffle" sits next to it. Tap "Play".
+- **Pause, skip:** the mini-player has "Pause" (or "Play") at its right. Tap the track name on the mini-player to open the full player, with "Previous", "Pause", "Next", "Shuffle" and "Repeat".
 
-Common tasks:
-- **Play an artist/song**: Search → type name → tap the top result → "Play".
-- **Pause**: tap "Pause" in the mini-player.
+## What goes wrong
 
-What goes wrong:
-- Free accounts show ads and "Upgrade to Premium" cards. Dismiss with "Dismiss"/"Not now"/"×" ("Close").
-- "Connect to a device" can cast to speakers; avoid it.
-- Labels on Home cards are often long combined descriptions; match on the artist/playlist name.
-- If audio routes to earbuds already used by Voice, mention it rather than changing devices.
+- On a free account, ads and "Premium" cards pop up. Tap "Dismiss", "Not now" or "Close". Some songs may play shuffled instead of the one asked for; tell the user.
+- Never tap "Connect to a device" or "Devices available". It moves the sound to another speaker.
+- Home cards are long combined descriptions. Match on the artist or playlist name.
+- If nothing plays after "Play", check for a pop-up covering the screen, then read the mini-player.

@@ -1,17 +1,15 @@
 # WhatsApp (com.whatsapp)
 
-- Home: tabs along the bottom: "Chats", "Updates", "Communities", "Calls". Top: "WhatsApp" title, "Camera", "Search" (magnifier) or a search bar "Ask Meta AI or Search", "More options".
-- Chat list rows: contact/group name + last message + time. Tap the name to open.
-- New chat: green FAB bottom right, desc "New chat". Then the contact list has "Search name or number…" at the top.
-- In a chat: message field at the bottom with hint "Message"; left "Emoji", right "Attach", "Camera". Once text is typed, the mic turns into "Send".
+- **Chat list:** tabs along the bottom are "Chats", "Updates", "Communities" and "Calls". Stay on "Chats". At the top is a search bar ("Ask Meta AI or Search") and "More options". Each row holds the contact or group name, the last message and the time. Tap a row by the name, such as `{"text":"Sarah Chen"}`.
+- **New chat:** the green button bottom right, description "New chat". It opens the contact list with "Search name or number" at the top.
+- **Open chat:** the name is at the top, with "Video call" and "Voice call" to its right. The text field at the bottom has the hint "Message", with "Emoji" to its left and "Attach" and "Camera" to its right. The round button at the far right is "Voice message" until you type, then it becomes "Send".
+- **Send a message:** on "Chats", tap the person's row (if it isn't visible, tap the search bar, `type` the name and tap the result under "Chats" or "Contacts") → tap "Message" → `type` the text → tap "Send".
+- **Reply to one message:** `long_press` the message → tap "Reply" in the top bar → `type` → tap "Send". A normal message is usually enough.
 
-Common tasks:
-- **Send a message**: Chats → tap the contact's name (or "Search" → type the name → tap the result) → tap "Message" → `type` → tap "Send".
-- **Reply to a specific message**: long-press the message → "Reply" icon in the top bar → type → "Send". Usually a normal message is enough.
+## What goes wrong
 
-What goes wrong:
-- Avoid the "Meta AI" entry in search; it's a chatbot, not a contact.
-- Before typing, the right-hand button is "Voice message"; tapping it starts a recording. Only tap "Send" after text is in the field.
-- Video/voice call icons ("Video call", "Voice call") sit in the chat's top bar. Never tap them unless asked.
-- Backup/update/"Allow notifications" pop-ups: dismiss with "Not now"/"Skip"/"Later".
-- Group names and contacts can share first names. Confirm the exact name on screen.
+- Search results can include "Meta AI". It's a chatbot, not a contact. Never tap it.
+- Tapping "Voice message" before typing starts a recording. Only tap "Send" once the text is in the field.
+- Never tap "Video call" or "Voice call" unless the user asked for a WhatsApp call.
+- Pop-ups about backup, updates or notifications: tap "Not now", "Skip" or "Later".
+- Check the name at the top of the chat before sending. Groups and contacts can share first names.

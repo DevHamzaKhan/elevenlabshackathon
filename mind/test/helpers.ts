@@ -45,7 +45,7 @@ export function stubModel(opts: { slowMs?: number } = {}) {
 function decide(user: string) {
   const heard = (/The user just said: "(.*)"/.exec(user)?.[1] ?? "").toLowerCase();
   if (heard.includes("reply to sarah"))
-    return { ...blank, action: "task", title: "Reply to Sarah", goal: 'Reply to Sarah Chen\'s email with "3 works for me."', steps: [{ do: "Open Gmail", why: "Sarah's message is an email" }, { do: "Reply", why: "to answer her" }] };
+    return { ...blank, action: "task", title: "Reply to Sarah", goal: 'Reply to Sarah Chen\'s email with "3 works for me."', steps: [{ do: "Open Gmail", why: "Sarah's message is an email" }, { do: "Reply", why: "to answer her" }], say: "I'll find Gmail and answer Sarah." };
   if (heard.startsWith("open "))
     return { ...blank, action: "task", title: `Open ${heard.slice(5)}`, goal: `Open the ${heard.slice(5)} app`, steps: [{ do: "Find the icon", why: "to open it" }] };
   if (heard.startsWith("call ")) {

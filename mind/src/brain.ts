@@ -251,7 +251,7 @@ export class Brain {
           do: String(s.do ?? ""),
           why: String(s.why ?? ""),
         }));
-        this.startTask(String(d.title || "Task"), String(d.goal || text), steps);
+        this.startTask(String(d.title || "Task"), String(d.goal || text), steps, String(d.say ?? ""));
         break;
       }
       case "call":
@@ -282,7 +282,7 @@ export class Brain {
 
   // ---------- tasks ----------
 
-  private startTask(title: string, goal: string, plan: PlanStep[]) {
+  private startTask(title: string, goal: string, plan: PlanStep[], opening = "") {
     if (!this.peers.hands) {
       void this.say("The phone isn't ready yet, so I can't do that right now.");
       this.facts.push(`Couldn't start "${title}": the phone wasn't ready.`);
@@ -304,7 +304,9 @@ export class Brain {
     this.watch({ type: "task", task: task.id, title, status: "started" });
     this.publishPlan(task);
     this.whisper(`Task started: ${title}. You will be given lines to say as it goes.`);
-    this.taskDone = this.runTask(task).catch((e) => {
+    // The opening line plays while the first step is being worked out.
+    const opened = this.say(opening);
+    this.taskDone = this.runTask(task, opened).catch((e) => {
       this.o.log(`mind: task crashed: ${String(e?.stack ?? e)}`);
       this.finishTask(task, "failed", "Sorry, something went wrong and I had to stop.");
     });
@@ -337,10 +339,10 @@ export class Brain {
     return r && r.type === "screen_result" ? r : null;
   }
 
-  private async runTask(task: Task) {
+  private async runTask(task: Task, opened: Promise<void> = Promise.resolve()) {
     let fails = 0;
     let modelFails = 0;
-    let lastSay: Promise<void> = Promise.resolve();
+    let lastSay: Promise<void> = opened;
     let lastKey = "";
     let lastActionSig = "";
     let lastFailed = false;

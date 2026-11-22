@@ -1,20 +1,16 @@
-# Google Messages (com.google.android.apps.messaging) / Samsung Messages (com.samsung.android.messaging)
+# Messages (com.google.android.apps.messaging or com.samsung.android.messaging)
 
-The S21 may use either app. Check `app` in the screen result.
+The phone may use Google Messages or Samsung Messages. The `app` field of the screen tells you which. Labels are close in both.
 
-**Google Messages**
-- Conversation list: search bar at top ("Search conversations" or "Search images & videos"), avatar on the right. Bottom right: "Start chat" FAB.
-- Rows show the contact name and the last message. Tap the name to open.
-- In a conversation: text field at the bottom with hint "Text message" (or "RCS message"/"Chat message"), "Send SMS"/"Send message" button to its right (appears after typing; before typing it's a voice-message mic).
-- **Send a text to an existing contact**: tap the contact's row → tap the message field → `type` → tap the send button (desc contains "Send").
-- **New conversation**: "Start chat" → "To" field ("Type a name, phone number, or email") → type the name → tap the matching contact → type in the message field → send.
+- **Conversation list:** one row per person, holding the name and the last message. The newest is at the top. Tap a row by the name, such as `{"text":"Sarah Chen"}`. A "Search" icon sits at the top. The new-message button is bottom right: "Start chat" in Google Messages, "Compose new message" (a pencil) in Samsung Messages.
+- **Open conversation:** messages fill the screen, newest at the bottom. The text field is at the bottom: "Text message", "RCS message" or "Chat message" in Google Messages, "Enter message" in Samsung Messages. The send button is to its right and only appears once there is text; its description starts with "Send".
+- **Text someone you've texted before:** tap their row → tap the text field → `type` the text → tap the button whose description starts with "Send".
+- **Text someone new:** tap "Start chat" (or "Compose new message") → `type` the name into the "To" field → tap the matching contact → tap the text field → `type` → tap "Send".
 
-**Samsung Messages**
-- Compose button bottom right, desc "Compose new message" (pencil). Search is the magnifier ("Search") at top.
-- In a thread: field "Enter message", send button desc "Send".
+## What goes wrong
 
-What goes wrong:
-- The keyboard covers the conversation but the send button stays above it. Don't press `back` before sending; it may close the thread.
-- Contacts with several numbers show a picker. Choose "Mobile" if unsure, or ask.
-- "Set as default SMS app?" dialogs: dismiss with "Cancel"/"Not now", never change defaults.
-- RCS/chat features banners ("Turn on chat features"): ignore or tap "Not now".
+- Before you type, the send spot holds a microphone ("Voice message"). Tapping it records audio. Only tap "Send" after the text is in.
+- A contact with several numbers shows a list ("Mobile", "Home", "Work"). Pick "Mobile".
+- "Set as default SMS app?", "Turn on chat features" and similar cards: tap "Not now" or "Cancel". Never change defaults.
+- `key back` with text in the field leaves it as a draft. Send it, or clear it if the user cancelled.
+- Check the name at the top of the conversation before sending. Groups and contacts can share first names.
