@@ -32,3 +32,6 @@ Settings: search icon description "Search", top right of the main list
 Settings: switches are separate nodes described "On" / "Off", next to the row's text
 Settings: Do not disturb sits under "Modes and Routines" or under "Notifications" on this One UI version
 Settings: quick settings tile descriptions like "Wi-Fi, On" after key notifications and a second swipe down
+Clock: app label "Clock" and package com.sec.android.app.clockpackage; bottom tabs "Alarm", "World clock", "Stopwatch", "Timer"
+Clock: add-alarm button description "Add alarm" at the top right; "Save" at the bottom of the new-alarm screen
+Clock: alarm row switch is a separate tappable node whose description holds the time
