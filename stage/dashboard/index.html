@@ -62,6 +62,33 @@ main { display: grid; gap: 16px; min-height: 0;
 #feed-panel { flex: 1; }
 .empty { color: var(--muted); font-style: italic; }
 
+/* Conversation */
+#talk { display: flex; flex-direction: column; gap: 10px; }
+.line { max-width: 92%; padding: 10px 14px; border-radius: 14px; font-size: 20px; animation: pop .25s ease-out; }
+.line .who { display: block; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+.line.you { align-self: flex-end; background: var(--you); border-bottom-right-radius: 4px; }
+.line.bobby { align-self: flex-start; background: var(--bobby); border-bottom-left-radius: 4px; }
+.line.sys { align-self: center; background: none; padding: 2px; font-size: 14px; color: var(--muted); }
+@keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* Plan */
+#plan ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.step { display: grid; grid-template-columns: 44px 1fr; gap: 14px; align-items: start;
+  padding: 14px 16px; border-radius: 12px; border: 2px solid transparent; transition: background .3s, border-color .3s, opacity .3s; }
+.step .mark { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 800; font-size: 18px; background: var(--line); color: var(--muted); }
+.step .do { font-size: 26px; font-weight: 700; line-height: 1.2; }
+.step .why { font-size: 18px; color: var(--muted); margin-top: 2px; }
+.step .why::before { content: "why: "; font-weight: 700; }
+.step.running { background: var(--accent-soft); border-color: var(--accent); }
+.step.running .mark { background: var(--accent); color: #fff; animation: pulse 1.2s ease-in-out infinite; }
+.step.done { opacity: .62; }
+.step.done .mark { background: var(--ok); color: #fff; }
+.step.failed .mark { background: var(--bad); color: #fff; }
+.step.changed { box-shadow: 0 0 0 3px var(--warn); }
+.plan-note { font-size: 15px; color: var(--warn); font-weight: 700; margin: 0 0 8px; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 8px transparent; transform: scale(1.08); } }
+
 @media (max-width: 900px) {
   body { padding: 12px 16px; height: auto; }
   html, body { height: auto; }
@@ -123,6 +150,100 @@ function retry() {
   if ($("conn").textContent !== "wrong token") setConn("reconnecting in " + wait / 1000 + " s", "down");
   setTimeout(connect, wait);
 }
+// ---------- helpers ----------
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function clearEmpty(box) { box.querySelectorAll(":scope > .empty").forEach((e) => e.remove()); }
+function stickToBottom(box, add) {
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+  add();
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+// ---------- conversation ----------
+function addLine(kind, who, text) {
+  const box = $("talk");
+  clearEmpty(box);
+  stickToBottom(box, () => {
+    const line = el("div", "line " + kind);
+    if (who) line.append(el("span", "who", who));
+    line.append(document.createTextNode(text));
+    box.append(line);
+    while (box.children.length > 60) box.firstChild.remove();
+  });
+}
+
+// ---------- task + plan ----------
+let plan = { task: null, steps: [], status: {} };   // status: n -> running|done|failed
+function setTask(m) {
+  const t = $("task-title");
+  t.textContent = m.title || m.task;
+  t.className = "";
+  const b = $("task-status");
+  b.textContent = m.status;
+  b.className = "badge " + m.status;
+}
+function renderPlan(changed = new Set(), note = "") {
+  const box = $("plan");
+  box.textContent = "";
+  if (!plan.steps.length) { box.append(el("p", "empty", "No plan yet")); return; }
+  if (note) box.append(el("p", "plan-note", note));
+  const ol = el("ol");
+  for (const s of plan.steps) {
+    const st = plan.status[s.n] || "pending";
+    const li = el("li", "step " + st + (changed.has(s.n) ? " changed" : ""));
+    li.dataset.n = s.n;
+    li.append(el("div", "mark", st === "done" ? "✓" : st === "failed" ? "✕" : String(s.n)));
+    const body = el("div");
+    body.append(el("div", "do", s.do));
+    if (s.why) body.append(el("div", "why", s.why));
+    li.append(body);
+    ol.append(li);
+  }
+  box.append(ol);
+  const running = box.querySelector(".step.running");
+  if (running) running.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+handlers.task = (m) => {
+  setTask(m);
+  if (m.status === "started" && m.task !== plan.task) { plan = { task: m.task, steps: [], status: {} }; renderPlan(); }
+};
+handlers.plan = (m) => {
+  const steps = m.steps || [];
+  let changed = new Set(), note = "";
+  if (m.task === plan.task && plan.steps.length) {
+    const old = new Map(plan.steps.map((s) => [s.n, s.do + "|" + s.why]));
+    for (const s of steps) if (old.get(s.n) !== s.do + "|" + s.why) changed.add(s.n);
+    if (changed.size) note = "Plan changed";
+  } else if (m.task !== plan.task) {
+    plan = { task: m.task, steps: [], status: {} };
+  }
+  plan.steps = steps;
+  renderPlan(changed, note);
+};
+handlers.step = (m) => {
+  if (m.task !== plan.task) return;
+  plan.status[m.n] = m.status;
+  renderPlan();
+};
+
+// ---------- wire: frames between the parts ----------
+const wire = {};   // msg.type -> fn(msg, frame)
+handlers.wire = (f) => {
+  const m = f.msg || {};
+  const fn = wire[m.type];
+  if (fn) { try { fn(m, f); } catch (e) { console.error("wire", m.type, e); } }
+};
+wire.heard = (m) => addLine("you", "You", m.text);
+wire.spoke = (m) => addLine("bobby", "Bobby", m.text);
+wire.wake = () => addLine("sys", "", "Bobby is listening");
+wire.asleep = () => addLine("sys", "", "Bobby went to sleep");
+
 connect();
 </script>
 </body>
