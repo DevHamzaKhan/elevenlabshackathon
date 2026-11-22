@@ -42,3 +42,8 @@ The page reconnects on its own, so it can be opened before the app starts.
 ## Settings
 
 None. `STAGE_CHECK_PORT` (default 8799) sets the port `check.sh` uses for its replay run.
+
+## Dashboard extras
+
+- **Record:** the "● Record" button in the header saves every message the dashboard receives until you press Stop, as a `.jsonl` download in the `story.jsonl` format. Play it back with `node dashboard/replay.mjs --story ~/Downloads/bobby-….jsonl`.
+- **Voice ↔ cursor strip:** for each step, when Bobby's voice started and when the cursor's action finished. Green when they land within 1.5 s of each other.

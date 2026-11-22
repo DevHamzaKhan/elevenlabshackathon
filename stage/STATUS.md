@@ -20,6 +20,7 @@
 - Extra 2 (James C): app icon in `icon/`: SVG + 1024 PNG matching the ring cursor, plus an adaptive-icon foreground; `tools/icon.mjs` renders the PNGs; `MERGE.md` says how the app picks them up.
 - Extra 3 (James C): `readme/README.md` rewritten for the current design (pitch, parts table with built/planned markers, rules, demo walkthrough, run pointers) and `readme/architecture.svg` + the same diagram in Mermaid; render-checked.
 - Extra 6, timing strip (James C): a "Voice ↔ cursor" panel on the dashboard pairs each `act` with the `say` sent with it and shows when the voice started (`say_started`) and when the cursor finished (`act_result`), green when within 1.5 s. Checked by screenshot against the replay.
+- Extra 6, record button (James C): "● Record" in the dashboard header saves the live stream as a `.jsonl` in the `story.jsonl` format; checked headless: 45 frames recorded, downloaded, and played back by `replay.mjs --story`.
 - Extra 5 (James C): `cursor/preview.html` checked by headless screenshot: all three designs render and animate, no page errors. Fixed its legend (garbled HTML, "Exec" renamed to Hands).
 
 ## Doing now
@@ -30,7 +31,7 @@ Core: all done.
 
 Extras (open to James C's AI from the start, most important first):
 4. Fix hints from `hands/HINTS-CHECK.md` after each pull
-6. Experiments: record button, phone panel, sounds, more hints
+6. Experiments: phone panel, sounds, more hints
 
 ## Needs the human
 - Nothing.

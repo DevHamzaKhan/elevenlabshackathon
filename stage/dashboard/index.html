@@ -111,6 +111,9 @@ main { display: grid; gap: 16px; min-height: 0;
 #call .tx b { color: var(--ink); }
 @keyframes blink { 50% { opacity: .25; } }
 
+#rec { font: inherit; font-size: 14px; font-weight: 700; padding: 4px 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; }
+#rec.on { color: #fff; background: var(--bad); border-color: var(--bad); }
 /* Voice-cursor sync strip */
 #sync { display: flex; flex-direction: column; gap: 6px; }
 .sync-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 64px; gap: 10px; align-items: center; font-size: 15px; }
@@ -140,6 +143,7 @@ main { display: grid; gap: 16px; min-height: 0;
   <div class="brand">Bobby<span>.</span></div>
   <div id="task"><span id="task-title" class="empty">Waiting for a task</span><span id="task-status"></span></div>
   <div id="peers"></div>
+  <button id="rec" type="button" title="Record the live stream to a .jsonl file that replay.mjs can play">● Record</button>
   <div id="conn">connecting…</div>
 </header>
 <main>
@@ -163,6 +167,7 @@ if (params.get("theme")) document.documentElement.dataset.theme = params.get("th
 const $ = (id) => document.getElementById(id);
 const handlers = {};            // type -> fn(msg), filled in below
 function handle(msg) {
+  record(msg);
   const fn = handlers[msg.type];
   if (fn) { try { fn(msg); } catch (e) { console.error("handler", msg.type, e); } }
 }
@@ -456,6 +461,35 @@ wire.say_done = (m, f) => {
     if (p) { p.resAt = at(f); syncRender(p); sync.byAct.delete(m.re); }
   };
 }
+
+// ---------- record button (experiment) ----------
+// Saves every watch message received while recording, one per line with a "dt" (ms since the
+// previous line), in the story.jsonl format: `node dashboard/replay.mjs --story <file>` plays it back.
+const rec = { on: false, lines: [], last: 0 };
+function record(msg) {
+  if (!rec.on || msg.type === "welcome") return;
+  const now = Date.now();
+  rec.lines.push(JSON.stringify({ ...msg, dt: rec.lines.length ? now - rec.last : 0 }));
+  rec.last = now;
+  $("rec").textContent = "■ Stop (" + rec.lines.length + ")";
+}
+$("rec").addEventListener("click", () => {
+  const b = $("rec");
+  if (!rec.on) {
+    rec.on = true; rec.lines = []; rec.last = Date.now();
+    b.classList.add("on"); b.textContent = "■ Stop (0)";
+    return;
+  }
+  rec.on = false;
+  b.classList.remove("on"); b.textContent = "● Record";
+  if (!rec.lines.length) return;
+  const blob = new Blob([rec.lines.join("\n") + "\n"], { type: "application/x-ndjson" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "bobby-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-") + ".jsonl";
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
 
 connect();
 </script>
