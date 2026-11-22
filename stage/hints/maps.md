@@ -1,6 +1,6 @@
 # Google Maps (com.google.android.apps.maps)
 
-- **Main screen:** the search box at the top reads "Search here". To its right are a microphone ("Voice search") and the account picture. Below it is a row of chips ("Restaurants", "Coffee", "Gas", "Groceries"). The bottom tabs are "Explore", "You" and "Contribute".
+- **Main screen:** the search box at the top is a field described "Search here". To its right are a microphone ("Voice search") and the account picture. Below it is a row of chips ("Restaurants", "Coffee", "Groceries", "Home"). The bottom tabs are "Explore", "You" (its description may add "New updates in You") and "Contribute".
 - **Find a place:** tap "Search here" → `type` the search, such as "coffee near me" → `key enter`. A list of results slides up from the bottom. Each row has the name, rating, distance and whether it's open.
 - **Open a place:** tap its name. A sheet shows its details with buttons "Directions", "Start", "Call", "Save" and "Share". The address and opening hours are further down; `swipe up` on the sheet to read them.
 - **Directions:** on a place's sheet, tap "Directions" → pick the travel mode from the row of tabs ("Driving", "Transit", "Walking") → the route and time show at the bottom. Only tap "Start" if the user asked to be navigated there.
