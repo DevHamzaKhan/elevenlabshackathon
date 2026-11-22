@@ -1,4 +1,4 @@
-# Role: Voice (`android/voice/`, `voice-agent/`, `caller/` stretch) — Person C
+# Role: Voice (`android/voice/`, `voice-agent/`, `caller/` stretch) — James C
 
 You build Bobby's voice surface: the shortcut that starts a conversation, the ElevenLabs realtime agent session on the phone, the client tools that delegate work to the Orchestrator, and the speaking of the Orchestrator's progress updates in Bobby's voice, with interruptions that feel natural. You **don't** build task logic: the agent delegates, the Orchestrator decides. Read `CLAUDE.md` and `CONTRACT.md` first.
 

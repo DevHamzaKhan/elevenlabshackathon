@@ -1,4 +1,4 @@
-# Role: Chat + Stage (`android/chat/`, `stage/`) — Person D
+# Role: Chat + Stage (`android/chat/`, `stage/`) — Wajeeh
 
 You build the **text surface**: the chat screen where the user types instructions and watches the same agent work, plus **Stage**: the live dashboard, cursor art and per-app hints. Chat has no task logic of its own: every message goes to the Orchestrator as a `request`, and everything shown comes back as `update`, `plan`, `step` and `task`. Read `CLAUDE.md` and `CONTRACT.md` first.
 

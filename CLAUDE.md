@@ -45,17 +45,43 @@ Four people work at the same time, each in their own folders, against `CONTRACT.
 
 | Part | Owner | Folders | Brief |
 |---|---|---|---|
-| **Orchestrator** (Mind) | Person A | `mind/` | `roles/orchestrator.md` |
-| **Exec** (Hands) + Android shell | Person B | `android/app/`, `android/core/`, `android/exec/`, `android/settings.gradle.kts`, `android/build.gradle.kts`, `android/gradle/`, `android/tools/` | `roles/exec.md` |
-| **Voice** (Mouth) | Person C | `android/voice/`, `voice-agent/`, `caller/` (stretch) | `roles/voice.md` |
-| **Chat + Stage** | Person D | `android/chat/`, `stage/` | `roles/chat.md` |
+| **Orchestrator** (Mind) | James H | `mind/` | `roles/orchestrator.md` |
+| **Exec** (Hands) + Android shell | Hamza | `android/app/`, `android/core/`, `android/exec/`, `android/settings.gradle.kts`, `android/build.gradle.kts`, `android/gradle/`, `android/tools/` | `roles/exec.md` |
+| **Voice** (Mouth) | James C | `android/voice/`, `voice-agent/`, `caller/` (stretch) | `roles/voice.md` |
+| **Chat + Stage** | Wajeeh | `android/chat/`, `stage/` | `roles/chat.md` |
 
 `INTEGRATION.md` is the merge plan: Day 0 scaffold, milestones, stitching order and the final acceptance script.
+
+### Start your part
+
+Parts are matched to each person's AI usage limits. The heaviest parts went to the biggest plans:
+
+| Person | Plans | Part | Why |
+|---|---|---|---|
+| **James H** | Claude Max (several) | Orchestrator | The most logic, model prompting and tests, and everyone else depends on it. |
+| **Hamza** | Claude Max 20x | Exec + Android shell | The Day 0 scaffold everyone builds on, plus long loops with phone screenshots, which use a lot of tokens. Needs the S21. |
+| **James C** | Codex + Claude, 10x | Voice | Hard but narrow: the ElevenLabs SDK, speech latency and interruptions. |
+| **Wajeeh** | Codex Pro ×2, Claude Pro | Chat + Stage | The most files but the lightest reasoning: UI, dashboard, hints. Suits running mostly on Codex. |
+
+Clone the repo, `cd` into it and start your agent with your line. Claude Code reads this file automatically; Codex reads `AGENTS.md`, which points here.
+
+```sh
+# James H
+claude "I'm James H. Build my part, the Orchestrator. Read CLAUDE.md, CONTRACT.md and roles/orchestrator.md, then follow 'How to work'."
+# Hamza (do Day 0 first: push the Android scaffold within the first hour)
+claude "I'm Hamza. Build my part, Exec + Android shell. Read CLAUDE.md, CONTRACT.md and roles/exec.md, then follow 'How to work'."
+# James C
+codex "I'm James C. Build my part, Voice. Read CLAUDE.md, CONTRACT.md and roles/voice.md, then follow 'How to work'."
+# Wajeeh
+codex "I'm Wajeeh. Build my part, Chat + Stage. Read CLAUDE.md, CONTRACT.md and roles/chat.md, then follow 'How to work'."
+```
+
+Use `claude` or `codex` for any line, whichever you have quota for. Resuming later: the same line works, because the agent picks up from your `STATUS.md`.
 
 ### Repo layout
 
 ```
-CLAUDE.md  CONTRACT.md  INTEGRATION.md  roles/      # shared, read-only for everyone
+CLAUDE.md  AGENTS.md  CONTRACT.md  INTEGRATION.md  roles/   # shared, read-only for everyone
 .env.example                                       # shared, read-only; real values in .env (gitignored)
 mind/                  Orchestrator: uv project, `uv run mind`
 android/               ONE Gradle project, ONE APK (dev.bobby.agent)
@@ -93,7 +119,7 @@ You work mostly on your own. Teammates you can't see are building the other part
 6. **Fakes, not waiting.** Build fakes of every part you talk to, inside your own folder. Never block on a teammate.
 7. **Check your own work.** Run what you build. Keep a `check.sh` in your main folder that runs every check needing no person (tests, scripted runs against fakes, screenshots where relevant). Run it before each push. A step isn't done until you've seen it work.
 8. **When stuck,** don't try the same thing a fourth time. Re-read the error and the docs, try a different approach, or move on and note it in `STATUS.md`.
-9. **Stay in your folders** (table above). Commit only files there. The one file outside you may change is the root `.env`, which git ignores. Never edit `CLAUDE.md`, `CONTRACT.md`, `INTEGRATION.md`, `roles/`, `.gitignore`, `.env.example` or `.claude/`.
+9. **Stay in your folders** (table above). Commit only files there. The one file outside you may change is the root `.env`, which git ignores. Never edit `CLAUDE.md`, `AGENTS.md`, `CONTRACT.md`, `INTEGRATION.md`, `roles/`, `.gitignore`, `.env.example` or `.claude/`.
 10. **The contract.** Build against `CONTRACT.md` exactly. Re-read it whenever a `git pull` changes it. If it looks wrong or is missing something, write it under "Contract questions" and work around it meanwhile. Extra fields are always safe: every part ignores fields it doesn't know. New message types need a team-agreed contract change.
 11. **Secrets and personal files.** Python keys go in the root `.env`; Android values go in `android/local.properties`. Voice recordings, wake-word files and anything personal go in a `private/` folder inside your part. All are gitignored. Never print a full key in logs, output or `STATUS.md`. **No API key ever goes into the APK.**
 12. **Real-world actions.** Never send a real email or message or place a real call except in the tests your brief lists, and then at most once per run. Don't touch accounts or devices beyond what your part needs.

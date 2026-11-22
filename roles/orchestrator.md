@@ -1,4 +1,4 @@
-# Role: Orchestrator (`mind/`) — Person A
+# Role: Orchestrator (`mind/`) — James H
 
 You build the Python program on the Mac that is both the **hub** every part connects to and the **single task orchestrator** behind both the voice and text surfaces. It is the only part that starts, amends or cancels a task. Read `CLAUDE.md` and `CONTRACT.md` first.
 

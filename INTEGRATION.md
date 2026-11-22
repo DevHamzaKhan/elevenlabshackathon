@@ -8,14 +8,14 @@ Four people build at the same time against `CONTRACT.md`. This file is how the p
 |---|---|---|
 | Everyone | Read `CLAUDE.md`, `CONTRACT.md`, own brief. Write `STATUS.md` with the "Needs the human" list. | The human can do all account/phone setup in one sitting. |
 | Human | Create root `.env` from `.env.example` with a `HUB_TOKEN`; start the account setups listed in each `STATUS.md`. | Real keys arrive while code is written against fakes. |
-| B (Exec) | Push the Android skeleton: auto-including `settings.gradle.kts`, `:app` shell, `:core` with `HubClient`, `HubSettings`, `Feature`, `HubService`, and `android/core/API.md`. | C and D can create `:voice` and `:chat` without touching anyone's files. |
-| A (Orchestrator) | Push the hub + `uv run mind --scripted` as early as possible (milestone 2 of its brief). | Everyone gets a contract-faithful hub to test against besides their own fake. |
+| Hamza (Exec) | Push the Android skeleton: auto-including `settings.gradle.kts`, `:app` shell, `:core` with `HubClient`, `HubSettings`, `Feature`, `HubService`, and `android/core/API.md`. | James C and Wajeeh can create `:voice` and `:chat` without touching anyone's files. |
+| James H (Orchestrator) | Push the hub + `uv run mind --scripted` as early as possible (milestone 2 of its brief). | Everyone gets a contract-faithful hub to test against besides their own fake. |
 
-Until the skeleton lands, C and D write their fake hubs, prompts and Stage work, and may use a local stand-in for `:core` with the same API.
+Until the skeleton lands, James C and Wajeeh write their fake hubs, prompts and Stage work, and may use a local stand-in for `:core` with the same API.
 
 ## Milestones
 
-| | Orchestrator (A) | Exec (B) | Voice (C) | Chat + Stage (D) |
+| | Orchestrator (James H) | Exec (Hamza) | Voice (James C) | Chat + Stage (Wajeeh) |
 |---|---|---|---|---|
 | **M1: alone** | Hub + fakes; scripted task drives fake phone | `screen` + `tap/swipe/type` via `drive.py` | Session + tools hit `voice-agent/fakes/hub.py` | Chat UI on `fakehub.py`; dashboard on `replay.py` |
 | **M2: real logic** | Real model, email story from fake voice and fake chat | Cursor, notifications, `abort`, `demo` passes once | Spoken updates ≤ ~1 s with `spoken` acks | Plan card, Stop, amend, unified thread |

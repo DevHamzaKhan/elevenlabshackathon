@@ -1,4 +1,4 @@
-# Role: Exec + Android shell (`android/app`, `android/core`, `android/exec`, `android/tools`) — Person B
+# Role: Exec + Android shell (`android/app`, `android/core`, `android/exec`, `android/tools`) — Hamza
 
 You build the execution engine that reads the phone's screen and performs taps, swipes and typing, with a cursor that glides to each target first. You also own the **Android project skeleton and the shared `:core` hub client**, which the Voice and Chat modules build on. Read `CLAUDE.md` and `CONTRACT.md` first.
 
