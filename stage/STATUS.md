@@ -29,7 +29,7 @@ Core: all done.
 Extras (open to James C's AI from the start, most important first):
 3. README draft + architecture diagram (SVG and Mermaid) in `stage/readme/` (the current files describe the dropped design) (claimed: James C)
 4. Fix hints from `hands/HINTS-CHECK.md` after each pull
-6. Experiments: timing strip, record button, phone panel, sounds, more hints
+6. Experiments: timing strip (claimed: James C), record button, phone panel, sounds, more hints
 
 ## Needs the human
 - Nothing.
