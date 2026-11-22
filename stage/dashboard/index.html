@@ -67,7 +67,7 @@ body.no-phone main { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minm
 /* Conversation */
 #talk { display: flex; flex-direction: column; gap: 10px; }
 .line { max-width: 92%; padding: 10px 14px; border-radius: 14px; font-size: 20px; animation: pop .25s ease-out; }
-.line .who { display: block; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+.line .who { display: block; font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
 .line.you { align-self: flex-end; background: var(--you); border-bottom-right-radius: 4px; }
 .line.bobby { align-self: flex-start; background: var(--bobby); border-bottom-left-radius: 4px; }
 .line.sys { align-self: center; background: none; padding: 2px; font-size: 14px; color: var(--muted); }
@@ -118,8 +118,11 @@ body.no-phone main { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minm
 #rec.on { color: #fff; background: var(--bad); border-color: var(--bad); }
 /* Voice-cursor sync strip */
 #sync { display: flex; flex-direction: column; gap: 6px; }
-.sync-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 64px; gap: 10px; align-items: center; font-size: 15px; }
-.sync-row .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sync-row { display: grid; grid-template-columns: minmax(0, 1fr) 58px; grid-template-areas: "label label" "bar gap";
+  column-gap: 10px; row-gap: 2px; align-items: center; font-size: 15px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.sync-row .label { grid-area: label; overflow-wrap: anywhere; }
+.sync-row .sync-bar { grid-area: bar; }
+.sync-row .gap { grid-area: gap; }
 .sync-bar { position: relative; height: 14px; background: var(--line); border-radius: 7px; }
 .sync-bar i { position: absolute; top: 2px; height: 10px; border-radius: 5px; }
 .sync-bar .voice { background: var(--accent); }
@@ -127,7 +130,7 @@ body.no-phone main { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minm
 .sync-row .gap { font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
 .sync-row.good .gap { color: var(--ok); }
 .sync-row.off .gap { color: var(--warn); }
-.sync-legend { font-size: 13px; color: var(--muted); margin: -6px 0 8px; }
+.sync-legend { font-size: 14px; color: var(--muted); margin: -6px 0 8px; }
 .sync-legend b.v { color: var(--accent); } .sync-legend b.c { color: var(--ok); }
 
 /* Phone panel (experiment): latest screen_result + the cursor at each act target */
@@ -135,15 +138,21 @@ body.no-phone main { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minm
 body.no-phone #phone-panel { display: none; }
 .phone { position: relative; height: 100%; max-height: 100%; aspect-ratio: 1080 / 2400; min-height: 0;
   border: 10px solid #1b1d22; border-radius: 34px; background: #0d0f13; box-shadow: 0 6px 24px rgba(0,0,0,.18); overflow: hidden; }
-.phone .app { position: absolute; top: 0; left: 0; right: 0; z-index: 3; padding: 8px 10px 4px; font-size: 12px; font-weight: 700;
+.phone .app { position: absolute; top: 0; left: 0; right: 0; z-index: 3; padding: 8px 10px 4px; font-size: 14px; font-weight: 700;
   color: #cfd3dc; background: linear-gradient(#0d0f13, rgba(13,15,19,0)); text-align: center; letter-spacing: .04em; }
 .phone .screen { position: absolute; inset: 0; transition: opacity .25s; }
 .phone .screen.stale { opacity: .3; }
+.phone .screen.has-image { background-size: 100% 100%; background-repeat: no-repeat; }
+.phone .screen.has-image .node { background: rgba(13,15,19,.35); border-color: rgba(109,155,255,.7); color: transparent; }
+.phone .screen.has-image .node.hit { background: rgba(109,155,255,.35); }
 .node { position: absolute; border: 1px solid rgba(255,255,255,.22); border-radius: 6px; color: #e9ecf2;
-  font-size: 13px; line-height: 1.15; padding: 2px 4px; overflow: hidden; display: flex; align-items: center; justify-content: center;
-  text-align: center; word-break: break-word; background: rgba(255,255,255,.05); }
+  font-size: 14px; line-height: 1.15; padding: 2px 4px; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  text-align: center; overflow-wrap: normal; word-break: normal; background: rgba(255,255,255,.05); }
 .node.tap { border-color: rgba(109,155,255,.55); }
 .node.edit { border-style: dashed; justify-content: flex-start; text-align: left; }
+.node.tiny { overflow: visible; color: transparent; }
+.phone .cap { position: absolute; z-index: 2; font-size: 14px; line-height: 1.2; color: #e9ecf2; background: rgba(13,15,19,.92);
+  padding: 1px 6px; border-radius: 5px; white-space: nowrap; pointer-events: none; transform: translateX(-50%); }
 .node.hint { font-style: italic; color: #9aa1ae; }
 .node.hit { background: rgba(109,155,255,.35); border-color: #6d9bff; }
 .phone .cursor { position: absolute; z-index: 5; width: 44px; height: 44px; margin: -22px 0 0 -22px; left: 50%; top: 55%;
@@ -154,8 +163,8 @@ body.no-phone #phone-panel { display: none; }
   border: 3px solid #6d9bff; animation: ripple .6s ease-out forwards; pointer-events: none; }
 @keyframes ripple { to { transform: scale(3.2); opacity: 0; } }
 .phone .chip { position: absolute; z-index: 6; left: 50%; transform: translateX(-50%); bottom: 8%; max-width: 88%;
-  background: rgba(255,255,255,.94); color: #1b1d22; font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 10px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: pop .25s ease-out; }
+  background: rgba(255,255,255,.94); color: #1b1d22; font-size: 15px; font-weight: 700; padding: 6px 10px; border-radius: 10px;
+  width: max-content; text-align: center; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; animation: pop .25s ease-out; }
 .phone .empty-screen { position: absolute; inset: 0; display: grid; place-items: center; color: #7d8390; font-size: 13px; font-style: italic; padding: 12px; text-align: center; }
 @media (max-width: 900px) {
   body { padding: 12px 16px; height: auto; }
@@ -189,7 +198,7 @@ body.no-phone #phone-panel { display: none; }
     <section class="panel" id="call-panel" hidden><h2>Phone call</h2><div id="call"></div></section>
     <section class="panel" id="feed-panel"><h2>Phone</h2><div class="scroll" id="feed"><p class="empty">No actions yet</p></div></section>
     <section class="panel" id="sync-panel" hidden><h2>Voice ↔ cursor</h2>
-      <p class="sync-legend"><b class="v">■</b> voice speaking from its start &nbsp; <b class="c">■</b> cursor until the action finished &nbsp; number: seconds from voice start to cursor done (green within 1.5 s)</p>
+      <p class="sync-legend"><b class="v">■</b> voice &nbsp;<b class="c">■</b> cursor &nbsp;· seconds from voice start to tap done (green ≤ 1.5 s)</p>
       <div id="sync"></div></section>
   </div>
 </main>
@@ -443,7 +452,7 @@ function syncRender(p) {
     p.row.append(el("span", "label", p.label), el("div", "sync-bar"), el("span", "gap", "…"));
     const box = $("sync");
     box.prepend(p.row);
-    while (box.children.length > 8) box.lastChild.remove();
+    while (box.children.length > 5) box.lastChild.remove();
   }
   const bar = p.row.querySelector(".sync-bar");
   bar.textContent = "";
@@ -521,6 +530,10 @@ function drawScreen(m) {
   const scr = $("phone-screen");
   scr.textContent = "";
   scr.classList.remove("stale");
+  // Hands adds a real screenshot ("image", base64 JPEG) when the Mind asks for one: draw it behind the labels.
+  const img = typeof m.image === "string" && m.image.length > 100 ? m.image : "";
+  scr.classList.toggle("has-image", !!img);
+  scr.style.backgroundImage = img ? "url(data:image/jpeg;base64," + img + ")" : "";
   const [W, H] = phone.size;
   for (const n of phone.nodes) {
     if (!Array.isArray(n.bounds)) continue;
@@ -531,7 +544,33 @@ function drawScreen(m) {
     scr.append(d);
   }
   if (!phone.nodes.length) scr.append(el("div", "empty-screen", "Nothing readable on screen"));
+  requestAnimationFrame(fitLabels);
 }
+// A label that doesn't fit its box (a small icon button) is shown as a caption under the box instead.
+function fitLabels() {
+  const scr = $("phone-screen");
+  scr.querySelectorAll(".cap").forEach((c) => c.remove());
+  const sw = scr.clientWidth, placed = [];
+  if (scr.classList.contains("has-image")) return;
+  for (const d of scr.querySelectorAll(".node")) {
+    d.classList.remove("tiny");
+    if (!d.textContent) continue;
+    if (d.scrollWidth <= d.clientWidth + 1 && d.scrollHeight <= d.clientHeight + 1) continue;
+    d.classList.add("tiny");
+    const cap = el("div", "cap", d.textContent);
+    scr.append(cap);
+    const w = cap.offsetWidth, h = cap.offsetHeight;
+    // centred under the box, kept inside the screen, moved down until it overlaps no other caption
+    let x = Math.min(Math.max(d.offsetLeft + d.offsetWidth / 2, w / 2 + 2), sw - w / 2 - 2);
+    let y = d.offsetTop + d.offsetHeight + 3;
+    const hits = (r) => placed.some((q) => r.l < q.r && r.r > q.l && r.t < q.b && r.b > q.t);
+    let r = { l: x - w / 2, r: x + w / 2, t: y, b: y + h };
+    while (hits(r)) { y += h + 2; r = { l: r.l, r: r.r, t: y, b: y + h }; }
+    placed.push(r);
+    cap.style.left = x + "px"; cap.style.top = y + "px";
+  }
+}
+addEventListener("resize", () => requestAnimationFrame(fitLabels));
 function findNode(on) {
   if (!on) return null;
   if (on.n != null) return phone.nodes.find((n) => n.n === on.n) || null;

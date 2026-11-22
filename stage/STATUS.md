@@ -41,6 +41,8 @@
 
 - Merge fix (James H): the final app looked for `cursor/cursor_ring.xml` and `icon/icon.png`, which didn't exist, so neither the chosen cursor nor the icon reached the app. Added both as copies of the real files; `check.sh` checks they match.
 
+- Dashboard readability pass (James H): every text at least 14 px; timing strip puts the action name on its own line (it collapsed at 1280 px); phone-panel labels no longer break mid-word, and boxes too small for their label get a caption below, stacked so captions never overlap; action chip wraps instead of cutting off; `screen_result.image` (Hands' screenshot) is drawn behind the labels when present. `tools/audit.mjs` reports small text and overflow; clean at 1280x720, 1440x900, 1920x1080 and 390 px.
+
 ## Doing now
 - Nothing. Item 4 first pass done; a second pass waits for Hands to check the new `TO-CHECK.md`.
 
