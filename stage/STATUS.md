@@ -24,11 +24,11 @@
 Core: all done.
 
 Extras (open to James C's AI from the start, most important first):
-1. Hints for Messages, WhatsApp, Chrome, Maps, Spotify, Settings (drafts from the old design are already in `hints/`; check them against the new brief)
-2. App icon in `stage/icon/` (1024 PNG + SVG)
-3. README draft + architecture diagram (SVG and Mermaid) in `stage/readme/` (the current files describe the dropped design)
+1. Hints for Messages, WhatsApp, Chrome, Maps, Spotify, Settings (drafts from the old design are already in `hints/`; check them against the new brief) (claimed: James C)
+2. App icon in `stage/icon/` (1024 PNG + SVG) (claimed: James C)
+3. README draft + architecture diagram (SVG and Mermaid) in `stage/readme/` (the current files describe the dropped design) (claimed: James C)
 4. Fix hints from `hands/HINTS-CHECK.md` after each pull
-5. Two more cursor designs + `cursor/preview.html`: glow and bobby already exist from the old design and preview paths are fixed; check the preview renders and the designs still fit
+5. Two more cursor designs + `cursor/preview.html`: glow and bobby already exist from the old design and preview paths are fixed; check the preview renders and the designs still fit (claimed: James C)
 6. Experiments: timing strip, record button, phone panel, sounds, more hints
 
 ## Needs the human
