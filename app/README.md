@@ -45,10 +45,13 @@ Phone: Developer options on, USB debugging on, plugged in, `adb devices` shows i
    It sends the `.env` lines over USB as `bobby://config` deep links; the app stores them in secure
    storage and lists the names (never values). If `.env` has no `HUB_TOKEN`, it adds one first, so
    laptop tools (`drive.mjs`, the dashboard) use the same token as the phone.
-6. **Side button.** Settings > Advanced features > Side key > Double press > Open app > Bobby (Samsung).
+6. **Side button (hold).** Make Bobby the digital assistant, so holding the side button wakes him:
+   `adb shell cmd role add-role-holder --user 0 android.app.role.ASSISTANT dev.bobby.app 0`
+   (or Settings > Apps > Default apps > Digital assistant app > Bobby). On Samsung, check
+   Settings > Advanced features > Side button > Press and hold is set to the digital assistant.
 7. **Check.** `./check.sh` (all of it: typecheck, `npm test`, build, install, grant, push config, Mind off, `drive.mjs`
    smoke script, then checks that opening the app wakes Bobby and moves it to the back).
-8. **Try it.** Double-press the side button. Bobby wakes (keep-alive notification appears) and the
+8. **Try it.** Hold the side button. Bobby wakes (keep-alive notification appears) and the
    app goes to the back. Tap the notification to see the settings screen without waking.
 
 ## Swapping in
