@@ -18,8 +18,10 @@ Node 22 or newer. Then, once, from `stage/`: `npm install`.
 
 ```sh
 node stage/dashboard/replay.mjs            # pretend hub on :8765, loops the demo story (~90 s)
-open "stage/dashboard/index.html?hub=ws://localhost:8765&token=x"
+open -a "Google Chrome" "file://$PWD/stage/dashboard/index.html?hub=ws://localhost:8765&token=x"   # run from the repo root
 ```
+
+Plain `open "…index.html?hub=…"` doesn't work on macOS: `open` treats the `?…` as part of the file name. Give the browser the full `file://` URL as above.
 
 - `--speed 4` plays faster. `--once` plays once and exits. `--story file.jsonl` plays another story. `--port` changes the port.
 - Add `&theme=dark` or `&theme=light` to the page URL to force a theme. Otherwise it follows the system.
@@ -31,7 +33,7 @@ The hub runs inside the Bobby app on the phone. With the phone on USB:
 
 ```sh
 adb forward tcp:8765 tcp:8765
-open "stage/dashboard/index.html?hub=ws://localhost:8765&token=$HUB_TOKEN"
+open -a "Google Chrome" "file://$PWD/stage/dashboard/index.html?hub=ws://localhost:8765&token=$HUB_TOKEN"
 ```
 
 The page reconnects on its own, so it can be opened before the app starts.
