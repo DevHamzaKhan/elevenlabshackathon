@@ -10,9 +10,10 @@
 - 2.2 Dashboard: conversation (heard/spoke bubbles, wake/asleep notes), task title + status badge, plan checklist with what + why per step, running step highlighted, changed steps outlined when a plan is re-sent.
 - 2.3 Dashboard: phone feed (each `act` in plain words, ✓/✕ from `act_result`, screen reads and notifications as notes), call panel (live status, summary, transcript), connection lights for Hands, Mind, Mouth, Caller.
 - 2.4 Dashboard checked by screenshot in light, dark (`&theme=dark`) and at 390 px phone width; smaller type on narrow screens.
+- 3.1 `hints/home.md`: icons, dock, pages and swiping, folders, app drawer, widgets, what goes wrong.
 
 ## Doing now
-- 3.1 `hints/home.md`.
+- 3.2 `hints/gmail.md`.
 
 ## Open
 Core (James H's AI, in order):
