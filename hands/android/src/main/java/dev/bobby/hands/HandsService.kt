@@ -95,7 +95,55 @@ class HandsService : AccessibilityService() {
   private fun handleScreen(o: JSONObject): JSONObject {
     val snap = snapshot()
     lastNodes = snap.nodes
-    return Protocol.screenResult(reId(o), snap.app, snap.width, snap.height, snap.nodes)
+    val res = Protocol.screenResult(reId(o), snap.app, snap.width, snap.height, snap.nodes)
+    if (o.optBoolean("image", false)) {
+      screenshotJpeg()?.let { res.put("image", it) } ?: res.put("image_error", "screenshot unavailable")
+    }
+    return res
+  }
+
+  /** Base64 JPEG of the screen (extra `image` field), scaled to 720 px wide. Hides the cursor. */
+  private fun screenshotJpeg(): String? {
+    val latch = CountDownLatch(1)
+    var out: String? = null
+    try {
+      takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+        override fun onSuccess(shot: ScreenshotResult) {
+          try {
+            val hw = android.graphics.Bitmap.wrapHardwareBuffer(shot.hardwareBuffer, shot.colorSpace)
+            if (hw != null) {
+              val bmp = hw.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+              val scale = 720f / bmp.width
+              val small = if (scale < 1f) android.graphics.Bitmap.createScaledBitmap(
+                bmp, 720, (bmp.height * scale).toInt(), true) else bmp
+              val bos = java.io.ByteArrayOutputStream()
+              small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, bos)
+              out = android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP)
+            }
+            shot.hardwareBuffer.close()
+          } catch (e: Exception) {
+            Hub.log("screenshot encode failed: ${e.message}")
+          } finally { latch.countDown() }
+        }
+        override fun onFailure(errorCode: Int) {
+          Hub.log("screenshot failed: $errorCode"); latch.countDown()
+        }
+      })
+    } catch (e: Exception) {
+      Hub.log("screenshot failed: ${e.message}"); latch.countDown()
+    }
+    latch.await(3, TimeUnit.SECONDS)
+    return out
+  }
+
+  /** The on-screen keyboard's bounds, or null when it isn't showing. */
+  private fun keyboardBounds(): Rect? {
+    val wins = try { windows } catch (e: Exception) { return null }
+    for (w in wins) if (w.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
+      val r = Rect(); w.getBoundsInScreen(r)
+      if (r.height() > 0) return r
+    }
+    return null
   }
 
   private fun handleAct(o: JSONObject): JSONObject {
@@ -211,7 +259,14 @@ class HandsService : AccessibilityService() {
         return null
       }
       "tap", "long_press" -> {
-        val t = target!!
+        var t = target!!
+        val kb = keyboardBounds()
+        if (kb != null && kb.contains(t.x, t.y) && a.on !is Target.Point) {
+          // The keyboard covers the target: hide it, then find the target again.
+          performGlobalAction(GLOBAL_ACTION_BACK)
+          waitSettled()
+          t = resolve(a.on!!) ?: return "not_found" to "the target was under the keyboard and is gone now"
+        }
         cursor?.glideTo(t.x.toFloat(), t.y.toFloat(), w, h)
         val hold = if (a.what == "tap") 60L else 700L
         cursor?.press(hold)
