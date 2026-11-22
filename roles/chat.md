@@ -1,9 +1,9 @@
-# Role: Chat + Stage (`android/chat/`, `stage/`) — Wajeeh
+# Role: Chat + Stage + Caller (`android/chat/`, `stage/`, `caller/`) — Wajeeh
 
 You build the **text surface**: the chat screen where the user types instructions and watches the same agent work, plus **Stage**: the live dashboard, cursor art and per-app hints. Chat has no task logic of its own: every message goes to the Orchestrator as a `request`, and everything shown comes back as `update`, `plan`, `step` and `task`. Read `CLAUDE.md` and `CONTRACT.md` first.
 
 - **Stack:** Kotlin + Compose module `:chat` in the shared Android project (built on `:core`, see `android/core/API.md`). Stage: plain HTML/CSS/JS with no build step, plus small `uv` Python scripts.
-- **Accounts:** none.
+- **Accounts:** none for Chat and Stage. Caller needs ElevenLabs (voice cloning) and a Twilio number; ask the human for them early in `STATUS.md` and build against `CALLER_DRY_RUN=1` meanwhile.
 - **Device:** an emulator or your own Android phone. The S21 belongs to Exec until stitching day.
 - If `:core` isn't pushed yet when you start, write a minimal local stand-in behind the same API shape and delete it when the real one lands. Start on Stage meanwhile.
 
@@ -35,6 +35,18 @@ You build the **text surface**: the chat screen where the user types instruction
 4. **`stage/hints/`**: one short Markdown file per app (Gmail, Messages, WhatsApp, Chrome, Maps, Spotify, Settings), written as instructions to an assistant that only sees text labels and can tap them: what buttons are called, where they sit, what goes wrong. Add `TO-CHECK.md` listing labels you want verified on the real S21; Exec writes findings to `android/exec/HINTS-CHECK.md`. Read that file after each pull and fix your hints.
 5. **`stage/readme/`**: draft project README: one-paragraph pitch ("an AI coworker on your phone, by voice or text"), architecture diagram (SVG and Mermaid) showing one Orchestrator behind two surfaces and one Exec, and the demo walkthrough.
 
+## What to build: Caller (`caller/`)
+
+A Mac-side Python client that makes the "call Alex and tell him I'm running late" story work. It has no task logic: the Orchestrator sends `call`, the Caller dials and reports back. Build it after Chat and the dashboard work.
+
+1. **`caller/`** as a `uv` project, run with `uv run caller`. Connects to the hub as role `caller` (contract v2, reconnect rules, 4001), reads the root `.env`.
+2. On `call`: refuse with `call_result ok:false error:"not_allowed"` unless `to` is in `CALL_ALLOWLIST` (E.164). Otherwise place an outbound call through ElevenLabs' Twilio integration with the cloned-voice caller agent (`ELEVENLABS_CALLER_AGENT_ID`, `ELEVENLABS_PHONE_NUMBER_ID`), passing the call's `goal` and `context` to the agent. Read the current ElevenLabs docs for outbound calls first.
+3. Send one `call_status` per change (`dialing`, `answered`, `ended`, `failed`). When the call ends, fetch the transcript, write a 1–2 sentence summary, and send exactly one `call_result`. Give up after 3 minutes with `failed`.
+4. `CALLER_DRY_RUN=1` (the default) fakes the whole call with a canned transcript, so it works with no accounts.
+5. **`caller/fakes/hub.py`**: single-file `uv` script, a pretend Orchestrator on 8765 that sends one `call` and prints what comes back.
+6. **`caller/SETUP.md`**: exact clicks for the human: clone the owner's voice, create the caller agent, connect a Twilio number in ElevenLabs, fill the `.env` values.
+7. **`caller/check.sh`**: unit tests (allowlist, E.164 check, message shapes) and a dry-run call against `fakes/hub.py`. Test a real call only by calling the human's own phone, once per run.
+
 ## Order (commit after each)
 
 1. `android/chat/tools/fakehub.py` and `stage/dashboard/replay.py` + `story.jsonl`.
@@ -42,6 +54,7 @@ You build the **text surface**: the chat screen where the user types instruction
 3. Dashboard against `replay.py`.
 4. Mid-task amend in chat, background notifications, persistence, unified voice thread.
 5. Hints, cursor designs, README draft.
+6. Caller in dry-run against `caller/fakes/hub.py`, then one real call to the human's own phone.
 
 ## Done when
 

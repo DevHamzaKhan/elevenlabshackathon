@@ -47,8 +47,8 @@ Four people work at the same time, each in their own folders, against `CONTRACT.
 |---|---|---|---|
 | **Orchestrator** (Mind) | James H | `mind/` | `roles/orchestrator.md` |
 | **Exec** (Hands) + Android shell | Hamza | `android/app/`, `android/core/`, `android/exec/`, `android/settings.gradle.kts`, `android/build.gradle.kts`, `android/gradle/`, `android/tools/` | `roles/exec.md` |
-| **Voice** (Mouth) | James C | `android/voice/`, `voice-agent/`, `caller/` (stretch) | `roles/voice.md` |
-| **Chat + Stage** | Wajeeh | `android/chat/`, `stage/` | `roles/chat.md` |
+| **Voice** (Mouth) | James C | `android/voice/`, `voice-agent/` | `roles/voice.md` |
+| **Chat + Stage + Caller** | Wajeeh | `android/chat/`, `stage/`, `caller/` | `roles/chat.md` |
 
 `INTEGRATION.md` is the merge plan: Day 0 scaffold, milestones, stitching order and the final acceptance script.
 
@@ -61,7 +61,7 @@ Parts are matched to each person's AI usage limits. The heaviest parts went to t
 | **James H** | Claude Max (several) | Orchestrator | The most logic, model prompting and tests, and everyone else depends on it. |
 | **Hamza** | Claude Max 20x | Exec + Android shell | The Day 0 scaffold everyone builds on, plus long loops with phone screenshots, which use a lot of tokens. Needs the S21. |
 | **James C** | Codex + Claude, 10x | Voice | Hard but narrow: the ElevenLabs SDK, speech latency and interruptions. |
-| **Wajeeh** | Codex Pro ×2, Claude Pro | Chat + Stage | The most files but the lightest reasoning: UI, dashboard, hints. Suits running mostly on Codex. |
+| **Wajeeh** | Codex Pro ×2, Claude Pro | Chat + Stage + Caller | The most files but the lightest reasoning: UI, dashboard, hints. Also takes the phone-call feature off Voice so James C can focus on live speech. Suits running mostly on Codex. |
 
 Clone the repo, `cd` into it and start your agent with your line. Claude Code reads this file automatically; Codex reads `AGENTS.md`, which points here.
 
@@ -73,7 +73,7 @@ claude "I'm Hamza. Build my part, Exec + Android shell. Read CLAUDE.md, CONTRACT
 # James C
 codex "I'm James C. Build my part, Voice. Read CLAUDE.md, CONTRACT.md and roles/voice.md, then follow 'How to work'."
 # Wajeeh
-codex "I'm Wajeeh. Build my part, Chat + Stage. Read CLAUDE.md, CONTRACT.md and roles/chat.md, then follow 'How to work'."
+codex "I'm Wajeeh. Build my part, Chat + Stage + Caller. Read CLAUDE.md, CONTRACT.md and roles/chat.md, then follow 'How to work'."
 ```
 
 Use `claude` or `codex` for any line, whichever you have quota for. Resuming later: the same line works, because the agent picks up from your `STATUS.md`.
