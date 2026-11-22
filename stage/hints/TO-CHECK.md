@@ -38,3 +38,6 @@ Clock: alarm row switch is a separate tappable node whose description holds the 
 Calendar: which calendar app opens from the "Calendar" icon on the S21 (Samsung or Google package)
 Calendar: add-event button description ("Add event" or "Create"), bottom right
 Calendar: new-event screen has a "Title" field and a "Save" button (top or bottom)
+YouTube: search button description "Search" at the top right, field hint "Search YouTube"
+YouTube: result rows carry the title in their description; ads marked "Sponsored"
+YouTube: player buttons "Pause video" / "Play video" after one tap on the video; "Skip ad" during ads
