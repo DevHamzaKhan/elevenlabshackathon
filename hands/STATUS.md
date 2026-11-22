@@ -18,7 +18,11 @@
 3. Then-keep-going leftovers: open a chat in Messages/WhatsApp to check field/send labels (would need a real conversation; reading only).
 
 ## Needs the human
-- Nothing right now. Note: Gmail wasn't on any home screen, so Hands put it on a new home page 2 itself (via "Add to Home" and a drag). Gmail also moved out of the app drawer's "Google" folder to drawer page 2 during that; drag it back into the folder if you care. Setup checked: phone authorised over USB, screen lock Swipe, Gmail signed in and off the first home screen, `HANDS_TEST_SENDER=Hamza Khan` in root `.env`.
+1. **For the final app to think and talk (stitching day):** the root `.env` on this Mac has only `HANDS_TEST_SENDER`. `app/tools/push-config.mjs` sends that file to the phone, so it needs these lines (by name; get the values from the teammates, never paste them in chat):
+   - from James C (Mind): `ANTHROPIC_API_KEY`, `CONTACTS`
+   - from Wajeeh (Mouth): `ELEVENLABS_API_KEY`, `ELEVENLABS_BOBBY_AGENT_ID`, and for real calls `ELEVENLABS_CALLER_AGENT_ID`, `ELEVENLABS_PHONE_NUMBER_ID`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `OWNER_NUMBER`, `CALL_ALLOWLIST` (leave `CALLER_DRY_RUN=1` until you choose to place a real call)
+   Then run `node app/tools/push-config.mjs` with the phone plugged in.
+2. Done, for the record: Gmail wasn't on any home screen, so Hands put it on a new home page 2 itself ("Add to Home" + drag). It also moved out of the app drawer's "Google" folder to drawer page 2; drag it back into the folder if you care. Setup checked: phone authorised over USB, screen lock Swipe, Gmail signed in, `HANDS_TEST_SENDER=Hamza Khan` in root `.env`.
 
 ## Try it yourself
 - `cd hands/example && npx expo run:android`, then `hands/tools/grant.sh dev.bobby.hands`, then `node hands/tools/drive.mjs` and type `screen`.
