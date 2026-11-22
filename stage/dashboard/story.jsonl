@@ -1,1 +1,12 @@
-{"type":"peers","hands":true,"mind":true,"mouth":false,"caller":false,"dt":300}
+{"type":"peers","hands":true,"mind":false,"mouth":false,"caller":false,"dt":300}
+{"type":"peers","hands":true,"mind":true,"mouth":false,"caller":false,"dt":500}
+{"type":"peers","hands":true,"mind":true,"mouth":true,"caller":true,"dt":500}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":900,"msg":{"type":"notification","app":"com.google.android.gm","title":"Sarah Chen","text":"Running late, can we push to 3?","at":0}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":700,"msg":{"type":"notification","app":"com.whatsapp","title":"Alex","text":"Still on for coffee later?","at":0}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":700,"msg":{"type":"notification","app":"com.amazon.mShop.android.shopping","title":"Amazon","text":"Your order has shipped","at":0}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":1800,"msg":{"type":"wake"}}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":200,"msg":{"type":"whisper","to":"mouth","text":"3 new notifications: Sarah Chen (Gmail): Running late, can we push to 3? Alex (WhatsApp): Still on for coffee later? Amazon: your order has shipped."}}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":200,"msg":{"type":"say","to":"mouth","id":"m1","text":"Hey! You've got three new things. Sarah emailed: she's running late and wants to push to 3."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":500,"msg":{"type":"say_started","re":"m1"}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":3200,"msg":{"type":"spoke","text":"Hey! You've got three new things. Sarah emailed: she's running late and wants to push to three."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m1"}}
