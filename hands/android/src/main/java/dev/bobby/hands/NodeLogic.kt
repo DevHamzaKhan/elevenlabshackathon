@@ -38,8 +38,9 @@ object NodeFilter {
    */
   fun flatten(roots: List<RawNode>, width: Int, height: Int): List<ScreenNode> {
     val out = ArrayList<ScreenNode>()
-    fun visit(node: RawNode, depth: Int) {
+    fun visit(node: RawNode, depth: Int, parent: ScreenNode?) {
       if (depth > 80) return
+      var emitted: ScreenNode? = null
       if (node.visible) {
         val l = node.bounds[0].coerceIn(0, width)
         val t = node.bounds[1].coerceIn(0, height)
@@ -56,27 +57,34 @@ object NodeFilter {
           if (hint == text) hint = ""
           val desc = clean(node.desc)
           val tap = node.clickable || node.longClickable
-          if (text.isNotEmpty() || desc.isNotEmpty() || tap || node.editable || node.scrollable) {
-            out.add(
-              ScreenNode(
+          val box = intArrayOf(l, t, r, b)
+          // A plain label that only repeats its parent's label over the same box (common in
+          // web pages: a link plus its text) adds nothing; skip it.
+          val duplicate = parent != null && !tap && !node.editable && !node.scrollable &&
+            parent.bounds.contentEquals(box) &&
+            (text.isEmpty() || text.equals(parent.text, true) || text.equals(parent.desc, true)) &&
+            (desc.isEmpty() || desc.equals(parent.text, true) || desc.equals(parent.desc, true)) &&
+            (text.isNotEmpty() || desc.isNotEmpty())
+          if (!duplicate && (text.isNotEmpty() || desc.isNotEmpty() || tap || node.editable || node.scrollable)) {
+            emitted = ScreenNode(
                 n = out.size,
                 text = text,
                 desc = desc,
                 cls = shortClass(node.cls),
-                bounds = intArrayOf(l, t, r, b),
+                bounds = box,
                 tap = tap,
                 edit = node.editable,
                 scroll = node.scrollable,
                 hint = hint,
                 ref = node.ref,
-              ),
-            )
+              )
+            out.add(emitted)
           }
         }
       }
-      for (c in node.children) visit(c, depth + 1)
+      for (c in node.children) visit(c, depth + 1, emitted ?: parent)
     }
-    roots.forEach { visit(it, 0) }
+    roots.forEach { visit(it, 0, null) }
     return out
   }
 }

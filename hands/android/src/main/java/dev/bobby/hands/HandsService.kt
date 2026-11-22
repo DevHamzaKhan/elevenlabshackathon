@@ -215,6 +215,22 @@ class HandsService : AccessibilityService() {
   }
 
   fun snapshot(): Snapshot {
+    val first = snapshotOnce()
+    // A web view that's still loading shows up with no content yet; give it a moment.
+    if (first.second) {
+      Thread.sleep(700)
+      return snapshotOnce().first
+    }
+    return first.first
+  }
+
+  private fun hasEmptyWebView(n: RawNode): Boolean =
+    (n.cls.endsWith("WebView") && n.children.isEmpty()) ||
+      (n.desc == "Web View" && n.children.all { it.children.isEmpty() && it.text.isEmpty() }) ||
+      n.children.any { hasEmptyWebView(it) }
+
+  /** Returns the snapshot and whether it contains an empty (loading) web view. */
+  private fun snapshotOnce(): Pair<Snapshot, Boolean> {
     val (w, h) = screenSize()
     val roots = ArrayList<RawNode>()
     var app = ""
@@ -246,7 +262,7 @@ class HandsService : AccessibilityService() {
       }
     }
     if (app.isEmpty()) app = rootInActiveWindow?.packageName?.toString() ?: ""
-    return Snapshot(app, w, h, NodeFilter.flatten(roots, w, h))
+    return Snapshot(app, w, h, NodeFilter.flatten(roots, w, h)) to roots.any { hasEmptyWebView(it) }
   }
 
   private fun toRaw(n: AccessibilityNodeInfo, depth: Int): RawNode {

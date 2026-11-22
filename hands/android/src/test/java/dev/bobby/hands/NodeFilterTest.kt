@@ -121,4 +121,20 @@ class NodeFilterTest {
     val r = Any()
     assertTrue(flat(RawNode(text = "x", bounds = b(0, 0, 1, 1), ref = r))[0].ref === r)
   }
+
+  @Test fun childRepeatingParentLabelOverSameBoxDropped() {
+    val link = RawNode(desc = "Google", clickable = true, bounds = b(10, 10, 100, 50),
+      children = listOf(RawNode(text = "Google", bounds = b(10, 10, 100, 50))))
+    val out = flat(link)
+    assertEquals(1, out.size)
+    assertEquals("Google", out[0].desc)
+  }
+
+  @Test fun childWithDifferentBoxOrLabelKept() {
+    val row = RawNode(desc = "Hamza Khan", clickable = true, bounds = b(0, 0, 1000, 200), children = listOf(
+      RawNode(text = "Hamza Khan", bounds = b(10, 10, 300, 60)),
+      RawNode(text = "Other", bounds = b(0, 0, 1000, 200)),
+    ))
+    assertEquals(3, flat(row).size)
+  }
 }
