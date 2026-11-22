@@ -15,6 +15,7 @@ export interface MouthDeps {
   sayStartTimeoutMs?: number; // a say that never starts speaking -> say_done spoken:false
   sayMaxMs?: number; // a say that never finishes -> say_done
   backstopMs?: number; // 5 min with nothing heard and nothing from the hub -> sleep
+  listenSettleMs?: number; // "listening" must last this long before a turn counts as over (mode flickers in pauses)
 }
 
 type State = "asleep" | "starting" | "live";
@@ -30,6 +31,7 @@ export class Mouth {
   private typedTurns: { text: string; at: number }[] = [];
   private sayTimer: ReturnType<typeof setTimeout> | null = null;
   private backstop: ReturnType<typeof setTimeout> | null = null;
+  private settle: ReturnType<typeof setTimeout> | null = null;
   /** Delay from a say arriving to Bobby starting to speak it, in ms (latest first). */
   readonly sayLatencies: number[] = [];
   private readonly now: () => number;
@@ -134,6 +136,8 @@ export class Mouth {
     const wasStarting = this.state === "starting";
     this.state = "asleep";
     this.clearBackstop();
+    if (this.settle) clearTimeout(this.settle);
+    this.settle = null;
     this.finishCurrent(true);
     this.dropQueue();
     this.flushHeld();
@@ -166,6 +170,18 @@ export class Mouth {
     }
     this.armBackstop();
     this.d.send({ type: "heard", text: t });
+    // The user spoke before our line started: the agent's next turn answers the user, not
+    // the line. Put the line back at the front and send it again once that answer is over.
+    const c = this.current;
+    if (c && !c.started) {
+      this.current = null;
+      if (this.sayTimer) clearTimeout(this.sayTimer);
+      this.sayTimer = null;
+      const { started: _s, dispatchedAt: _d, ...item } = c;
+      this.queue.unshift(item as Item);
+      // Re-sent when the answer ends (mode -> listening), or after a while if no answer comes.
+      this.setSayTimer(this.d.sayStartTimeoutMs ?? 8_000);
+    }
   }
 
   private onAgentResponse(text: string): void {
@@ -174,6 +190,22 @@ export class Mouth {
   }
 
   private onModeChange(mode: VoiceMode): void {
+    if (this.settle) clearTimeout(this.settle);
+    this.settle = null;
+    const ms = this.d.listenSettleMs ?? 600;
+    if (mode === "listening" && ms > 0 && this.mode === "speaking") {
+      // A short pause inside one turn also reports "listening": wait until it lasts.
+      this.settle = setTimeout(() => {
+        this.settle = null;
+        this.applyMode("listening");
+      }, ms);
+      return;
+    }
+    this.applyMode(mode);
+  }
+
+  private applyMode(mode: VoiceMode): void {
+    if (this.state !== "live") return;
     this.mode = mode;
     const c = this.current;
     if (mode === "speaking" && c && !c.started) {

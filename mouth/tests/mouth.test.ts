@@ -31,6 +31,7 @@ async function setup(opts: Partial<ConstructorParameters<typeof Mouth>[0]> = {})
     send: (f) => sent.push(f),
     voice: async (cb) => { v.cb = cb; await gate; return v; },
     log: () => {},
+    listenSettleMs: 0,
     ...opts,
   });
   made.push(m);
@@ -164,6 +165,37 @@ test("heard: real user turns only; our own tagged lines and echoed test turns ar
     { type: "spoke", text: "On it." },
   ]);
   assert.deepEqual(s.v.userMessages, ["open Gmail"]);
+});
+
+test("the user speaks before a say starts: the say is re-sent after Bobby answers the user", async () => {
+  const s = await live();
+  s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "Looking for Reply" });
+  s.v.cb.onUserTranscript("wait, what are you doing?");
+  s.v.cb.onModeChange("speaking"); // Bobby answers the user, not the line
+  s.v.cb.onAgentResponse("Just a moment.");
+  s.v.cb.onModeChange("listening");
+  assert.equal(s.sent.filter((f) => f.type === "say_started").length, 0, "the answer was not the say");
+  assert.deepEqual(s.v.userMessages, ["[SAY] Looking for Reply", "[SAY] Looking for Reply"]);
+  s.v.cb.onModeChange("speaking");
+  s.v.cb.onModeChange("listening");
+  assert.deepEqual(s.sent.filter((f) => f.type.startsWith("say_")), [
+    { type: "say_started", re: "m1" },
+    { type: "say_done", re: "m1" },
+  ]);
+});
+
+test("a short pause inside Bobby's turn doesn't end the say", async () => {
+  const s = await live({ listenSettleMs: 30 });
+  s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "one" });
+  s.v.cb.onModeChange("speaking");
+  s.v.cb.onModeChange("listening"); // pause between phrases
+  await new Promise((r) => setTimeout(r, 10));
+  s.v.cb.onModeChange("speaking");
+  await new Promise((r) => setTimeout(r, 40));
+  assert.equal(s.sent.filter((f) => f.type === "say_done").length, 0);
+  s.v.cb.onModeChange("listening");
+  await new Promise((r) => setTimeout(r, 40));
+  assert.deepEqual(s.sent.at(-1), { type: "say_done", re: "m1" });
 });
 
 test("a say that never starts is finished with spoken:false and the queue moves on", async () => {
