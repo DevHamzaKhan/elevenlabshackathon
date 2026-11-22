@@ -18,6 +18,8 @@
 - 5.2 `README.md` (how to run against the replay and the real phone) and `MERGE.md` (hints, cursor, icon pickup), replacing the dropped design's README.
 - Extra 1 (James C): hints rewritten for contract v1 and this brief: `messages.md` (Google and Samsung Messages), `whatsapp.md`, `chrome.md`, `maps.md`, `spotify.md`, `settings.md` (One UI), each about 1.5–1.9 KB with "What goes wrong"; 15 uncertain labels added to `TO-CHECK.md`.
 - Extra 2 (James C): app icon in `icon/`: SVG + 1024 PNG matching the ring cursor, plus an adaptive-icon foreground; `tools/icon.mjs` renders the PNGs; `MERGE.md` says how the app picks them up.
+- Extra 3 (James C): `readme/README.md` rewritten for the current design (pitch, parts table with built/planned markers, rules, demo walkthrough, run pointers) and `readme/architecture.svg` + the same diagram in Mermaid; render-checked.
+- Extra 6, timing strip (James C): a "Voice ↔ cursor" panel on the dashboard pairs each `act` with the `say` sent with it and shows when the voice started (`say_started`) and when the cursor finished (`act_result`), green when within 1.5 s. Checked by screenshot against the replay.
 - Extra 5 (James C): `cursor/preview.html` checked by headless screenshot: all three designs render and animate, no page errors. Fixed its legend (garbled HTML, "Exec" renamed to Hands).
 
 ## Doing now
@@ -27,9 +29,8 @@
 Core: all done.
 
 Extras (open to James C's AI from the start, most important first):
-3. README draft + architecture diagram (SVG and Mermaid) in `stage/readme/` (the current files describe the dropped design) (claimed: James C)
 4. Fix hints from `hands/HINTS-CHECK.md` after each pull
-6. Experiments: timing strip (claimed: James C), record button, phone panel, sounds, more hints
+6. Experiments: record button, phone panel, sounds, more hints
 
 ## Needs the human
 - Nothing.

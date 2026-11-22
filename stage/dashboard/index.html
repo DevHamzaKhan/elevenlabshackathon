@@ -111,6 +111,19 @@ main { display: grid; gap: 16px; min-height: 0;
 #call .tx b { color: var(--ink); }
 @keyframes blink { 50% { opacity: .25; } }
 
+/* Voice-cursor sync strip */
+#sync { display: flex; flex-direction: column; gap: 6px; }
+.sync-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 64px; gap: 10px; align-items: center; font-size: 15px; }
+.sync-row .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sync-bar { position: relative; height: 14px; background: var(--line); border-radius: 7px; }
+.sync-bar i { position: absolute; top: 2px; height: 10px; border-radius: 5px; }
+.sync-bar .voice { background: var(--accent); }
+.sync-bar .cursor { background: var(--ok); opacity: .8; }
+.sync-row .gap { font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+.sync-row.good .gap { color: var(--ok); }
+.sync-row.off .gap { color: var(--warn); }
+.sync-legend { font-size: 13px; color: var(--muted); margin: -6px 0 8px; }
+.sync-legend b.v { color: var(--accent); } .sync-legend b.c { color: var(--ok); }
 @media (max-width: 900px) {
   body { padding: 12px 16px; height: auto; }
   html, body { height: auto; }
@@ -135,6 +148,9 @@ main { display: grid; gap: 16px; min-height: 0;
   <div id="side">
     <section class="panel" id="call-panel" hidden><h2>Phone call</h2><div id="call"></div></section>
     <section class="panel" id="feed-panel"><h2>Phone</h2><div class="scroll" id="feed"><p class="empty">No actions yet</p></div></section>
+    <section class="panel" id="sync-panel" hidden><h2>Voice ↔ cursor</h2>
+      <p class="sync-legend"><b class="v">■</b> voice speaking from its start &nbsp; <b class="c">■</b> cursor until the action finished &nbsp; number: seconds from voice start to cursor done (green within 1.5 s)</p>
+      <div id="sync"></div></section>
   </div>
 </main>
 <script>
@@ -371,6 +387,75 @@ wire.call_result = (m) => {
     box.append(tx);
   }
 };
+
+// ---------- voice-cursor sync strip (experiment) ----------
+// The Mind sends each step's `say` and `act` at the same instant. For each pair this shows when
+// Bobby's voice started (say_started) and when the cursor's action finished (act_result), so the
+// team can see whether voice and cursor land together. Uses the hub's `at` stamps.
+const sync = { lastSay: null, bySay: new Map(), byAct: new Map(), rows: [] };
+const SYNC_SPAN_MS = 4000;     // width of the bar
+const SYNC_GOOD_MS = 1500;     // voice start and cursor finish within this count as in sync
+function syncRender(p) {
+  if (!p.row) {
+    $("sync-panel").hidden = false;
+    p.row = el("div", "sync-row");
+    p.row.append(el("span", "label", p.label), el("div", "sync-bar"), el("span", "gap", "…"));
+    const box = $("sync");
+    box.prepend(p.row);
+    while (box.children.length > 8) box.lastChild.remove();
+  }
+  const bar = p.row.querySelector(".sync-bar");
+  bar.textContent = "";
+  const pct = (ms) => Math.max(0, Math.min(100, (ms / SYNC_SPAN_MS) * 100)) + "%";
+  if (p.voiceAt != null) {
+    const v = el("i", "voice");
+    v.style.left = pct(p.voiceAt - p.t0);
+    v.style.width = "calc(100% - " + pct(p.voiceAt - p.t0) + ")";
+    if (p.voiceEnd != null) v.style.width = pct(p.voiceEnd - p.voiceAt);
+    bar.append(v);
+  }
+  const c = el("i", "cursor");
+  c.style.left = pct(p.actAt - p.t0);
+  c.style.width = p.resAt != null ? pct(p.resAt - p.actAt) : "4px";
+  c.style.top = "6px"; c.style.height = "6px";
+  bar.append(c);
+  if (p.voiceAt != null && p.resAt != null) {
+    const gap = p.resAt - p.voiceAt;
+    p.row.className = "sync-row " + (Math.abs(gap) <= SYNC_GOOD_MS ? "good" : "off");
+    p.row.querySelector(".gap").textContent = (gap >= 0 ? "+" : "") + (gap / 1000).toFixed(1);
+    p.row.title = "voice started " + ((p.voiceAt - p.t0) / 1000).toFixed(2) + " s after the say; cursor finished " +
+      ((p.resAt - p.t0) / 1000).toFixed(2) + " s after";
+  }
+}
+const at = (f) => (f && f.at) || Date.now();
+wire.say = (m, f) => { sync.lastSay = { id: m.id, at: at(f) }; };
+wire.say_started = (m, f) => {
+  const p = sync.bySay.get(m.re);
+  if (p) { p.voiceAt = at(f); syncRender(p); }
+};
+wire.say_done = (m, f) => {
+  const p = sync.bySay.get(m.re);
+  if (p) { p.voiceEnd = at(f); syncRender(p); sync.bySay.delete(m.re); }
+};
+{
+  const showAct = wire.act, showResult = wire.act_result;
+  wire.act = (m, f) => {
+    showAct(m, f);
+    const t = at(f);
+    const s = sync.lastSay;
+    if (!s || t - s.at > 400) return;          // no say sent with this act
+    sync.lastSay = null;
+    const p = { label: actWords(m), t0: s.at, actAt: t };
+    sync.bySay.set(s.id, p);
+    sync.byAct.set(m.id, p);
+    syncRender(p);
+  };
+  wire.act_result = (m, f) => {
+    showResult(m, f);
+    const p = sync.byAct.get(m.re);
+    if (p) { p.resAt = at(f); syncRender(p); sync.byAct.delete(m.re); }
+  };
+}
 
 connect();
 </script>

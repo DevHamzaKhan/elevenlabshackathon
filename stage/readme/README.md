@@ -1,67 +1,102 @@
-# Bobby: an AI coworker on your phone, by voice or text
+# Bobby
 
-Bobby is an Android agent that actually uses your phone for you. Ask out loud through your earbuds or type in a chat, "reply to Sarah and tell her 3 works", and Bobby does it the way you would: goes home, swipes to Gmail, opens Sarah's email, taps Reply, types and sends. A visible cursor leads every action, and Bobby says what it's doing and why as it goes ("I'm looking for 'Reply' to answer Sarah"). You can cut in at any point with "actually, make it 4" or "stop", by voice or by text, and it adjusts without starting over.
+**A voice assistant that uses your Android phone for you, out loud, where you can watch.** Double-press the side button and talk to Bobby through your earbuds. Ask him to "reply to Sarah and tell her 3 works", and a cursor starts moving on the phone, doing it the way you would: home screen, swipe to Gmail, open Sarah's email, tap Reply, type, send. All the while Bobby tells you what he's doing and why ("I'm looking for the word 'Reply' to answer Sarah"). He tells you about your notifications when you wake him, and he can phone a friend in your own cloned voice and report back what they said. Say "stop" and he stops, at once.
 
-![Bobby architecture](architecture.svg)
-
-```mermaid
-flowchart TB
-  subgraph Phone["Android phone · one APK (dev.bobby.agent)"]
-    direction LR
-    V["Voice surface<br/>ElevenLabs agent · earbuds"]
-    C["Chat surface<br/>typed requests · plan checklist"]
-    X["Exec<br/>accessibility service · cursor"]
-  end
-  O["Orchestrator (Mac, Python)<br/>hub · triage · planner · task loop<br/>narration · interruptions · memory"]
-  EL["ElevenLabs Agents<br/>speech in/out"]
-  AI["OpenAI<br/>planner + triage model"]
-  D["Dashboard (Stage)<br/>watch · read-only"]
-  K["Caller (stretch)<br/>phone call in your voice"]
-
-  V <-- "request / update" --> O
-  C <-- "request / update" --> O
-  X <-- "act, screen / results" --> O
-  V -. audio .- EL
-  O <--> AI
-  O -- "copy of every frame" --> D
-  O <-- "call / call_result" --> K
-```
+> Draft for the project README. Status markers: **built** means it runs and is tested against the other parts' stand-ins; **planned** means it isn't built yet.
 
 ## How it works
 
-**One system, two surfaces.** Voice and Chat are thin front ends. Both send the same `request` to one **Orchestrator** and both render the same `update` stream coming back. There is one planner, one task state machine and one execution engine (**Exec**), so a task started by voice can be changed or stopped from chat and the other way round.
+Everything runs on the phone, in one Expo (React Native) app. There is no laptop server. The phone needs internet only because the models and the voice run in the cloud.
 
-1. **Request.** You say or type what you want. Voice's ElevenLabs agent calls a `start_task` tool; Chat sends every message as `auto` and the Orchestrator decides whether it's a question, a new task, a change, or a stop.
-2. **Ack.** The Orchestrator answers within 300 ms, so Bobby says "On it" straight away.
-3. **Plan.** The model writes a short plan (each step with a why). Chat and the dashboard show it as a checklist.
-4. **Narrated act loop.** Read the screen (Android accessibility tree) → pick one action and one narration line → send the `act` to Exec and the `update` to the surfaces at the same instant → Exec glides the cursor, taps or types, waits for the screen to settle → repeat. Voice and cursor land together.
-5. **Interruptions.** "Stop" cancels after the current action. "Actually make it 4" re-plans from the current screen, keeping progress. Talking over Bobby pauses the loop briefly.
-6. **Done.** Exactly one `done`, `failed` or `cancelled` per task, spoken and shown in chat.
+The app is four parts, built side by side by four people and merged at the end. They never call each other directly: each one opens its own WebSocket to a small hub on the phone and sends JSON messages through it. The messages are defined in one shared file, [`CONTRACT.md`](../../CONTRACT.md).
 
-Every frame crosses one WebSocket hub, so the Stage dashboard can show the whole conversation, the plan ticking, each phone action and the voice/cursor sync live.
+| Part | What it is | What it does |
+|---|---|---|
+| **Hands** (`hands/`) | Kotlin Expo module, the only native code | An Android accessibility service that reads what's on screen and taps, types and swipes. A cursor overlay that glides to each target before it's touched. A notification listener. And the **hub**, `ws://127.0.0.1:8765`, which delivers each message by its `to` field and copies every frame to watchers. |
+| **Mind** (`mind/`) | TypeScript package, Claude Opus 5.5 | The slow brain. It reads what the user said, decides between chatting, starting a task, placing a call or cancelling, writes a plan, then drives the phone one step at a time: read the screen, pick one action, send Bobby the line to say and Hands the action at the same instant. It's the only part that starts or cancels a task. |
+| **Mouth** (`mouth/`) | TypeScript package, ElevenLabs realtime voice agent | Bobby's voice in your earbuds. It turns speech into `heard` messages and speaks the lines the Mind sends, in order, in his own words. Bobby only talks: he never decides anything. |
+| **Caller** (in `mouth/`) | TypeScript, ElevenLabs + Twilio | Places a phone call to someone on an allowlist, in the owner's cloned voice, with a goal from the Mind, and returns a summary and transcript. |
+| **Stage** (`stage/`) | HTML and art | A live dashboard for the demo screen, the cursor artwork, the app icon, and per-app hints the Mind reads (how Gmail's buttons are labelled, how the home screen works). Nothing depends on it. |
 
-## Demo walkthrough
+![Architecture](architecture.svg)
 
-1. Press the Quick Settings tile. Bobby greets you and mentions what came in: "Sarah emailed, she's running late."
-2. "Reply to Sarah and tell her 3 works." Bobby: "On it." The cursor goes home, swipes across home screens, finds Gmail, opens Sarah's email, taps Reply and types, narrating each step with its reason.
-3. Mid-typing: "Actually, make it 4." Bobby: "Got it, 4 instead." The text changes, the task carries on, Bobby sums up the reply in one line and sends it. "Sent."
-4. Open the chat screen: the whole voice exchange is in the thread, and the task card shows the finished plan.
-5. Type "open Maps and search for coffee near me". The same agent does it, narrating in the chat. Press Stop half-way. "Cancelled."
-6. Stay quiet for about 20 seconds: the voice session goes to sleep.
-7. Stretch: "Call Alex and tell him I'm running late." Bobby places a phone call in your cloned voice and reports what Alex said.
+The same diagram in Mermaid:
 
-## Team
+```mermaid
+flowchart TB
+  subgraph cloud["Cloud"]
+    A["Anthropic API<br/>Claude Opus 5.5"]
+    E["ElevenLabs<br/>realtime voice agent"]
+  end
+  subgraph phone["Android phone, one app"]
+    M["Mind<br/>TypeScript"]
+    O["Mouth<br/>TypeScript"]
+    C["Caller<br/>TypeScript"]
+    subgraph hands["Hands, Kotlin Expo module"]
+      H{{"Hub<br/>ws://127.0.0.1:8765"}}
+      S["Accessibility service<br/>reads the screen, taps"]
+      K["Cursor overlay"]
+      N["Notification listener"]
+    end
+  end
+  subgraph laptop["Laptop"]
+    D["Dashboard (Stage)<br/>read-only"]
+  end
+  A <-->|"HTTPS"| M
+  E <-->|"audio"| O
+  E -.-|"cloned-voice call (planned)"| C
+  M <-->|"requests with to: / replies, heard, notifications"| H
+  O <-->|"say, whisper, hush / heard, spoke, say_done"| H
+  C <-->|"call / call_status, call_result"| H
+  H <-->|"screen, act / screen_result, act_result"| S
+  H -->|"cursor"| K
+  H <-->|"notification"| N
+  H -->|"watch: peers, wire, task, plan, step (adb forward)"| D
+```
 
-| Who | Built |
-|---|---|
-| James H | Orchestrator: hub, triage, planner, task loop, narration, interruptions |
-| Hamza | Exec + Android shell: accessibility service, cursor overlay, notifications, the one-APK scaffold |
-| James C | Voice: ElevenLabs agent session, earbuds, barge-in, shortcuts |
-| Wajeeh | Chat, Stage (dashboard, cursor art, app hints) and Caller |
+A few rules make it hang together:
 
-## Tech
+- **Routing.** Every frame the Mind sends names its target in `to` (`hands`, `mouth`, `caller` or `watch`). Every frame from Hands, the Mouth or the Caller goes to the Mind. The hub doesn't read the messages, it only delivers them.
+- **Voice and cursor together.** For each step the Mind sends the `say` to the Mouth and the `act` to Hands at the same moment. Bobby starts talking within a second and the cursor glide takes under a second, so the words and the movement land together. The Mind waits for both to finish before the next step, and works out the next step while Bobby is still talking.
+- **The scenic route.** To open an app, the Mind presses home, reads the icons, swipes through the home screens and looks in folders, because watching it find things is the point. It jumps straight to an app only when the scenic route fails.
+- **Separate sockets.** The Mind, the Mouth and the Caller each open their own connection, even inside one app. That's what let each part be built and tested alone, against stand-ins for the others.
 
-- **ElevenLabs Agents** for live voice (speech in and out, client tools, barge-in) and, for the Caller, outbound calls with a cloned voice.
-- **OpenAI** models for triage, planning and per-step decisions in the Orchestrator.
-- **Android accessibility service** to read the screen as text and perform taps, swipes and typing, with a cursor overlay; Kotlin + Jetpack Compose, one APK with feature modules.
-- **Python hub** (`uv`) on the Mac: one WebSocket hub, contract v2, one socket per role.
+## The demo, beat by beat
+
+This is the story the dashboard's replay plays ([`stage/dashboard/story.jsonl`](../dashboard/story.jsonl)) and the one the Mind's `npm run story` runs end to end against its stand-ins.
+
+1. **Wake.** You double-press the side button. The app opens, the Mouth starts Bobby's voice session and sends `wake`. Three notifications have come in (Hands forwarded them as they arrived): an email from Sarah, a WhatsApp from Alex, an Amazon delivery.
+2. **The digest.** The Mind whispers all three to Bobby as background, then has him lead with what matters: "Hey! You've got three new things. Sarah emailed: she's running late and wants to push to 3."
+3. **"Reply to Sarah and tell her 3 works."** The Mind starts a task and shows its plan on the dashboard: go home, find Gmail, open Sarah's email, write the reply, send it, each with a reason.
+4. **The scenic route.** "Going to the home screen first, so I start from a known place." "Gmail isn't on this page, so I'm swiping to the next one." "There's Gmail. Tapping it to open your inbox." Each line is spoken as the cursor moves, and each plan step ticks off on the dashboard.
+5. **The reply.** "I'm looking for the word 'Reply' to answer Sarah." The cursor finds it and taps. Bobby reads out what he's writing, "Hi Sarah, 3 works for me. See you then!", then taps Send. "Sent. I told Sarah 3 works."
+6. **"Now call Alex and tell him I'm running 20 minutes late."** "Calling Alex now, in your voice." The Mind sends `call` to the Caller with a goal and context. The dashboard shows dialing, answered, ended.
+7. **The report.** The Caller returns a summary and transcript, and Bobby passes it on: "Alex says no problem: 3:20 works and he'll grab a table."
+8. **"Stop."** At any point, "stop" or "cancel" cuts Bobby off mid-sentence, hides the cursor and cancels the task, in about a third of a second. The Mind catches short stop phrases before asking the model, so it doesn't wait on the network.
+9. **Sleep.** After about 20 seconds with nothing said and nothing running, the Mind puts Bobby to sleep and the microphone goes off until the next double-press.
+
+## Where each part stands
+
+| Part | Built | Planned |
+|---|---|---|
+| Hands | The Expo module with the accessibility service, hub, cursor overlay, notification listener and keep-alive service. The test app runs on the Samsung S21; the hub's hello/welcome/peers and `screen` work on the phone. 94 unit tests. | Checking every action on the phone with screenshots, the scenic route to Gmail from a cold start, and the merged app in `app/`. |
+| Mind | The decision loop, plans, step loop, scenic route, recovery, digest, calls, instant stop, corrections and sleep. `npm run story` passes 8 of 8 against stand-in phone, Mouth and Caller with the real model; 21 tests with the model stubbed. Runs inside Expo Go on an Android emulator, with a real model call. | A run against the real phone hub, and tuning on real screens. |
+| Mouth | The hub client, the `say` queue, whisper, correct, hush, sleep and the asleep rules, the agent setup script, and the test app, run in an emulator against a stand-in hub. 19 tests. | A live voice session (it needs the ElevenLabs key) and earbud routing. |
+| Caller | A dry run: it answers every `call` with a canned result. | The real call: voice clone, caller agent, Twilio number. |
+| Stage | Dashboard with replay, hints for the home screen and seven apps, three cursors (`ring` chosen), app icon. | Fixing hints from the Hands part's on-phone check. |
+
+## Run it
+
+Each part's own README has the details.
+
+- **Hands:** [`hands/README.md`](../../hands/README.md). Build the test app onto the phone with `npx expo run:android` in `hands/example`, then switch on the accessibility service.
+- **Mind:** [`mind/README.md`](../../mind/README.md). `cd mind && npm install && ./check.sh`, then `npm run story` to run the whole demo against stand-ins (needs `ANTHROPIC_API_KEY` in the root `.env`).
+- **Mouth and Caller:** [`mouth/README.md`](../../mouth/README.md). `cd mouth && npm install && ./check.sh`; `node agent/setup.mjs` creates the Bobby agent once `ELEVENLABS_API_KEY` is set.
+- **Stage:** [`stage/README.md`](../README.md). `node stage/dashboard/replay.mjs`, then open `stage/dashboard/index.html?hub=ws://localhost:8765&token=x`. On demo day, run `adb forward tcp:8765 tcp:8765` with the phone on USB and point the same page at the phone's hub.
+- **The final app:** `app/README.md` once the Hands part has built it (planned). The order the team stitches the parts together is in the root [`README.md`](../../README.md).
+
+## Keys and safety
+
+- Keys are never baked into the build. A laptop script sends them to the app over USB, the app keeps them on the phone, and each package gets them through its `config`.
+- The hub listens only on `127.0.0.1`, never on the network, and every connection needs a token.
+- The Caller dials only numbers on its allowlist, and defaults to a dry run that dials nothing.
