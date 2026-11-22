@@ -144,6 +144,7 @@ body.no-phone #phone-panel { display: none; }
   text-align: center; word-break: break-word; background: rgba(255,255,255,.05); }
 .node.tap { border-color: rgba(109,155,255,.55); }
 .node.edit { border-style: dashed; justify-content: flex-start; text-align: left; }
+.node.hint { font-style: italic; color: #9aa1ae; }
 .node.hit { background: rgba(109,155,255,.35); border-color: #6d9bff; }
 .phone .cursor { position: absolute; z-index: 5; width: 44px; height: 44px; margin: -22px 0 0 -22px; left: 50%; top: 55%;
   transition: left .65s cubic-bezier(.45,.05,.25,1), top .65s cubic-bezier(.45,.05,.25,1), opacity .4s; opacity: 0; pointer-events: none; }
@@ -524,7 +525,7 @@ function drawScreen(m) {
   for (const n of phone.nodes) {
     if (!Array.isArray(n.bounds)) continue;
     const [l, t, r, b] = n.bounds;
-    const d = el("div", "node" + (n.tap ? " tap" : "") + (n.edit ? " edit" : ""), n.text || n.desc || "");
+    const d = el("div", "node" + (n.tap ? " tap" : "") + (n.edit ? " edit" : "") + (!n.text && !n.desc && n.hint ? " hint" : ""), n.text || n.desc || n.hint || "");
     d.dataset.n = n.n;
     Object.assign(d.style, { left: pct(l, W), top: pct(t, H), width: pct(r - l, W), height: pct(b - t, H) });
     scr.append(d);
@@ -536,7 +537,7 @@ function findNode(on) {
   if (on.n != null) return phone.nodes.find((n) => n.n === on.n) || null;
   if (on.text != null) {
     const q = String(on.text).toLowerCase();
-    const label = (n) => [(n.text || "").toLowerCase(), (n.desc || "").toLowerCase()];
+    const label = (n) => [(n.text || "").toLowerCase(), (n.desc || "").toLowerCase(), (n.hint || "").toLowerCase()];   // Hands matches hint after text/desc
     return phone.nodes.find((n) => label(n).includes(q)) || phone.nodes.find((n) => label(n).some((s) => s.includes(q))) || null;
   }
   return null;

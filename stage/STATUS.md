@@ -31,6 +31,8 @@
 
 - Extra 6, more hints (James H): `clock.md` (alarms, timer, stopwatch), `calendar.md` (Samsung and Google: reading the day, new event), `youtube.md` (search, play, player controls, ads); 9 labels added to `TO-CHECK.md`.
 
+- Item 4a (James H): `gmail.md` fixed from `hands/HINTS-CHECK.md` (search is a hint, rows are one combined node, no bottom "Reply all", reply body unlabelled so `type` with no target, discard via "More options"). Story Gmail screens and the phone panel updated to match (`hint` field shown and matched).
+
 ## Doing now
 - Item 4: fixing hints from `hands/HINTS-CHECK.md` (first pass), one app per commit.
 
