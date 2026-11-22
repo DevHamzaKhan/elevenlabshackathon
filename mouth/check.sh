@@ -9,6 +9,7 @@ npm test > logs/check-test.log 2>&1 || { tail -40 logs/check-test.log; exit 1; }
 grep -E "^(ℹ|#) (pass|fail) " logs/check-test.log
 
 echo "== type check (package + test app)"
+[[ -d example/node_modules ]] || (cd example && npm ci) > logs/check-example-npm.log 2>&1 || { tail -20 logs/check-example-npm.log; exit 1; }
 (cd example && npx tsc --noEmit -p .) > logs/check-tsc.log 2>&1 || { cat logs/check-tsc.log; exit 1; }
 echo "ok"
 

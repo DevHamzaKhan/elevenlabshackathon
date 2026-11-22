@@ -21,5 +21,19 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "ws": "^8.23.0"
+  },
+  "peerDependenciesMeta": {
+    "@elevenlabs/react-native": {
+      "optional": true
+    },
+    "@livekit/react-native": {
+      "optional": true
+    },
+    "@livekit/react-native-webrtc": {
+      "optional": true
+    },
+    "@elevenlabs/client": {
+      "optional": true
+    }
   }
 }
