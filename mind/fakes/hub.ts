@@ -30,6 +30,8 @@ export type FakeHub = {
   setHands(on: boolean): void;
   close(): Promise<void>;
   ready: Promise<void>;
+  /** The port actually listened on (useful with `port: 0`, which lets the OS pick a free one). */
+  readonly port: number;
 };
 
 export function startFakeHub(opts: FakeHubOptions = {}): FakeHub {
@@ -187,6 +189,10 @@ export function startFakeHub(opts: FakeHubOptions = {}): FakeHub {
     wire,
     watched,
     ready,
+    get port() {
+      const a = wss.address();
+      return a && typeof a === "object" ? a.port : port;
+    },
     notify(app, title, text) {
       const n = { type: "notification", app, title, text, at: Date.now() };
       phone.notifications.push({ app, title, text, at: n.at });

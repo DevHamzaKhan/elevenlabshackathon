@@ -82,8 +82,6 @@ function step(user: string) {
   return act({ do: "key", key: "home", say: "Going home to start over." });
 }
 
-let nextPort = 18800 + Math.floor(Math.random() * 500);
-
 /** Fake hub + Mind + Mouth + Caller on a fresh port, all fast. */
 export async function setup(
   opts: {
@@ -99,11 +97,12 @@ export async function setup(
     callerStepMs?: number;
   } = {},
 ) {
-  const port = nextPort++;
   const lines: string[] = [];
   const log = (s: string) => lines.push(s);
-  const hub = startFakeHub({ port, log, speed: 0 });
+  // Port 0: the OS hands out a free port, so test files running side by side never collide.
+  const hub = startFakeHub({ port: 0, log, speed: 0 });
   await hub.ready;
+  const port = hub.port;
   const model = stubModel({ slowMs: opts.slowMs });
   const mind = startMind({
     hubUrl: `ws://localhost:${port}`,

@@ -6,12 +6,10 @@ import { HubClient } from "../src/hub";
 import { startFakeHub } from "../fakes/hub";
 import { sleep, until } from "./helpers";
 
-const port = () => 19400 + Math.floor(Math.random() * 400);
-
 test("a newer mind replaces the older one, which gets 4001 and stays away", async () => {
-  const p = port();
-  const hub = startFakeHub({ port: p, log: () => {}, speed: 0 });
+  const hub = startFakeHub({ port: 0, log: () => {}, speed: 0 });
   await hub.ready;
+  const p = hub.port;
   const logs: string[] = [];
   const a = new HubClient(`ws://localhost:${p}/mind?token=t`, "mind", () => {}, (s) => logs.push(`a ${s}`));
   const b = new HubClient(`ws://localhost:${p}/mind?token=t`, "mind", () => {}, (s) => logs.push(`b ${s}`));
@@ -33,9 +31,9 @@ test("a newer mind replaces the older one, which gets 4001 and stays away", asyn
 });
 
 test("reconnects after the hub restarts, and gets peers after welcome", async () => {
-  const p = port();
-  let hub = startFakeHub({ port: p, log: () => {}, speed: 0 });
+  let hub = startFakeHub({ port: 0, log: () => {}, speed: 0 });
   await hub.ready;
+  const p = hub.port; // the restarted hub below reuses this port
   const got: any[] = [];
   const c = new HubClient(`ws://localhost:${p}/mind?token=t`, "mind", (m) => got.push(m), () => {});
   try {
@@ -54,9 +52,9 @@ test("reconnects after the hub restarts, and gets peers after welcome", async ()
 });
 
 test("a strict hub closes a wrong token with 4003", async () => {
-  const p = port();
-  const hub = startFakeHub({ port: p, log: () => {}, token: "right" });
+  const hub = startFakeHub({ port: 0, log: () => {}, token: "right" });
   await hub.ready;
+  const p = hub.port;
   try {
     const code = await new Promise<number>((resolve) => {
       const ws = new WebSocket(`ws://localhost:${p}/mind?token=wrong`);

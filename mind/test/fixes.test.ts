@@ -224,10 +224,9 @@ test("'bye' lets Bobby finish before the session is put to sleep", async () => {
 });
 
 test("hub client: waits are released the moment the connection drops", async () => {
-  const port = 19850 + Math.floor(Math.random() * 100);
-  const hub = startFakeHub({ port, log: () => {}, speed: 0 });
+  const hub = startFakeHub({ port: 0, log: () => {}, speed: 0 });
   await hub.ready;
-  const c = new HubClient(`ws://localhost:${port}/mind?token=t`, "mind", () => {}, () => {});
+  const c = new HubClient(`ws://localhost:${hub.port}/mind?token=t`, "mind", () => {}, () => {});
   try {
     c.start();
     await until(() => c.connected);
