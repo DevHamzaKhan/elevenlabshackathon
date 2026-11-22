@@ -1,0 +1,146 @@
+// Pretend Bobby: connects as `mouth`. Each typed line is sent as `heard`.
+// `!spoke <text>` sends a `spoke` instead (to test corrections). `!asleep` ends the session.
+// Run: npx tsx fakes/mouth.ts [--script file] [--hub ws://localhost:8765]
+
+import { pathToFileURL } from "node:url";
+import { connectRole, hubUrlFor, runCommands } from "./cli";
+
+export type FakeMouthOptions = {
+  url: string;
+  log?: (s: string) => void;
+  /** ms of speech per character; 0 makes tests fast. */
+  msPerChar?: number;
+};
+
+export function startFakeMouth(opts: FakeMouthOptions) {
+  const log = opts.log ?? ((s: string) => console.log(s));
+  const msPerChar = opts.msPerChar ?? 45;
+  let awake = false;
+  const queue: { id: string; text: string }[] = [];
+  let speaking: { id: string; timer: ReturnType<typeof setTimeout> } | null = null;
+  const received: any[] = [];
+
+  const speakNext = () => {
+    if (speaking || queue.length === 0) return;
+    const s = queue.shift()!;
+    conn.send({ type: "say_started", re: s.id });
+    log(`BOBBY SAYS: ${s.text}`);
+    const ms = Math.max(200, s.text.length * msPerChar);
+    speaking = {
+      id: s.id,
+      timer: setTimeout(() => {
+        speaking = null;
+        conn.send({ type: "spoke", text: s.text });
+        conn.send({ type: "say_done", re: s.id });
+        speakNext();
+      }, Math.min(ms, 12_000)),
+    };
+  };
+
+  const conn = connectRole(
+    opts.url,
+    "mouth",
+    (m) => {
+      received.push(m);
+      switch (m.type) {
+        case "say":
+          if (!awake) {
+            conn.send({ type: "say_done", re: m.id, spoken: false });
+            log(`(asleep, not saying: ${m.text})`);
+            return;
+          }
+          queue.push({ id: m.id, text: m.text });
+          speakNext();
+          break;
+        case "whisper":
+          if (awake) log(`(whisper) ${m.text}`);
+          break;
+        case "correct":
+          if (!awake) return;
+          log(`BOBBY CORRECTS: ${m.text}`);
+          conn.send({ type: "spoke", text: `Sorry, correction: ${m.text}` });
+          break;
+        case "hush":
+          if (!awake) return;
+          log("(hush)");
+          if (speaking) {
+            clearTimeout(speaking.timer);
+            conn.send({ type: "say_done", re: speaking.id });
+            speaking = null;
+          }
+          for (const q of queue.splice(0)) conn.send({ type: "say_done", re: q.id });
+          break;
+        case "sleep":
+          log("(sleep: Bobby goes quiet)");
+          awake = false;
+          if (speaking) {
+            clearTimeout(speaking.timer);
+            conn.send({ type: "say_done", re: speaking.id });
+            speaking = null;
+          }
+          for (const q of queue.splice(0)) conn.send({ type: "say_done", re: q.id, spoken: false });
+          conn.send({ type: "asleep" });
+          break;
+        case "peers":
+          break;
+        default:
+          log(`(got ${m.type})`);
+      }
+    },
+    log,
+    () => {
+      if (!awake) {
+        awake = true;
+        conn.send({ type: "wake" });
+      }
+    },
+  );
+
+  const wake = () => {
+    if (!awake) {
+      awake = true;
+      conn.send({ type: "wake" });
+      log("(wake)");
+    }
+  };
+
+  return {
+    received,
+    get awake() {
+      return awake;
+    },
+    /** One user turn. Wakes Bobby first if he was asleep. */
+    hear(text: string) {
+      wake();
+      log(`USER: ${text}`);
+      conn.send({ type: "heard", text });
+    },
+    spoke(text: string) {
+      wake();
+      conn.send({ type: "spoke", text });
+    },
+    wake,
+    asleep() {
+      awake = false;
+      conn.send({ type: "asleep" });
+    },
+    close() {
+      conn.close();
+    },
+  };
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  const mouth = startFakeMouth({ url: hubUrlFor("mouth"), log: (s) => console.log(`[mouth] ${s}`) });
+  // Give the socket a moment before the first scripted line.
+  await new Promise((r) => setTimeout(r, 800));
+  await runCommands(
+    (line) => {
+      if (line.startsWith("!spoke ")) mouth.spoke(line.slice(7));
+      else if (line === "!asleep") mouth.asleep();
+      else if (line === "!wake") mouth.wake();
+      else mouth.hear(line);
+    },
+    () => console.log("[mouth] script finished"),
+  );
+}

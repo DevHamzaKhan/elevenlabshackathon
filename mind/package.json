@@ -1,0 +1,33 @@
+{
+  "name": "bobby-mind",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bobby's slow brain: plans tasks and drives the phone one step at a time.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "react-native": "src/index.ts",
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "hub": "tsx fakes/hub.ts",
+    "mouth": "tsx fakes/mouth.ts",
+    "caller": "tsx fakes/caller.ts",
+    "mind": "tsx scripts/run.ts",
+    "story": "tsx scripts/story.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "bash check.sh"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "ws": "^8.23.0"
+  },
+  "type": "module"
+}
