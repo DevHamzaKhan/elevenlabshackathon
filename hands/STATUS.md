@@ -6,7 +6,7 @@
 - 94 JVM unit tests (protocol, contract examples, node filter, target matching, hub routing) pass.
 - On the phone: `screen`, `tap`, `long`, `point`, `swipe`, `type` (incl. Gmail's web-view reply body), `key`, `launch` all work; cursor glides before each action (seen in screenshots); notifications from `adb shell cmd notification post` arrive at the Mind; `hub-test.mjs` passes 11/11 against the real phone hub.
 - `demo` passed from a cold start (2026-11-22 12:28): home → swipe to page 2 → Gmail → newest email from "Hamza Khan" → Reply → typed → Send. Gmail showed "Sent" and the reply in the thread. **Job 1 "Done when" met.**
-- Extras: `screen` with `"image":true` adds a base64 JPEG (720 px wide) as `image`; a tap target hidden under the keyboard makes Hands hide the keyboard first; screen off / Swipe lock screen: any `screen` or `act` wakes the phone and clears the lock first (checked: dozing + locked → home screen); hints checked (`HINTS-CHECK.md`); web pages: a plain label repeating its parent's label over the same box is dropped (Chrome Wikipedia page 100 → 74 nodes), and a still-loading web view gets one 700 ms retry; `demo` falls back to the app drawer (pages and folders) when Gmail is on no home page (`drawer-gmail` checks that route alone: found and pointed at Gmail on the phone); cursor glide has a slight overshoot; `drive.mjs` `screen image [file]` saves the screenshot.
+- Extras: `screen` with `"image":true` adds a base64 JPEG (720 px wide) as `image`; a tap target hidden under the keyboard makes Hands hide the keyboard first; screen off / Swipe lock screen: any `screen` or `act` wakes the phone and clears the lock first (checked: dozing + locked → home screen); hints checked (`HINTS-CHECK.md`); web pages: a plain label repeating its parent's label over the same box is dropped (Chrome Wikipedia page 100 → 74 nodes), and a still-loading web view gets one 700 ms retry; `demo` falls back to the app drawer (pages and folders) when Gmail is on no home page (`drawer-gmail` checks that route alone: found and pointed at Gmail on the phone); cursor glide has a slight overshoot; `drive.mjs` `screen image [file]` saves the screenshot; scrolling inside a node checked (`swipe up` on Settings' list brings "Display" into view).
 - Laptop tools: `drive.mjs`, `fakehub.mjs`, `hub-test.mjs`, `grant.sh`, `check.sh`, README, MERGE.
 
 ## Doing now
@@ -15,7 +15,7 @@
 ## Open
 1. Final app `app/` installed on the phone, passing `app/check.sh`; swap in real Mind/Mouth as they land.
 2. Mouth backup (open items in `mouth/STATUS.md`).
-3. Then-keep-going list from `roles/hands.md` (hints check, other apps, scrolling, keyboard, app drawer, `image`, cursor feel, odd states).
+3. Then-keep-going leftovers: open a chat in Messages/WhatsApp to check field/send labels (would need a real conversation; reading only).
 
 ## Needs the human
 - Nothing right now. Note: Gmail wasn't on any home screen, so Hands put it on a new home page 2 itself (via "Add to Home" and a drag). Gmail also moved out of the app drawer's "Google" folder to drawer page 2 during that; drag it back into the folder if you care. Setup checked: phone authorised over USB, screen lock Swipe, Gmail signed in and off the first home screen, `HANDS_TEST_SENDER=Hamza Khan` in root `.env`.
