@@ -43,3 +43,15 @@ None open.
   `app/plugins/with-new-intent.js` (`setIntent` in `MainActivity.onNewIntent`) is kept; it's harmless.
 - minSdk 30 and cleartext come from `../hands/app.plugin.js`, which is now in `app.json`;
   `expo-build-properties` sets the same values again.
+
+## Stitch on the phone, 2026-11-22 13:04 (main at 328cfdb, full root `.env` pushed)
+
+`app/check.sh` passes with the real Hands, Mind (f52515e, 9b60d5f) and Mouth (b0aea73, 328cfdb). No app changes were needed for these commits.
+
+What happened on wake:
+- Mouth: ElevenLabs session started, sent `wake`, heard real speech (`heard`), spoke (`spoke`). Works.
+- Mind: started (claude-opus-5-5, 11 hints), connected, sent its notifications `whisper`; its first model call failed with **401 invalid x-api-key**. Checked from the laptop too: the `ANTHROPIC_API_KEY` in the root `.env` is rejected by the API. **Needs a valid key from James C.**
+
+Issue for Mind (James C): when every model call fails, the Mind never sends `sleep`, so the Mouth session (and the microphone, streaming the room to ElevenLabs) stayed live until the app was force-stopped. Suggested fix: the 20 s idle → `sleep` timer should run regardless of model errors (an error turn counts as "no task in progress"). The Mouth's own 5-minute backstop is the only other end.
+
+Not in `.env` yet (only needed for real calls, `CALLER_DRY_RUN=1` meanwhile): `ELEVENLABS_CALLER_AGENT_ID`, `ELEVENLABS_PHONE_NUMBER_ID` (`node mouth/agent/setup.mjs` writes them).

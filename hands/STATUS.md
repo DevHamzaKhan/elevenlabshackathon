@@ -10,6 +10,7 @@
 - Laptop tools: `drive.mjs`, `fakehub.mjs`, `hub-test.mjs`, `grant.sh`, `check.sh`, README, MERGE.
 
 - **Job 2:** final app `app/` ("Bobby", `dev.bobby.app`) with the real Hands, Mind and Mouth/Caller packages, release APK installed on the S21. Checked on the phone (the steps of `app/check.sh`): `grant.sh dev.bobby.app` all granted, `push-config.mjs` sent the `.env`, Mind switched off, `drive.mjs` smoke script passes against the app's hub, opening the app logs "woke (came to front), moved to back" with the launcher in front, keep-alive foreground service runs with the microphone type, and after 75 s with the screen off the Mouth and Caller are still connected (`peers`). **Job 2 "Done when" met** (Mind/Mouth can't do real work until their keys are pushed; see Needs the human).
+- Stitched with Mind f52515e/9b60d5f and Mouth b0aea73/328cfdb and the full `.env` (2026-11-22 13:04): `app/check.sh` passes; on wake the real ElevenLabs session runs (heard/spoke work); the Mind's Anthropic key is rejected (401). Details in `app/MERGE-ISSUES.md`.
 - Mouth backup: Extras 2 (real Caller), 3 (rest of `setup.mjs`), 7 (remaining tests) done and pushed in `mouth/`, all against stubs (no keys here).
 
 ## Doing now
@@ -21,6 +22,7 @@
 3. Then-keep-going leftovers: open a chat in Messages/WhatsApp to check field/send labels (would need a real conversation; reading only).
 
 ## Needs the human
+0. **`ANTHROPIC_API_KEY` in the root `.env` is invalid** (the API answers 401). Get a working key from James C, put it in `.env`, then `node app/tools/push-config.mjs`. Until then the Mind can't answer, and a woken session doesn't go back to sleep by itself (force-stop the app, then `hands/tools/grant.sh dev.bobby.app`).
 1. **For the final app to think and talk (stitching day):** the root `.env` on this Mac has only `HANDS_TEST_SENDER`. `app/tools/push-config.mjs` sends that file to the phone, so it needs these lines (by name; get the values from the teammates, never paste them in chat):
    - from James C (Mind): `ANTHROPIC_API_KEY`, `CONTACTS`
    - from Wajeeh (Mouth): `ELEVENLABS_API_KEY`, `ELEVENLABS_BOBBY_AGENT_ID`, and for real calls `ELEVENLABS_CALLER_AGENT_ID`, `ELEVENLABS_PHONE_NUMBER_ID`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `OWNER_NUMBER`, `CALL_ALLOWLIST` (leave `CALLER_DRY_RUN=1` until you choose to place a real call)
