@@ -45,7 +45,7 @@ export function makeModel(opts: ModelOptions): ModelFn {
     };
     opts.log(`model> ${req.purpose} request (${req.user.length} chars): ${oneLine(req.user, 1500)}`);
     try {
-      const res: any = await client.beta.messages.create(body);
+      const res: any = await client.beta.messages.create(body, { timeout: req.timeoutMs ?? 30_000 });
       const ms = Date.now() - t0;
       const u = res.usage ?? {};
       const usage = `in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens}`;

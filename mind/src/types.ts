@@ -16,6 +16,8 @@ export type ModelRequest = {
   /** Optional effort override for cheap calls. */
   effort?: "low" | "medium" | "high";
   maxTokens?: number;
+  /** Per-attempt timeout; a slow attempt is abandoned and retried (SDK retries up to 2 times). */
+  timeoutMs?: number;
 };
 
 export type ModelReply = {
@@ -51,6 +53,8 @@ export type Timing = {
   sleepMs: number;
   /** How long to wait for the Mouth to start a `say` before giving up on syncing. */
   sayStartMs: number;
+  /** A step call slower than this makes Bobby say "give me a second" (once per task). */
+  stallMs: number;
 };
 
 export const DEFAULT_TIMING: Timing = {
@@ -59,6 +63,7 @@ export const DEFAULT_TIMING: Timing = {
   callMs: 180_000,
   sleepMs: 20_000,
   sayStartMs: 3_000,
+  stallMs: 7_000,
 };
 
 export type PlanStep = { n: number; do: string; why: string };

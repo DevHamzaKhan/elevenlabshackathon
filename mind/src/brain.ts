@@ -35,6 +35,8 @@ type Task = {
   cancelled: boolean;
   /** Cancelled to make way for a new task: no whisper. */
   quiet?: boolean;
+  /** Bobby already said "give me a second" in this task. */
+  stalled?: boolean;
   correctedOnce: boolean;
 };
 
@@ -222,6 +224,7 @@ export class Brain {
       system: this.decideSys,
       user: this.decideInput(text),
       schema: DECIDE_SCHEMA,
+      timeoutMs: 20_000,
     });
     if (this.stopped) return;
     const d = r.json;
@@ -365,12 +368,21 @@ export class Brain {
       const unchanged = i > 0 && key === lastKey;
       lastKey = key;
 
+      // If the model is slow and Bobby has gone quiet, fill the silence once per task.
+      const stall = setTimeout(() => {
+        if (!task.cancelled && !task.stalled && this.pendingSays.size === 0) {
+          task.stalled = true;
+          lastSay = this.say("Give me a second, I'm working out the next step.");
+        }
+      }, this.o.timing.stallMs);
       const r = await this.o.model({
         purpose: "step",
         system: this.stepSys,
         user: this.stepInput(task, screen, unchanged, lastFailed),
         schema: STEP_SCHEMA,
+        timeoutMs: 15_000,
       });
+      clearTimeout(stall);
       if (task.cancelled) return this.finishCancelled(task, lastSay);
       const d = r.json;
       if (!d) {

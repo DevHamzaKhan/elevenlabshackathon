@@ -197,3 +197,31 @@ test("without a Mouth the task still runs, without waiting for say_done", async 
     await t.close();
   }
 });
+
+test("a slow step makes Bobby fill the silence once", async () => {
+  const t = await setup({ slowMs: 400 });
+  try {
+    // Re-start with a tiny stall threshold: setup's timing has no stallMs, so set it via a fresh mind.
+    t.mind.stop();
+    const { startMind } = await import("../src/index");
+    const { stubModel } = await import("./helpers");
+    const m = stubModel({ slowMs: 300 });
+    const mind = startMind({
+      hubUrl: `ws://localhost:${t.port}`,
+      token: "test",
+      env: {},
+      log: () => {},
+      model: m.fn,
+      timing: { actMs: 2000, sayMs: 2000, stallMs: 150 },
+    });
+    await sleep(300);
+    t.mouth!.hear("open Spotify");
+    const ok = await until(() => t.fromMind("say").some((s) => /Give me a second/.test(s.text)), 5000);
+    assert.ok(ok, "stall line said");
+    await sleep(1500);
+    assert.equal(t.fromMind("say").filter((s) => /Give me a second/.test(s.text)).length, 1, "only once");
+    mind.stop();
+  } finally {
+    await t.close();
+  }
+});
