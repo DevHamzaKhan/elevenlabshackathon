@@ -77,6 +77,9 @@ class HandsService : AccessibilityService() {
 
   override fun onInterrupt() {}
 
+  /** Shows Bobby's line (or what he heard) in a caption at the bottom of the screen. */
+  fun caption(text: String, heard: Boolean) = cursor?.caption(text, heard)
+
 
   // --- frames from the hub ---
 

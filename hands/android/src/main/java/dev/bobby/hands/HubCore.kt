@@ -20,6 +20,9 @@ class HubCore(
   private val clock: () -> Long = { System.currentTimeMillis() },
   private val log: (String) -> Unit = {},
 ) {
+  /** Sees every frame the hub delivers (from, to, message). Used to caption Bobby's lines. */
+  @Volatile var observer: ((String, String, JSONObject) -> Unit)? = null
+
   companion object {
     val ROLES = setOf("mind", "mouth", "caller", "watch")
     val SINGLE = setOf("mind", "mouth", "caller")
@@ -188,6 +191,7 @@ class HubCore(
   }
 
   private fun mirror(from: String, to: String, msg: JSONObject) {
+    observer?.let { try { it(from, to, msg) } catch (_: Exception) {} }
     if (watches.isEmpty()) return
     val wire = JSONObject().apply {
       put("type", "wire")

@@ -45,6 +45,14 @@ object Hub {
     val c = core ?: HubCore(HandsPrefs.token(ctx), toHands, log = { log("hub: $it") }).also { core = it }
     c.token = HandsPrefs.token(ctx)
     c.handsOn = true
+    c.observer = { from, to, msg ->
+      val type = msg.optString("type")
+      val text = msg.optString("text").trim()
+      if (text.isNotEmpty()) {
+        if (to == "mouth" && type == "say") HandsService.instance?.caption(text, false)
+        else if (from == "mouth" && type == "heard") HandsService.instance?.caption(text, true)
+      }
+    }
     val s = Server(c)
     server = s
     try {

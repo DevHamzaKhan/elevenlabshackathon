@@ -74,11 +74,11 @@ class CursorOverlay(private val service: AccessibilityService) {
       if (v == null) { done.countDown(); return@post }
       main.removeCallbacks(fade)
       v.animator?.cancel()
-      val wasHidden = v.alpha < 0.05f || curX < 0
+      val wasHidden = v.cursorAlpha < 0.05f || curX < 0
       if (curX < 0) { curX = screenW / 2f; curY = screenH * 0.62f }
       val fx = curX; val fy = curY
       ms = TargetMatcher.glideMs(fx, fy, tx, ty, screenW, screenH)
-      if (wasHidden) { v.alpha = 1f; v.invalidate() } else v.alpha = 1f
+      if (wasHidden) { v.cursorAlpha = 1f; v.invalidate() } else v.cursorAlpha = 1f
       // A gentle arc: the control point sits off the straight line, so the motion feels natural.
       val dx = tx - fx; val dy = ty - fy
       val dist = hypot(dx, dy)
@@ -110,12 +110,24 @@ class CursorOverlay(private val service: AccessibilityService) {
   /** Press animation and ripple at the current position. [holdMs] keeps it pressed. */
   fun press(holdMs: Long = 0) = main.post {
     val v = view ?: return@post
-    v.alpha = 1f
+    v.cursorAlpha = 1f
     v.pressStart = System.currentTimeMillis()
     v.pressHold = holdMs
     v.rippleStart = System.currentTimeMillis() + holdMs
     v.rippleX = curX; v.rippleY = curY
     v.invalidate()
+  }
+
+  private val hideCaption = Runnable { view?.let { it.captionText = null; it.invalidate() } }
+
+  /** A caption pill near the bottom: Bobby's narration, or (heard = true) what the user said. */
+  fun caption(text: String, heard: Boolean) = main.post {
+    val v = view ?: return@post
+    v.captionText = if (heard) "\u201C$text\u201D" else text
+    v.captionHeard = heard
+    v.invalidate()
+    main.removeCallbacks(hideCaption)
+    main.postDelayed(hideCaption, if (heard) 2500L else 3500L + text.length * 40L)
   }
 
   /** Called after each action: the cursor fades out 2 s after the last one. */
@@ -133,20 +145,20 @@ class CursorOverlay(private val service: AccessibilityService) {
         val m = wm.currentWindowMetrics.bounds
         curX = m.width() / 2f; curY = m.height() * 0.62f
       }
-      v.alpha = 1f
+      v.cursorAlpha = 1f
       v.invalidate()
       main.postDelayed(fade, 2000)
     } else {
-      v.alpha = 0f
+      v.cursorAlpha = 0f
       v.invalidate()
     }
   }
 
   private fun animateAlpha(to: Float, ms: Long) {
     val v = view ?: return
-    val a = ValueAnimator.ofFloat(v.alpha, to)
+    val a = ValueAnimator.ofFloat(v.cursorAlpha, to)
     a.duration = ms
-    a.addUpdateListener { v.alpha = it.animatedValue as Float; v.invalidate() }
+    a.addUpdateListener { v.cursorAlpha = it.animatedValue as Float; v.invalidate() }
     a.start()
   }
 
@@ -157,6 +169,8 @@ class CursorOverlay(private val service: AccessibilityService) {
     var rippleStart = 0L
     var rippleX = 0f
     var rippleY = 0f
+    @Volatile var captionText: String? = null
+    @Volatile var captionHeard = false
     private val loc = IntArray(2)
     private val density = ctx.resources.displayMetrics.density
     private val sizePx = (48 * density).toInt()
@@ -171,14 +185,46 @@ class CursorOverlay(private val service: AccessibilityService) {
       color = 0xFF7C5CFF.toInt()
     }
 
+    private val capPaint = android.text.TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+      color = 0xFFFFFFFF.toInt()
+      textSize = 15 * density
+    }
+    private val capBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xE61B1530.toInt() }
+    private val capAccent = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF7C5CFF.toInt() }
+
+    private fun drawCaption(canvas: Canvas) {
+      val text = captionText ?: return
+      val maxW = (width - 64 * density).toInt().coerceAtLeast(100)
+      val layout = android.text.StaticLayout.Builder.obtain(text, 0, text.length, capPaint, maxW)
+        .setAlignment(android.text.Layout.Alignment.ALIGN_CENTER).setMaxLines(3)
+        .setEllipsize(android.text.TextUtils.TruncateAt.END).build()
+      var lw = 0f
+      for (i in 0 until layout.lineCount) lw = maxOf(lw, layout.getLineWidth(i))
+      val padX = 16 * density; val padY = 10 * density
+      val bw = lw + padX * 2; val bh = layout.height + padY * 2
+      val left = (width - bw) / 2f
+      val top = height - bh - 120 * density
+      val r = android.graphics.RectF(left, top, left + bw, top + bh)
+      capBg.alpha = if (captionHeard) 170 else 235
+      canvas.drawRoundRect(r, bh / 2f, bh / 2f, capBg)
+      if (!captionHeard) canvas.drawCircle(left + 10 * density, top + bh / 2f, 3.5f * density, capAccent)
+      canvas.save()
+      canvas.translate((width - maxW) / 2f, top + padY)
+      layout.draw(canvas)
+      canvas.restore()
+    }
+
+    /** The cursor's own opacity (the caption has its own timing). */
+    var cursorAlpha = 0f
+
     init {
       importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-      alpha = 0f
       setLayerType(LAYER_TYPE_HARDWARE, null)
     }
 
     override fun onDraw(canvas: Canvas) {
       getLocationOnScreen(loc)
+      drawCaption(canvas)
       val now = System.currentTimeMillis()
       var again = false
 
@@ -209,8 +255,9 @@ class CursorOverlay(private val service: AccessibilityService) {
         again = true
       }
 
-      if (curX >= 0) {
+      if (curX >= 0 && cursorAlpha > 0.01f) {
         val d = icon ?: return
+        d.alpha = (cursorAlpha * 255).toInt().coerceIn(0, 255)
         val half = (sizePx * scale / 2).toInt()
         val cx = (curX - loc[0]).toInt(); val cy = (curY - loc[1]).toInt()
         d.setBounds(cx - half, cy - half, cx + half, cy + half)
