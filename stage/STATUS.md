@@ -35,7 +35,7 @@ Core: all done.
 
 Extras (open to James C's AI from the start, most important first):
 4. Fix hints from `hands/HINTS-CHECK.md` after each pull
-6. Experiments: phone panel (claimed: James H), sounds, more hints
+6. Experiments: sounds (claimed: James H), more hints
 
 ## Needs the human
 - Nothing.
