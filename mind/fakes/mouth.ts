@@ -141,6 +141,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       else if (line === "!wake") mouth.wake();
       else mouth.hear(line);
     },
-    () => console.log("[mouth] script finished"),
+    () => {
+      console.log("[mouth] script finished");
+      mouth.close();
+      setTimeout(() => process.exit(0), 200);
+    },
   );
 }
