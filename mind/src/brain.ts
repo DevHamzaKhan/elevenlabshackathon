@@ -38,13 +38,22 @@ type Task = {
   /** Bobby already said "give me a second" in this task. */
   stalled?: boolean;
   correctedOnce: boolean;
+  correctedName?: boolean;
+  /** Resolves the moment the task is cancelled, so waits can be abandoned at once. */
+  cancelSignal: Promise<void>;
+  fireCancel: () => void;
 };
 
-type Call = { id: string; taskId: string; name: string; number: string; goal: string; correctedOnce: boolean };
+type Call = { id: string; taskId: string; name: string; number: string; goal: string; correctedOnce: boolean; correctedName?: boolean };
 
 const MAX_STEPS = 25;
 const MAX_CONSECUTIVE_FAILS = 4;
 const CANCEL_RE = /\b(stop|cancel|never ?mind|abort|forget it|don'?t do (it|that))\b/i;
+/** Returned by a wait that was abandoned because the task was cancelled. */
+const CANCELLED: unique symbol = Symbol("cancelled");
+/** First-person or plain claims that the job is finished ("all done", "I've sent it", "it's sent"). */
+const DONE_RE =
+  /\b(all (done|set)|(it|that|this)('?s| is| has been) (done|sent|finished|on its way)|i('?m| am) (done|finished)|i('?ve| have)? (just |already )?(sent|finished|replied|completed)|(message|email|reply|text) (is|was|has been) sent)\b|^\W*(done|sent|finished)\W*$/i;
 
 export function parseContacts(s: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
@@ -77,6 +86,18 @@ export class Brain {
   private sleepSent = false;
   private pendingSays = new Set<string>();
   private recentSays: { text: string; at: number }[] = [];
+  /** Recent whispers: things Bobby has been told, so they count as known when checking what he says. */
+  private recentWhispers: string[] = [];
+  private lastSayDoneAt = 0;
+  /** The user spoke and Bobby hasn't answered yet: his next unrecognised line is his own. */
+  private answerPending = false;
+  /** Bumped by every "stop": a decision started before it must not start anything. */
+  private epoch = 0;
+  private decidesInFlight = 0;
+  /** Waits on Hands (screen, act), so they can be released the moment Hands drops. */
+  private handsWaits = new Set<string>();
+  /** When set, send `sleep` at this time (lets Bobby finish his goodbye). */
+  private sleepAt = 0;
   /** Things the Mind knows are true, newest last, for corrections and for "what happened?". */
   facts: string[] = [];
   private ticker: ReturnType<typeof setInterval>;
@@ -95,7 +116,10 @@ export class Brain {
   stop() {
     this.stopped = true;
     clearInterval(this.ticker);
-    if (this.task) this.task.cancelled = true;
+    if (this.task) {
+      this.task.cancelled = true;
+      this.task.fireCancel();
+    }
   }
 
   // ---------- sending ----------
@@ -107,6 +131,8 @@ export class Brain {
   private whisper(text: string) {
     if (!text.trim() || !this.peers.mouth) return;
     this.o.log(`mind: whisper: ${text}`);
+    this.recentWhispers.push(text);
+    if (this.recentWhispers.length > 12) this.recentWhispers.shift();
     this.send({ type: "whisper", to: "mouth", text });
   }
 
@@ -123,6 +149,7 @@ export class Brain {
     const done = this.o.hub.waitFor(id, this.o.timing.sayMs).then(() => {
       this.pendingSays.delete(id);
       this.lastActivity = Date.now();
+      this.lastSayDoneAt = Date.now();
     });
     this.send({ type: "say", to: "mouth", id, text });
     return done;
@@ -139,7 +166,13 @@ export class Brain {
     switch (m.type) {
       case "peers":
         this.peers = { hands: !!m.hands, mouth: !!m.mouth, caller: !!m.caller };
-        if (!m.mouth) this.awake = false;
+        if (!m.mouth) {
+          this.awake = false;
+          // Nobody will send say_done now: don't make anything wait for it.
+          for (const id of [...this.pendingSays]) this.o.hub.cancelWait(id);
+        }
+        if (!m.hands) for (const id of [...this.handsWaits]) this.o.hub.cancelWait(id);
+        if (!m.caller && this.call) this.o.hub.cancelWait(this.call.id);
         break;
       case "notification":
         this.onNotification(m);
@@ -186,8 +219,12 @@ export class Brain {
   private onWake() {
     this.awake = true;
     this.sleepSent = false;
+    this.sleepAt = 0;
     this.lastActivity = Date.now();
-    const fresh = this.notifications.slice(-Math.min(this.undigested, 8));
+    this.peers.mouth = true; // a wake can only come from a connected Mouth
+    // Note: slice(-0) would return everything, so zero is handled on its own.
+    const count = Math.min(this.undigested, 8);
+    const fresh = count > 0 ? this.notifications.slice(-count) : [];
     this.undigested = 0;
     if (fresh.length === 0) {
       this.whisper("No new notifications since you last spoke with the user.");
@@ -197,19 +234,30 @@ export class Brain {
       );
     }
     if (this.task) this.whisper(`Still working on: ${this.task.title}.`);
+    if (this.call) this.whisper(`Still on the call to ${this.call.name}; no result yet.`);
   }
 
   private async onHeard(text: string) {
     this.lastActivity = Date.now();
     this.sleepSent = false;
+    this.sleepAt = 0;
     this.awake = true;
+    this.answerPending = true;
     this.convo.push({ who: "user", text });
     if (this.convo.length > 12) this.convo.splice(0, this.convo.length - 12);
 
     // Instant cancel, before any model call.
     if (isCancel(text) && text.split(/\s+/).length <= 8) {
-      if (this.task || this.call) {
-        this.cancel();
+      const deciding = this.decidesInFlight > 0;
+      if (this.task || this.call || deciding) {
+        // Anything still being decided was asked for before this "stop": it must not start.
+        this.epoch += 1;
+        if (this.task || this.call) this.cancel();
+        else {
+          this.send({ type: "hush", to: "mouth" });
+          this.whisper("The user said stop before anything began. Nothing was started on the phone.");
+          this.facts.push("The user said stop before the last request began, so nothing was done.");
+        }
         return;
       }
       // Nothing running: just stop Bobby talking.
@@ -219,15 +267,23 @@ export class Brain {
       }
     }
 
+    const epoch = this.epoch;
+    this.decidesInFlight += 1;
     const r = await this.o.model({
       purpose: "decide",
       system: this.decideSys,
       user: this.decideInput(text),
       schema: DECIDE_SCHEMA,
       timeoutMs: 20_000,
+    }).finally(() => {
+      this.decidesInFlight -= 1;
     });
     if (this.stopped) return;
     const d = r.json;
+    if (epoch !== this.epoch) {
+      this.o.log(`mind: dropped a decision made before the user said stop (${d?.action ?? "none"})`);
+      return;
+    }
     if (!d) {
       await this.say("Sorry, something went wrong on my side. Could you say that again?");
       return;
@@ -238,9 +294,11 @@ export class Brain {
         break;
       case "sleep":
         this.whisper(String(d.whisper ?? ""));
-        if (!this.task && !this.call) this.sendSleep();
+        // Give Bobby a moment to say goodbye before the session ends.
+        if (!this.task && !this.call) this.sleepAt = Date.now() + this.o.timing.goodbyeMs;
         break;
       case "cancel":
+        this.epoch += 1;
         this.cancel();
         break;
       case "task": {
@@ -292,6 +350,8 @@ export class Brain {
       return;
     }
     this.taskSeq += 1;
+    let fireCancel = () => {};
+    const cancelSignal = new Promise<void>((resolve) => (fireCancel = resolve));
     const task: Task = {
       id: `t${this.taskSeq}`,
       title,
@@ -301,6 +361,8 @@ export class Brain {
       history: [],
       cancelled: false,
       correctedOnce: false,
+      cancelSignal,
+      fireCancel,
     };
     this.task = task;
     this.o.log(`mind: task ${task.id} "${title}": ${goal}`);
@@ -334,12 +396,24 @@ export class Brain {
     this.setStep(task, n, "running");
   }
 
-  private async readScreen(): Promise<Msg | null> {
+  /** A wait on Hands that is released early if Hands drops off the hub. */
+  private waitHands(id: string): Promise<Msg | null> {
+    if (!this.peers.hands) return Promise.resolve(null); // already gone: nothing will answer
+    this.handsWaits.add(id);
+    return this.o.hub.waitFor(id, this.o.timing.actMs).finally(() => this.handsWaits.delete(id));
+  }
+
+  private async readScreen(): Promise<(Msg & { readAt: number }) | null> {
     const id = this.o.hub.nextId();
-    const wait = this.o.hub.waitFor(id, this.o.timing.actMs);
+    const wait = this.waitHands(id);
     this.send({ type: "screen", to: "hands", id });
     const r = await wait;
-    return r && r.type === "screen_result" ? r : null;
+    return r && r.type === "screen_result" ? { ...r, readAt: Date.now() } : null;
+  }
+
+  /** Waits for `p`, or gives up at once (returning CANCELLED) if the task is cancelled first. */
+  private untilCancelled<T>(task: Task, p: Promise<T>): Promise<Awaited<T> | typeof CANCELLED> {
+    return Promise.race([p, task.cancelSignal.then((): typeof CANCELLED => CANCELLED)]);
   }
 
   private async runTask(task: Task, opened: Promise<void> = Promise.resolve()) {
@@ -353,10 +427,13 @@ export class Brain {
     let retriedTimeout = false;
 
     for (let i = 0; i < MAX_STEPS; i++) {
-      if (task.cancelled || this.stopped) return this.finishCancelled(task, lastSay);
+      if (task.cancelled || this.stopped) return this.finishCancelled(task);
+      if (!this.peers.hands) {
+        return this.finishTask(task, "failed", "I've lost touch with the phone, so I had to stop.", lastSay);
+      }
 
-      const screen = await this.readScreen();
-      if (task.cancelled) return this.finishCancelled(task, lastSay);
+      const screen = await this.untilCancelled(task, this.readScreen());
+      if (screen === CANCELLED || task.cancelled) return this.finishCancelled(task);
       if (!screen) {
         fails += 1;
         task.history.push({ action: "read the screen", result: "failed: no answer from the phone", say: "" });
@@ -375,15 +452,19 @@ export class Brain {
           lastSay = this.say("Give me a second, I'm working out the next step.");
         }
       }, this.o.timing.stallMs);
-      const r = await this.o.model({
-        purpose: "step",
-        system: this.stepSys,
-        user: this.stepInput(task, screen, unchanged, lastFailed),
-        schema: STEP_SCHEMA,
-        timeoutMs: 15_000,
-      });
+      // A "stop" doesn't wait for a slow model call: the reply is simply ignored.
+      const r = await this.untilCancelled(
+        task,
+        this.o.model({
+          purpose: "step",
+          system: this.stepSys,
+          user: this.stepInput(task, screen, unchanged, lastFailed),
+          schema: STEP_SCHEMA,
+          timeoutMs: 15_000,
+        }),
+      );
       clearTimeout(stall);
-      if (task.cancelled) return this.finishCancelled(task, lastSay);
+      if (r === CANCELLED || task.cancelled) return this.finishCancelled(task);
       const d = r.json;
       if (!d) {
         modelFails += 1;
@@ -409,8 +490,9 @@ export class Brain {
       }
 
       const built = buildAct(d, screen);
+      const desc = describeDecision(d, screen);
       if ("error" in built) {
-        task.history.push({ action: describeDecision(d, screen), result: `not done: ${built.error}`, say: "" });
+        task.history.push({ action: desc, result: `not done: ${built.error}`, say: "" });
         fails += 1;
         lastFailed = true;
         if (fails >= MAX_CONSECUTIVE_FAILS) return this.giveUp(task, lastSay);
@@ -419,7 +501,7 @@ export class Brain {
       const sig = JSON.stringify(built.act) + "|" + key;
       if (sig === lastActionSig && lastFailed && !(lastError === "timeout" && !retriedTimeout)) {
         task.history.push({
-          action: describeDecision(d, screen),
+          action: desc,
           result: "not done: this exact action just failed on this same screen; choose something different",
           say: "",
         });
@@ -430,19 +512,43 @@ export class Brain {
       retriedTimeout = sig === lastActionSig && lastFailed;
       lastActionSig = sig;
 
-      // Wait for Bobby to finish the previous line, then speak and act at the same instant.
-      await lastSay;
-      if (task.cancelled) return this.finishCancelled(task, Promise.resolve());
+      // Wait for Bobby to finish the previous line.
+      if ((await this.untilCancelled(task, lastSay)) === CANCELLED || task.cancelled) return this.finishCancelled(task);
+
+      // The screen was read before the model thought and Bobby spoke. Node numbers point at where
+      // things were then, so if time has passed, look again and find the same target afresh.
+      let act = built.act;
+      if (act.on && Date.now() - screen.readAt > this.o.timing.staleMs) {
+        const fresh = await this.untilCancelled(task, this.readScreen());
+        if (fresh === CANCELLED || task.cancelled) return this.finishCancelled(task);
+        const now = fresh && screenKey(fresh) !== key ? findSameNode(screen, d.n, fresh) : d.n;
+        if (!fresh || now === null) {
+          task.history.push({
+            action: desc,
+            result: fresh ? "not done: the screen changed before the action and that target is no longer there" : "not done: the phone didn't answer",
+            say: "",
+          });
+          fails += 1;
+          lastFailed = true;
+          lastError = "stale";
+          if (fails >= MAX_CONSECUTIVE_FAILS) return this.giveUp(task, lastSay);
+          continue;
+        }
+        if (now !== d.n) this.o.log(`mind: target moved from node ${d.n} to ${now} while Bobby was speaking`);
+        act = { ...act, on: { n: now } };
+      }
+
+      // Speak and act at the same instant.
       this.advanceTo(task, stepN);
       const actId = this.o.hub.nextId();
-      const actWait = this.o.hub.waitFor(actId, this.o.timing.actMs);
+      const actWait = this.waitHands(actId);
       const sayText = String(d.say ?? "");
       lastSay = this.say(sayText);
-      this.send({ type: "act", to: "hands", id: actId, ...built.act });
+      this.send({ ...act, to: "hands", id: actId });
+      // A "stop" takes effect after the current action, so this wait is not abandoned.
       const res = await actWait;
-      const desc = describeDecision(d, screen);
       if (!res) {
-        task.history.push({ action: desc, result: "failed: timeout (no answer within 10 s)", say: sayText });
+        task.history.push({ action: desc, result: "failed: timeout (no answer from the phone)", say: sayText });
         fails += 1;
         lastFailed = true;
         lastError = "timeout";
@@ -507,7 +613,7 @@ export class Brain {
     await this.say(line);
   }
 
-  private async finishCancelled(task: Task, lastSay: Promise<void>) {
+  private finishCancelled(task: Task) {
     if (this.task !== task) return;
     this.task = null;
     this.send({ type: "cursor", to: "hands", show: false });
@@ -520,7 +626,6 @@ export class Brain {
     this.o.log(`mind: task ${task.id} cancelled`);
     if (!task.quiet) this.whisper(fact);
     this.lastActivity = Date.now();
-    void lastSay;
   }
 
   /** Stop the running task (after its current action) and/or tell Bobby about the call. */
@@ -529,6 +634,7 @@ export class Brain {
       this.task.cancelled = true;
       this.task.quiet = quiet;
       if (!quiet) this.send({ type: "hush", to: "mouth" });
+      this.task.fireCancel();
     } else if (this.call) {
       this.whisper(`The call to ${this.call.name} can't be stopped from here; it will end on its own.`);
     }
@@ -605,33 +711,85 @@ export class Brain {
   // ---------- corrections ----------
 
   private onSpoke(text: string) {
-    this.lastActivity = Date.now();
-    // Bobby speaking a line the Mind gave him is not a claim to check.
     const now = Date.now();
-    if (this.recentSays.some((s) => now - s.at < 60_000 && similar(s.text, text))) return;
+    this.lastActivity = now;
+    // Is this a line the Mind gave Bobby, or something he said by himself? Lines he was given
+    // are not claims to check. He may rephrase them, so word overlap alone isn't enough: a line
+    // that arrives while one of ours is being spoken is ours too, unless the user has just
+    // spoken and Bobby hasn't answered them yet (then this is his answer).
+    const likeOurs = this.recentSays.some((s) => now - s.at < 60_000 && similar(s.text, text));
+    const duringOurs = this.pendingSays.size > 0 || now - this.lastSayDoneAt < 1500;
+    if (likeOurs || (duringOurs && !this.answerPending)) return;
+    this.answerPending = false;
     this.convo.push({ who: "bobby", text });
     if (this.convo.length > 12) this.convo.splice(0, this.convo.length - 12);
 
-    const claimsDone = /\b(done|sent|finished|all set|completed|replied|it'?s on its way)\b/i.test(text);
-    if (this.task && claimsDone && !this.task.correctedOnce && !/\b(not|n't|almost|until|once|when)\b/i.test(text)) {
+    // 1. Claiming the job is finished while it is still running.
+    if (this.task && !this.task.correctedOnce && DONE_RE.test(text) && !/\b(not|n't|almost|until|once|when|soon)\b/i.test(text)) {
       this.task.correctedOnce = true;
       this.correct(`That isn't finished yet; I'm still working on: ${this.task.title}.`);
       return;
     }
+    // 2. Reporting what someone said on a call that hasn't ended.
     if (this.call && !this.call.correctedOnce && /\b(said|says|told me|agreed|picked up|answered)\b/i.test(text)) {
       this.call.correctedOnce = true;
       this.correct(`The call to ${this.call.name} is still going; I don't know what they said yet.`);
       return;
     }
-    // Times: if Bobby names a time that contradicts the one fact we hold, correct it.
-    const spokenTimes = times(text);
-    if (spokenTimes.length) {
-      const known = times([this.task?.goal ?? "", ...this.facts.slice(-3), ...this.convo.filter((c) => c.who === "user").map((c) => c.text)].join(" "));
-      const uniq = [...new Set(known)];
-      if (uniq.length === 1 && spokenTimes.every((t) => t !== uniq[0])) {
-        this.correct(`The time is ${uniq[0]}, not ${spokenTimes[0]}.`);
+    // 3. The wrong person: Bobby names someone else as the one being called or written to.
+    const wrong = this.wrongName(text);
+    if (wrong) {
+      this.correct(`It's ${wrong.right}, not ${wrong.said}.`);
+      return;
+    }
+    // 4. A wrong time: one that appears nowhere in what the Mind knows or has told Bobby, while
+    //    what is being talked about right now holds exactly one time.
+    const spoken = times(text);
+    if (spoken.length === 0) return;
+    const userTurns = this.convo.filter((c) => c.who === "user").map((c) => c.text);
+    const everything = [
+      this.task?.goal ?? "",
+      this.call?.goal ?? "",
+      ...this.facts,
+      ...userTurns,
+      ...this.notifications.map((n) => `${n.title} ${n.text}`),
+      ...this.recentWhispers,
+      ...this.recentSays.map((s) => s.text),
+    ].join(" . ");
+    const known = new Set(times(everything));
+    const unknown = spoken.filter((t) => !known.has(t));
+    if (unknown.length === 0) return;
+    const focus = [...new Set(times([this.task?.goal ?? "", ...this.facts.slice(-2), ...userTurns.slice(-2)].join(" . ")))];
+    if (focus.length === 1) this.correct(`The time is ${focus[0]}, not ${unknown[0]}.`);
+  }
+
+  /**
+   * If a task or call is about one known person and Bobby says he is calling or writing to a
+   * different known person, returns both names. Known people: contacts and notification senders.
+   */
+  private wrongName(text: string): { right: string; said: string } | null {
+    const about = this.call ? `${this.call.name}` : this.task ? `${this.task.title} ${this.task.goal}` : "";
+    if (!about) return null;
+    const flag = this.call ?? this.task!;
+    if (flag.correctedName) return null;
+    const people = new Set<string>();
+    for (const n of Object.keys(this.o.contacts)) people.add(n.split(/\s+/)[0]);
+    for (const n of this.notifications) {
+      const first = n.title.split(/\s+/)[0];
+      if (/^[A-Z][a-z]+$/.test(first)) people.add(first);
+    }
+    const has = (hay: string, name: string) => new RegExp(`\\b${name}\\b`, "i").test(hay);
+    const subjects = [...people].filter((n) => has(about, n));
+    if (subjects.length !== 1 || has(text, subjects[0])) return null;
+    for (const other of people) {
+      if (other === subjects[0]) continue;
+      const re = new RegExp(`\\b(call(?:ing|ed)?|ring(?:ing)?|phon(?:e|ing|ed)|repl(?:y|ying|ied) to|email(?:ing|ed)?|text(?:ing|ed)?|messag(?:e|ing|ed)|writ(?:e|ing) to|tell(?:ing)?|told|answer(?:ing)?)\\s+${other}\\b`, "i");
+      if (re.test(text)) {
+        flag.correctedName = true;
+        return { right: subjects[0], said: other };
       }
     }
+    return null;
   }
 
   private correct(text: string) {
@@ -652,7 +810,11 @@ export class Brain {
 
   private tick() {
     if (!this.awake || this.task || this.call || this.pendingSays.size > 0) return;
-    if (Date.now() - this.lastActivity >= this.o.timing.sleepMs) this.sendSleep();
+    const now = Date.now();
+    if (this.sleepAt && now >= this.sleepAt) {
+      this.sleepAt = 0;
+      this.sendSleep();
+    } else if (now - this.lastActivity >= this.o.timing.sleepMs) this.sendSleep();
   }
 }
 
@@ -708,7 +870,34 @@ function times(s: string): string[] {
   return out;
 }
 
-type BuiltAct = { act: Record<string, unknown> } | { error: string };
+/**
+ * Finds node `n` of an earlier screen in a newer one: same label, class and flags, nearest in
+ * position. Returns its new number, or null when it is gone.
+ */
+export function findSameNode(old: Msg, n: number, fresh: Msg): number | null {
+  const before: ScreenNode[] = Array.isArray(old.nodes) ? old.nodes : [];
+  const after: ScreenNode[] = Array.isArray(fresh.nodes) ? fresh.nodes : [];
+  const a = before.find((x) => x.n === n);
+  if (!a) return null;
+  const str = (v: unknown) => String(v ?? "");
+  const same = (b: ScreenNode) =>
+    str(a.text) === str(b.text) &&
+    str(a.desc) === str(b.desc) &&
+    str(a.hint) === str(b.hint) &&
+    str(a.cls) === str(b.cls) &&
+    !!a.tap === !!b.tap &&
+    !!a.edit === !!b.edit;
+  const centre = (x: ScreenNode) => (x.bounds ? [(x.bounds[0] + x.bounds[2]) / 2, (x.bounds[1] + x.bounds[3]) / 2] : [0, 0]);
+  const [ax, ay] = centre(a);
+  const dist = (b: ScreenNode) => Math.hypot(centre(b)[0] - ax, centre(b)[1] - ay);
+  const found = after.filter(same).sort((p, q) => dist(p) - dist(q))[0];
+  if (!found) return null;
+  // A node with no label at all is only "the same" if it has barely moved.
+  if (!a.text && !a.desc && !a.hint && dist(found) > 60) return null;
+  return found.n;
+}
+
+type BuiltAct = { act: { type: "act"; do: string; on?: { n: number }; [k: string]: unknown } } | { error: string };
 
 /** Turns the model's step reply into a contract `act` (without type/to/id). */
 export function buildAct(d: any, screen: Msg): BuiltAct {
@@ -747,7 +936,7 @@ export function buildAct(d: any, screen: Msg): BuiltAct {
 function describeDecision(d: any, screen: Msg): string {
   const nodes: ScreenNode[] = Array.isArray(screen.nodes) ? screen.nodes : [];
   const node = Number.isInteger(d.n) && d.n >= 0 ? nodes.find((x) => x.n === d.n) : undefined;
-  const label = node ? ` "${(node.text || node.desc || "").slice(0, 60)}"` : "";
+  const label = node ? ` "${(node.text || node.desc || node.hint || "").slice(0, 60)}"` : "";
   const where = `on ${appLabel(screen.app)}`;
   switch (d.do) {
     case "tap":

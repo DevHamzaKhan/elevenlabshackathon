@@ -51,8 +51,10 @@ export type Timing = {
   callMs: number;
   /** Idle time with no user speech and no task/call before `sleep`. */
   sleepMs: number;
-  /** How long to wait for the Mouth to start a `say` before giving up on syncing. */
-  sayStartMs: number;
+  /** A screen read older than this is read again before tapping a node on it. */
+  staleMs: number;
+  /** After the user says goodbye, how long Bobby gets to answer before `sleep`. */
+  goodbyeMs: number;
   /** A step call slower than this makes Bobby say "give me a second" (once per task). */
   stallMs: number;
 };
@@ -62,7 +64,8 @@ export const DEFAULT_TIMING: Timing = {
   sayMs: 15_000,
   callMs: 180_000,
   sleepMs: 20_000,
-  sayStartMs: 3_000,
+  staleMs: 2_500,
+  goodbyeMs: 2_500,
   stallMs: 7_000,
 };
 
@@ -72,6 +75,8 @@ export type ScreenNode = {
   n: number;
   text?: string;
   desc?: string;
+  /** Extra field from Hands: an empty text field's placeholder, e.g. "Compose email". */
+  hint?: string;
   cls?: string;
   bounds?: [number, number, number, number];
   tap?: boolean;

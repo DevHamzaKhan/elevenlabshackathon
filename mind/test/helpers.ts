@@ -5,7 +5,7 @@ import { startMind } from "../src/index";
 import { startFakeHub } from "../fakes/hub";
 import { startFakeMouth } from "../fakes/mouth";
 import { startFakeCaller } from "../fakes/caller";
-import type { ModelFn, ModelRequest } from "../src/types";
+import type { ModelFn, ModelRequest, Timing } from "../src/types";
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -85,7 +85,20 @@ function step(user: string) {
 let nextPort = 18800 + Math.floor(Math.random() * 500);
 
 /** Fake hub + Mind + Mouth + Caller on a fresh port, all fast. */
-export async function setup(opts: { slowMs?: number; mouth?: boolean; caller?: boolean; sleepMs?: number; contacts?: string } = {}) {
+export async function setup(
+  opts: {
+    slowMs?: number;
+    mouth?: boolean;
+    caller?: boolean;
+    sleepMs?: number;
+    contacts?: string;
+    /** Replace the stub model, e.g. to change the phone while it "thinks". */
+    model?: (hub: ReturnType<typeof startFakeHub>, stub: ModelFn) => ModelFn;
+    timing?: Partial<Timing>;
+    msPerChar?: number;
+    callerStepMs?: number;
+  } = {},
+) {
   const port = nextPort++;
   const lines: string[] = [];
   const log = (s: string) => lines.push(s);
@@ -98,12 +111,12 @@ export async function setup(opts: { slowMs?: number; mouth?: boolean; caller?: b
     env: { CONTACTS: opts.contacts ?? "Alex=+14155550123" },
     log,
     hints: [],
-    model: model.fn,
-    timing: { actMs: 2000, sayMs: 2000, callMs: 5000, sleepMs: opts.sleepMs ?? 60_000 },
+    model: opts.model ? opts.model(hub, model.fn) : model.fn,
+    timing: { actMs: 2000, sayMs: 2000, callMs: 5000, sleepMs: opts.sleepMs ?? 60_000, ...(opts.timing ?? {}) },
   });
   const url = (role: string) => `ws://localhost:${port}/${role}?token=test`;
-  const mouth = opts.mouth === false ? null : startFakeMouth({ url: url("mouth"), log, msPerChar: 0 });
-  const caller = opts.caller === false ? null : startFakeCaller({ url: url("caller"), log, stepMs: 30 });
+  const mouth = opts.mouth === false ? null : startFakeMouth({ url: url("mouth"), log, msPerChar: opts.msPerChar ?? 0 });
+  const caller = opts.caller === false ? null : startFakeCaller({ url: url("caller"), log, stepMs: opts.callerStepMs ?? 30 });
   // Wait until the hub has told the Mind who's here.
   await until(() => hub.wire.length >= 0 && (mouth ? mouth.awake : true), 3000);
   await sleep(150);

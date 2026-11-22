@@ -1,5 +1,12 @@
 # Merging bobby-mind into the final app
 
+**Ready to swap in.** The two bobby-mind items in `app/MERGE-ISSUES.md` (checked before the Mind landed) are resolved:
+
+1. `src/index.ts` exists and exports `startMind(config: {hubUrl, token, env, log, hints}): {stop()}`. In `app/src/packages.ts`, replace the stand-in with `export { startMind } from 'bobby-mind';`.
+2. This file is the `MERGE.md`. `@anthropic-ai/sdk` works under React Native/Hermes with no polyfill: the Mind's calls are non-streaming, so `fetch` streaming is not needed. Either `npm install @anthropic-ai/sdk` in the app, or add `mind/node_modules` to Metro's `nodeModulesPaths` (below). Development builds need the short React Refresh shim described under "Running inside Expo"; release builds don't.
+
+Screens: the Mind reads Hands' extra `hint` field on nodes, and re-reads the screen just before a tap when its last read is older than 2.5 s, so expect an occasional second `screen` request per step.
+
 ## Install
 
 - Add `"bobby-mind": "file:../mind"` to the app's `package.json` and `npm install`. The package points straight at TypeScript source (`main`: `src/index.ts`); no build step, no path aliases.

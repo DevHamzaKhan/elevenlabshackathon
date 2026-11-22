@@ -40,7 +40,11 @@ export function makeModel(opts: ModelOptions): ModelFn {
         format: { type: "json_schema", schema: req.schema },
       },
       // Fixed instructions first, marked for caching; the changing part goes in the user turn.
-      system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
+      // The 1-hour cache life means the first request after a quiet spell (Bobby is woken every
+      // few minutes, not every few seconds) still reads the ~9k-token prompt from cache.
+      // Note: the reply schema is part of the cached prefix, so "decide" and "step" calls each
+      // keep their own entry and can't share one.
+      system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral", ttl: "1h" } }],
       messages: [{ role: "user", content: req.user }],
     };
     opts.log(`model> ${req.purpose} request (${req.user.length} chars): ${oneLine(req.user, 1500)}`);

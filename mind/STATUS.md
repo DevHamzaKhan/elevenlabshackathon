@@ -9,10 +9,11 @@
 - **Expo Go proof** (`example/`): the package runs in Expo Go (SDK 58.0.26) on an Android 15 emulator: a real model call (2.5 s first, 1.7 s second) and a hub connection. Screenshot `example/proof.png`. MERGE.md "Running inside Expo" lists what the final app needs (Metro `watchFolders`/`nodeModulesPaths` for `file:`, a dev-build React Refresh shim for the SDK's circular imports, `expo-build-properties` cleartext for release builds).
 - **"Done when" is met.**
 - README.md, MERGE.md.
+- **Review pass (second session):** five bugs reproduced against the fakes and fixed, plus hardening for the real phone. Each has a regression test in `test/fixes.test.ts` (35 tests in all). See "Review fixes" below.
 - Backing up Stage: extras 1 (hints for six apps), 2 (app icon), 3 (README draft + architecture diagram), 5 (cursor preview) and two experiments (voice-cursor timing strip, record button) done. Details in `stage/STATUS.md`.
 
 ## Doing now
-- Nothing. Mind "Done when" is met and the Stage backup work is done; stopped.
+- Nothing. Review fixes are pushed; `check.sh` and `npm run story` (8/8) pass.
 
 ## Open
 1. Tune against Hamza's real Hands hub once the phone build is up (real screens have many more nodes and real labels). Needs the phone, so it waits for stitching day.
@@ -37,6 +38,16 @@
 - With all 8 hint files (7.3k-token cached prefix) step calls stay at ~1.3–1.9 s. Final run: story 8/8 in 68 s; step avg 1.9 s (max 2.7 s), decide avg 2.9 s (max 4.1 s); email task 9 actions, 31 s.
 - Call lines: the start line now carries the reason ("I'm calling Alex to tell him you're running late"), and the summary isn't prefixed twice with the name.
 
+## Review fixes (what was wrong, what changed)
+1. **"Stop" before the task started was ignored.** Saying "stop" while the model was still deciding left the task to start anyway. Now every stop bumps an epoch, and a decision made before it is dropped; Bobby is hushed and told nothing was started.
+2. **Stop waited for the model.** Cancelling during a step's model call took as long as the call (up to 45 s with retries). The model call, the screen read and the wait for Bobby's line are now abandoned the moment the task is cancelled. Only the action already in flight is waited for, as the brief says.
+3. **A second wake repeated old notifications as new** (`slice(-0)` returns everything). Fixed.
+4. **False corrections.** (a) A true time from another source was "corrected" ("The time is 3:20, not 3" after Sarah's email said 3). A time is now wrong only if it appears nowhere in what the Mind knows or has told Bobby. (b) Bobby rephrasing a line he was given ("I've sent Sarah…") could be read as a false "done" claim. Lines that arrive while one of the Mind's `say`s is being spoken are now treated as that line, unless the user has just spoken. The "done" pattern is tighter ("Sarah sent you an email" no longer matches). (c) New: naming the wrong person for a call or message is corrected ("It's Alex, not Sam"), as the brief asks.
+5. **The model couldn't see parts of real screens.** Hands sends an empty field's placeholder in an extra `hint` field, which was ignored (Gmail's search and reply boxes showed as "(no label)"). And the 80-node cap cut from the bottom, so "Reply" vanished on long pages. Now `hint` is shown, and on crowded screens every tappable/editable node is kept and plain text is trimmed first. The fake phone now sends `hint` the way Hands does.
+6. **Taps on a stale screen.** The screen is read before the model thinks and Bobby speaks; Hands taps the remembered position of node `n`. If more than 2.5 s have passed, the Mind now reads the screen again just before a tap, finds the same target by label, class and position, and re-plans if it is gone.
+7. **Slow to notice a part dropping.** Waits on Hands, the Mouth and the Caller are released as soon as `peers` shows them gone, and all waits when the hub connection drops; a task whose Hands vanished ends in about a second with "I've lost touch with the phone".
+8. **Small things.** "Bye" gives Bobby 2.5 s to answer before `sleep`. Request ids carry a random session part, so a late reply to an old Mind can't match a new request. The system prompt uses the 1-hour cache life.
+
 ## Decisions
 - Structured outputs (`output_config.format`) instead of tools: each call needs exactly one JSON answer, and forced `tool_choice` isn't allowed on this model.
 - Each step call is stateless (cached system prompt + one user turn with task, plan, last 10 actions and the screen), rather than a growing conversation: keeps requests small and latency flat.
@@ -47,8 +58,12 @@
 - Fakes use `ws` for the server; clients use the global `WebSocket`. The package is `"type": "module"`; laptop scripts run with `tsx`.
 - `npm run story` adds an invented `Alex=+14155550123` to `CONTACTS` if Alex isn't there; the fake Caller dials nothing.
 - `startMind` also accepts optional `model` and `timing` in `config` (extra fields), used by tests.
+- Tried and backed out: putting the hints first as a cache block shared by "decide" and "step" calls. The reply schema is part of the cached prefix, so calls with different schemas never share an entry (measured: `cache_read=0` on the first step after a decide).
+- The stale-screen re-read only happens for actions aimed at a node, and only when the read is older than 2.5 s (`timing.staleMs`), so quick steps don't pay for a second read.
+- A `spoke` that arrives during one of the Mind's own lines is not checked for false claims. That leaves a small blind spot (Bobby ad-libbing mid-narration), chosen over the likelier harm of correcting a correct narration.
 - The Expo example's ping uses effort `low`; every Mind request uses `medium` (or `MIND_EFFORT`).
 - Kept the official SDK (the brief asks for it) even though its circular imports need a dev-build shim in Expo; the shim is documented in MERGE.md and isn't needed in release builds.
 
 ## Contract questions
+- Hands sends an extra `hint` field on nodes (an empty field's placeholder). The Mind now reads it. Worth adding to the contract's `screen_result` so the other parts know.
 - There is no Mind → Caller message to hang up a call in progress. "Stop" during a call can only tell Bobby. Suggest `{"type":"hangup","to":"caller","re":"m9"}`.

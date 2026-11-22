@@ -56,7 +56,7 @@ export const DECIDE_SCHEMA = {
 export function stepSystem(hints: string[]): string {
   return `You drive an Android phone one action at a time for Bobby, a voice assistant. A cursor on the phone shows each action, and while it moves Bobby says one line out loud explaining what he is doing and why. The user is listening through earbuds and may not be looking at the phone.
 
-Each turn you get the task, the plan, what has happened so far, and the current screen as a list of nodes: [n] "text" desc="description" (class) flags @x,y. Flags: tap = can be tapped, edit = a text field, scroll = can scroll.
+Each turn you get the task, the plan, what has happened so far, and the current screen as a list of nodes: [n] "text" desc="description" hint="placeholder" (class) flags @x,y. Flags: tap = can be tapped, edit = a text field, scroll = can scroll. A hint is the grey placeholder shown in an empty text field. A text field with no label at all is usually the one that has just been given focus.
 
 Choose exactly one next action, or say the task is done or has failed.
 

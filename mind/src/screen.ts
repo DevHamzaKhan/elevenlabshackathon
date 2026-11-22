@@ -34,39 +34,52 @@ function clip(s: string, max: number) {
   return t.length > max ? t.slice(0, max - 1) + "…" : t;
 }
 
+/** Most node lines sent to the model for one screen. */
+const MAX_LINES = 90;
+
 /**
  * One line per useful node: `[n] "label" (Button) tap @540,1200`.
- * Nodes with neither a label nor a flag are dropped; long labels are clipped.
+ * Nodes with neither a label nor a flag are dropped; long labels are clipped. `hint` is Hands'
+ * extra field for an empty text field's placeholder. On a crowded screen, everything that can
+ * be tapped, typed into or scrolled is kept and plain text is what gets trimmed, so a button
+ * at the bottom of a long page is never lost.
  */
 export function describeScreen(r: { [k: string]: any }): string {
   const nodes = Array.isArray(r.nodes) ? r.nodes : [];
-  const lines: string[] = [];
-  lines.push(`App: ${appLabel(r.app)} (${r.app ?? "?"})${r.size ? `, screen ${r.size[0]}x${r.size[1]}` : ""}`);
-  let kept = 0;
+  const head = `App: ${appLabel(r.app)} (${r.app ?? "?"})${r.size ? `, screen ${r.size[0]}x${r.size[1]}` : ""}`;
+  const rows: { line: string; active: boolean }[] = [];
   for (const nd of nodes) {
     const text = clip(String(nd.text ?? ""), 120);
     const desc = clip(String(nd.desc ?? ""), 120);
+    const hint = clip(String(nd.hint ?? ""), 80);
     const flags = [nd.tap && "tap", nd.edit && "edit", nd.scroll && "scroll"].filter(Boolean).join(" ");
-    if (!text && !desc && !flags) continue;
-    let label = text ? `"${text}"` : "";
-    if (desc && desc !== text) label += label ? ` desc="${desc}"` : `"${desc}"`;
-    if (!label) label = "(no label)";
+    if (!text && !desc && !hint && !flags) continue;
+    const parts: string[] = [];
+    if (text) parts.push(`"${text}"`);
+    if (desc && desc !== text) parts.push(text ? `desc="${desc}"` : `"${desc}"`);
+    if (hint && hint !== text && hint !== desc) parts.push(`hint="${hint}"`);
+    const label = parts.join(" ") || "(no label)";
     const cls = nd.cls ? ` (${String(nd.cls).split(".").pop()})` : "";
     const b = nd.bounds;
     const at = Array.isArray(b) && b.length === 4 ? ` @${Math.round((b[0] + b[2]) / 2)},${Math.round((b[1] + b[3]) / 2)}` : "";
-    lines.push(`[${nd.n}] ${label}${cls}${flags ? " " + flags : ""}${at}`);
-    kept += 1;
-    if (kept >= 80) {
-      lines.push(`… ${nodes.length - kept} more nodes not shown`);
-      break;
-    }
+    rows.push({ line: `[${nd.n}] ${label}${cls}${flags ? " " + flags : ""}${at}`, active: !!flags });
   }
-  if (kept === 0) lines.push("(nothing readable on screen)");
+  if (rows.length === 0) return `${head}\n(nothing readable on screen)`;
+  let dropped = 0;
+  let shown = rows;
+  if (rows.length > MAX_LINES) {
+    // Keep every actionable node; give what room is left to plain text, top of the screen first.
+    let room = Math.max(0, MAX_LINES - rows.filter((x) => x.active).length);
+    shown = rows.filter((x) => x.active || room-- > 0).slice(0, Math.max(MAX_LINES, 140));
+    dropped = rows.length - shown.length;
+  }
+  const lines = [head, ...shown.map((x) => x.line)];
+  if (dropped > 0) lines.push(`… ${dropped} more nodes not shown (plain text first)`);
   return lines.join("\n");
 }
 
 /** A short fingerprint of a screen, to notice when an action changed nothing. */
 export function screenKey(r: { [k: string]: any }): string {
   const nodes = Array.isArray(r.nodes) ? r.nodes : [];
-  return (r.app ?? "") + "|" + nodes.map((n) => `${n.text ?? ""}/${n.desc ?? ""}`).join("|");
+  return (r.app ?? "") + "|" + nodes.map((n: any) => `${n.text ?? ""}/${n.desc ?? ""}/${n.hint ?? ""}`).join("|");
 }

@@ -8,6 +8,8 @@ type PNode = {
   key: string; // internal id for the action handler; never sent
   text?: string;
   desc?: string;
+  /** Like real Hands: an empty field's placeholder, sent as an extra `hint` field. */
+  hint?: string;
   cls: string;
   bounds: Bounds;
   tap?: boolean;
@@ -252,7 +254,7 @@ export class Phone {
         statusBar();
         out.push(
           { key: "drawer", desc: "Open navigation drawer", cls: "ImageButton", bounds: [40, 120, 140, 220], tap: true },
-          { key: "search", text: "Search in mail", cls: "TextView", bounds: [160, 120, 900, 220], tap: true },
+          { key: "search", hint: "Search in mail", cls: "EditText", bounds: [160, 120, 900, 220], tap: true, edit: true },
           { key: "avatar", desc: "Signed in as owner@example.com Account and settings", cls: "ImageView", bounds: [920, 120, 1040, 220], tap: true },
           { key: "primary", text: "Primary", cls: "TextView", bounds: [40, 260, 400, 320] },
           {
@@ -309,7 +311,7 @@ export class Phone {
           {
             key: "body_field",
             text: this.replyText || "",
-            desc: this.replyText ? "" : "Compose email",
+            hint: this.replyText ? "" : "Compose email",
             cls: "EditText",
             bounds: [40, 500, 1040, 900],
             edit: true,
@@ -341,6 +343,7 @@ export class Phone {
       size: [W, H],
       nodes: nodes.map((p, n) => {
         const o: any = { n, text: p.text ?? "", desc: p.desc ?? "", cls: p.cls, bounds: p.bounds };
+        if (p.hint) o.hint = p.hint;
         o.tap = !!p.tap;
         o.edit = !!p.edit;
         o.scroll = !!p.scroll;
@@ -360,7 +363,7 @@ export class Phone {
     if (typeof on.text === "string") {
       const q = on.text.trim().toLowerCase();
       if (!q) return null;
-      const label = (c: PNode) => [c.text ?? "", c.desc ?? ""].map((s) => s.toLowerCase());
+      const label = (c: PNode) => [c.text ?? "", c.desc ?? "", c.hint ?? ""].map((s) => s.toLowerCase());
       const exact = current.find((c) => label(c).some((s) => s === q));
       if (exact) return exact;
       return current.find((c) => label(c).some((s) => s.includes(q))) ?? null;
@@ -618,5 +621,5 @@ function area(b: Bounds) {
 }
 
 function label(p: PNode) {
-  return p.text || p.desc || p.key;
+  return p.text || p.desc || p.hint || p.key;
 }

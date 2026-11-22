@@ -38,6 +38,10 @@ export function startMind(config: MindConfig): { stop(): void } {
     "mind",
     (m) => brain?.handle(m),
     log,
+    // With the hub gone nobody is reachable; the hub sends fresh `peers` after the next welcome.
+    (up) => {
+      if (!up) brain?.handle({ type: "peers", hands: false, mouth: false, caller: false });
+    },
   );
   brain = new Brain({
     hub,

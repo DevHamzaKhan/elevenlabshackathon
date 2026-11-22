@@ -131,13 +131,14 @@ if (!only || only === "stop") {
   const tStop = Date.now();
   mouth.hear("stop");
   const end = await waitTaskEnd(n, 20_000);
+  const stoppedAt = Date.now();
   const actsAtStop = hub.phone.actsDone;
   await sleep(4000);
   const hushed = mouthGot("hush").length > 0;
   check(
     "stop cancels the task",
     !!end && end.status === "cancelled" && hushed && hub.phone.actsDone <= actsAtStop + 1,
-    end ? `${end.status} ${Date.now() - tStop - 4000 > 0 ? "" : ""}after ${Math.round((Date.now() - 4000 - tStop) / 100) / 10} s, hush ${hushed ? "sent" : "missing"}` : "task not cancelled",
+    end ? `${end.status} ${Math.round((stoppedAt - tStop) / 100) / 10} s after "stop", hush ${hushed ? "sent" : "missing"}` : "task not cancelled",
   );
 }
 

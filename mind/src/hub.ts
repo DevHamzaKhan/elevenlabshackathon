@@ -14,6 +14,8 @@ export class HubClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pending = new Map<string, Pending>();
   private seq = 0;
+  /** Makes ids unique across restarts, so a late reply to an old Mind can't match a new request. */
+  private session = Math.random().toString(36).slice(2, 5);
   /** True between `welcome` and close. */
   connected = false;
 
@@ -47,7 +49,7 @@ export class HubClient {
   /** A new request id, unique to the Mind. */
   nextId(): string {
     this.seq += 1;
-    return `m${this.seq}`;
+    return `m${this.session}${this.seq}`;
   }
 
   send(m: Msg): boolean {
@@ -132,6 +134,12 @@ export class HubClient {
       const wasUp = this.connected;
       this.connected = false;
       if (this.ws === ws) this.ws = null;
+      // No reply can arrive on a closed socket: release every wait now instead of at its timeout.
+      for (const [, p] of this.pending) {
+        clearTimeout(p.timer);
+        p.resolve(null);
+      }
+      this.pending.clear();
       if (wasUp) this.onConnected(false);
       if (ev.code === 4001) {
         this.log("hub: replaced by a newer mind (4001), not reconnecting");
