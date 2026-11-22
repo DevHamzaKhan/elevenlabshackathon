@@ -15,9 +15,10 @@
 - 3.3 `hints/TO-CHECK.md`: one label per line for home and Gmail, pointing at `hands/HINTS-CHECK.md`.
 - 4.1 Cursors moved to `cursor/<name>/` (`cursor.xml` + SVG) for ring, glow and bobby; `CHOSEN` = ring; `preview.html` paths fixed; Python `make.py` removed.
 - 5.1 `check.sh` (+ `tools/check.mjs`): story lines are valid JSON with known types, Mind frames carry `to`, act targets are one form, each `cursor.xml` is a 48dp/48x48 vector, CHOSEN exists, required hints exist, XML well-formed, replay plays through. Passes; verified it fails on a bad line.
+- 5.2 `README.md` (how to run against the replay and the real phone) and `MERGE.md` (hints, cursor, icon pickup), replacing the dropped design's README.
 
 ## Doing now
-- 5.2 `README.md` and `MERGE.md`.
+- Core done.
 
 ## Open
 Core (James H's AI, in order):
