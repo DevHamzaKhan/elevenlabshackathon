@@ -24,6 +24,8 @@ export type FakeHub = {
   phone: Phone;
   /** Every frame the hub delivered, as {from,to,msg}. Tests read this. */
   wire: { from: string; to: string; at: number; msg: any }[];
+  /** Every frame the Mind addressed to `watch` (task, plan, step). */
+  watched: any[];
   notify(app: string, title: string, text: string): void;
   setHands(on: boolean): void;
   close(): Promise<void>;
@@ -35,6 +37,7 @@ export function startFakeHub(opts: FakeHubOptions = {}): FakeHub {
   const log = opts.log ?? ((s: string) => console.log(s));
   const phone = new Phone({ log, speed: opts.speed, flaky: opts.flaky, random: opts.random });
   const wire: FakeHub["wire"] = [];
+  const watched: any[] = [];
   const conns: Partial<Record<(typeof SINGLE_ROLES)[number], WS>> = {};
   const watchers = new Set<WS>();
   let lastTask: any = null;
@@ -71,6 +74,8 @@ export function startFakeHub(opts: FakeHubOptions = {}): FakeHub {
   /** Deliver a frame to a part, mirroring it to watchers. Dropped when the part is absent. */
   const deliver = (from: string, to: string, msg: any) => {
     if (to === "watch") {
+      watched.push(msg);
+      if (msg.type === "task") log(`hub: task ${msg.task} "${msg.title}" ${msg.status}`);
       if (msg.type === "task") lastTask = msg;
       if (msg.type === "plan") lastPlan = msg;
       for (const w of watchers) sendRaw(w, msg);
@@ -180,6 +185,7 @@ export function startFakeHub(opts: FakeHubOptions = {}): FakeHub {
   return {
     phone,
     wire,
+    watched,
     ready,
     notify(app, title, text) {
       const n = { type: "notification", app, title, text, at: Date.now() };
