@@ -76,3 +76,28 @@
 {"type":"wire","from":"mind","to":"mouth","at":0,"dt":200,"msg":{"type":"say","to":"mouth","id":"m19","text":"Sent. I told Sarah 3 works."}}
 {"type":"wire","from":"mouth","to":"mind","at":0,"dt":1500,"msg":{"type":"spoke","text":"Done. I told Sarah three works."}}
 {"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m19"}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":2000,"msg":{"type":"heard","text":"Now call Alex and tell him I'm running 20 minutes late."}}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":300,"msg":{"type":"say","to":"mouth","id":"m20","text":"Calling Alex now, in your voice."}}
+{"type":"task","to":"watch","task":"t2","title":"Call Alex: running late","status":"started","dt":100}
+{"type":"plan","to":"watch","task":"t2","dt":300,"steps":[{"n":1,"do":"Call Alex","why":"You asked me to let him know"},{"n":2,"do":"Tell him you're 20 minutes late","why":"So he isn't left waiting"},{"n":3,"do":"Report back what he said","why":"So you know the plan still works"}]}
+{"type":"step","to":"watch","task":"t2","n":1,"status":"running","dt":200}
+{"type":"wire","from":"mind","to":"caller","at":0,"dt":0,"msg":{"type":"call","to":"caller","id":"m21","number":"+14155550123","goal":"Say I'm running 20 minutes late and ask if 3pm still works.","context":"You are speaking as the phone's owner. Alex is a friend and expects this call."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":300,"msg":{"type":"say_started","re":"m20"}}
+{"type":"wire","from":"caller","to":"mind","at":0,"dt":500,"msg":{"type":"call_status","re":"m21","status":"dialing"}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":900,"msg":{"type":"spoke","text":"Calling Alex now, in your voice."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m20"}}
+{"type":"wire","from":"caller","to":"mind","at":0,"dt":3500,"msg":{"type":"call_status","re":"m21","status":"answered"}}
+{"type":"step","to":"watch","task":"t2","n":1,"status":"done","dt":200}
+{"type":"step","to":"watch","task":"t2","n":2,"status":"running","dt":200}
+{"type":"wire","from":"caller","to":"mind","at":0,"dt":9000,"msg":{"type":"call_status","re":"m21","status":"ended"}}
+{"type":"step","to":"watch","task":"t2","n":2,"status":"done","dt":200}
+{"type":"step","to":"watch","task":"t2","n":3,"status":"running","dt":200}
+{"type":"wire","from":"caller","to":"mind","at":0,"dt":1200,"msg":{"type":"call_result","re":"m21","ok":true,"summary":"Alex said no problem, 3:20 works, and he'll grab a table.","transcript":[{"who":"me","text":"Hey Alex, it's me. I'm running about 20 minutes late, does 3 still work?"},{"who":"them","text":"No worries! 3:20 is fine, I'll grab us a table."},{"who":"me","text":"Perfect, thanks. See you soon."},{"who":"them","text":"See you!"}]}}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":300,"msg":{"type":"say","to":"mouth","id":"m22","text":"Alex says no problem: 3:20 works and he'll grab a table."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":450,"msg":{"type":"say_started","re":"m22"}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":2400,"msg":{"type":"spoke","text":"Alex says no problem: three twenty works, and he'll grab a table."}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m22"}}
+{"type":"step","to":"watch","task":"t2","n":3,"status":"done","dt":200}
+{"type":"task","to":"watch","task":"t2","title":"Call Alex: running late","status":"done","dt":300}
+{"type":"wire","from":"mind","to":"mouth","at":0,"dt":20000,"msg":{"type":"sleep","to":"mouth"}}
+{"type":"wire","from":"mouth","to":"mind","at":0,"dt":400,"msg":{"type":"asleep"}}
