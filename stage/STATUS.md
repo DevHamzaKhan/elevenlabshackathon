@@ -33,6 +33,8 @@
 
 - Item 4a (James H): `gmail.md` fixed from `hands/HINTS-CHECK.md` (search is a hint, rows are one combined node, no bottom "Reply all", reply body unlabelled so `type` with no target, discard via "More options"). Story Gmail screens and the phone panel updated to match (`hint` field shown and matched).
 
+- Item 4b (James H): `chrome.md`: address-bar hint "Search Google or type URL", tabs button "See N tabs", new-tab-page extras.
+
 ## Doing now
 - Item 4: fixing hints from `hands/HINTS-CHECK.md` (first pass), one app per commit.
 

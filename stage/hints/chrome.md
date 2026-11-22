@@ -2,7 +2,7 @@
 
 Samsung phones also ship "Internet" (com.sec.android.app.sbrowser). It works much the same; use whichever browser the user named.
 
-- **Address bar:** at the top (on some phones at the bottom). Empty, it reads "Search or type web address" (on the new tab page, "Search Google or type URL"). With a page open, it shows the page's address. To its right are "Switch or close tabs" (it shows the tab count) and "Customize and control Google Chrome" (the three dots menu).
+- **Address bar** (checked on the S21): at the top. Empty, it's a field whose hint is "Search Google or type URL". `{"text":"Search Google or type URL"}` finds it, and so does `{"text":"Search Google"}`. With a page open, it shows the page's address. To its right are the tabs button, whose description is "See N tabs" (such as "See 16 tabs", so match `{"text":"tabs"}`), and "Customize and control Google Chrome" (the three dots menu). The new tab page also has "Start voice search", "Ask AI Mode", a Lens button and "Open the home page". Ignore those unless asked.
 - **Search or open a site:** tap the address bar → `type` the search or the address with no `on` → `key enter`.
 - **Results and pages:** a web page's links show up as nodes with their visible text. Tap the title of a result or the words of a link, such as `{"text":"Opening hours"}`. To read further down, `swipe up`.
 - **Go back a page:** `key back`.
