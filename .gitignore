@@ -1,0 +1,13 @@
+# Secrets and local config (see CLAUDE.md rule 11)
+.env
+local.properties
+private/
+logs/
+
+# Build output
+.gradle/
+build/
+.venv/
+__pycache__/
+*.apk
+.DS_Store
