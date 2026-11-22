@@ -66,13 +66,17 @@ import { startMouth, startCaller } from "bobby-mouth";
 
 const config = { hubUrl: "ws://127.0.0.1:8765", token: env.HUB_TOKEN, env, log };
 const mouth = startMouth(config);   // connects as `mouth`
-const caller = startCaller(config); // connects as `caller` (dry run for now)
+const caller = startCaller(config); // connects as `caller`; dry run unless env.CALLER_DRY_RUN === "0"
 // Request RECORD_AUDIO before the first wake().
 mouth.wake();                       // each time the app is opened (side button)
 // on shutdown: mouth.stop(); caller.stop();
 ```
 
-`env` must contain `ELEVENLABS_BOBBY_AGENT_ID` (written into the root `.env` by `mouth/agent/setup.mjs`). The Caller reads `CALL_ALLOWLIST` (and later `CALLER_DRY_RUN`, `OWNER_NUMBER`, `ELEVENLABS_*`, `TWILIO_*`). No API key is needed by the Mouth itself.
+`env` must contain `ELEVENLABS_BOBBY_AGENT_ID` (written into the root `.env` by `mouth/agent/setup.mjs`). The Caller reads `CALL_ALLOWLIST`, `CALLER_DRY_RUN`, `OWNER_NUMBER`, `ELEVENLABS_API_KEY`, `ELEVENLABS_CALLER_AGENT_ID`, `ELEVENLABS_PHONE_NUMBER_ID`, `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` from `env`. No API key is needed by the Mouth itself.
+
+- The Caller uses only `fetch`, `btoa` and timers (no Node libraries), talking to `https://api.elevenlabs.io` and `https://api.twilio.com` over HTTPS: no extra permissions or config plugins beyond `INTERNET`. Hermes has `btoa` (React Native 0.74+).
+- **`CALLER_DRY_RUN` defaults to 1.** Every call is faked unless `env.CALLER_DRY_RUN` is exactly `"0"`. Leave it at 1 until the human chooses to place a real call.
+- A call runs while the app is in the back without a foreground service: it's only HTTPS polling (every 2 s) while Twilio and ElevenLabs carry the audio. If Android pauses the JS thread, the `call_result` arrives late but still arrives.
 
 ## 5. Not yet verified (open items in STATUS.md)
 
