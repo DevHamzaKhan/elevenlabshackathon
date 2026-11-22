@@ -1,4 +1,5 @@
-// Pretend Bobby: connects as `mouth`. Each typed line is sent as `heard`.
+// Pretend Bobby: connects as `mouth`. Each typed line is a press: `wake`, then `heard`.
+// `!more <text>` sends a `heard` with no press (a paused command's tail, or chatter).
 // `!spoke <text>` sends a `spoke` instead (to test corrections). `!asleep` ends the session.
 // Run: npx tsx fakes/mouth.ts [--script file] [--hub ws://localhost:8765]
 
@@ -109,10 +110,16 @@ export function startFakeMouth(opts: FakeMouthOptions) {
     get awake() {
       return awake;
     },
-    /** One user turn. Wakes Bobby first if he was asleep. */
+    /** One press of the side button and one command: `wake` (always), then `heard`. */
     hear(text: string) {
-      wake();
+      awake = true;
+      conn.send({ type: "wake" });
       log(`USER: ${text}`);
+      conn.send({ type: "heard", text });
+    },
+    /** A `heard` with no press first: the rest of a paused command, or room chatter. */
+    hearMore(text: string) {
+      log(`USER (no press): ${text}`);
       conn.send({ type: "heard", text });
     },
     spoke(text: string) {
@@ -139,6 +146,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       if (line.startsWith("!spoke ")) mouth.spoke(line.slice(7));
       else if (line === "!asleep") mouth.asleep();
       else if (line === "!wake") mouth.wake();
+      else if (line.startsWith("!more ")) mouth.hearMore(line.slice(6));
       else mouth.hear(line);
     },
     () => {

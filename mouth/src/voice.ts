@@ -22,6 +22,8 @@ export interface VoiceSession {
   sendContextualUpdate(text: string): void;
   /** Stop the agent's audio now. */
   interrupt(): void;
+  /** Push-to-talk: close (true) or open (false) the microphone. The agent keeps speaking. */
+  setMicMuted(muted: boolean): void;
   end(): Promise<void>;
 }
 

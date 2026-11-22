@@ -16,6 +16,10 @@ export interface MouthDeps {
   sayMaxMs?: number; // a say that never finishes -> say_done
   backstopMs?: number; // 5 min with nothing heard and nothing from the hub -> sleep
   listenSettleMs?: number; // "listening" must last this long before a turn counts as over (mode flickers in pauses)
+  sayStaleMs?: number; // a say not started this long after it arrived is dropped (say_done spoken:false)
+  micCloseMs?: number; // push-to-talk: silence after the last final user transcript before the mic closes
+  micMaxMs?: number; // push-to-talk: the mic closes this long after a press even if nobody spoke
+  commandMaxMs?: number; // push-to-talk: the mic closes this long after the command started, even if the room keeps talking
 }
 
 type State = "asleep" | "starting" | "live";
@@ -32,6 +36,13 @@ export class Mouth {
   private sayTimer: ReturnType<typeof setTimeout> | null = null;
   private backstop: ReturnType<typeof setTimeout> | null = null;
   private settle: ReturnType<typeof setTimeout> | null = null;
+  private staleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Push-to-talk: true from wake() until the user's command is over; heard is sent only then. */
+  private listening = false;
+  private micTimer: ReturnType<typeof setTimeout> | null = null;
+  private micCap: ReturnType<typeof setTimeout> | null = null;
+  private commandCap: ReturnType<typeof setTimeout> | null = null;
+  private answeredWarned = false; // the current say's reply was already checked against the line
   /** Delay from a say arriving to Bobby starting to speak it, in ms (latest first). */
   readonly sayLatencies: number[] = [];
   private readonly now: () => number;
@@ -44,8 +55,16 @@ export class Mouth {
     return this.state;
   }
 
-  /** The app was opened: start a session, send `wake` once it is live. No-op if one is live or starting. */
+  /** The app was opened (side button held): start a session, send `wake` once it is live, and
+   *  listen for one command. While a session is live it reopens the mic for one more command. */
   async wake(): Promise<void> {
+    if (this.state === "live") {
+      this.openMic();
+      // A new press: the Mind opens a listening window on every wake.
+      this.d.send({ type: "wake" });
+      this.armBackstop();
+      return;
+    }
     if (this.state !== "asleep") return;
     this.state = "starting";
     this.mode = "listening";
@@ -64,6 +83,7 @@ export class Mouth {
       }
       this.session = s;
       this.state = "live";
+      this.openMic();
       this.d.send({ type: "wake" });
       this.armBackstop();
       const held = this.held;
@@ -96,8 +116,11 @@ export class Mouth {
         return;
       case "say":
         if (typeof msg.id !== "string") return;
+        // No stale narration: only the newest line waits. Older queued (not yet sent) lines are dropped.
+        this.dropQueuedSays("superseded");
         this.queue.push({ kind: "say", id: msg.id, text, queuedAt: this.now() });
         this.pump();
+        this.armStale();
         return;
       case "correct":
         if (text) {
@@ -138,6 +161,8 @@ export class Mouth {
     this.clearBackstop();
     if (this.settle) clearTimeout(this.settle);
     this.settle = null;
+    this.clearMicTimer();
+    this.listening = false;
     this.finishCurrent(true);
     this.dropQueue();
     this.flushHeld();
@@ -169,8 +194,17 @@ export class Mouth {
       this.typedTurns.splice(i, 1);
       return;
     }
+    if (!this.listening) {
+      this.d.log(`mic closed: not sent as heard: ${t}`);
+      return; // push-to-talk: one command per press
+    }
     this.armBackstop();
     this.d.send({ type: "heard", text: t });
+    // The command is over after this much silence; another final transcript restarts the wait.
+    if (this.micTimer) clearTimeout(this.micTimer);
+    this.micTimer = setTimeout(() => this.closeMic(), this.d.micCloseMs ?? 1_800);
+    // ...and at most this long after it started, however much the room keeps talking.
+    if (!this.commandCap) this.commandCap = setTimeout(() => this.closeMic(), this.d.commandMaxMs ?? 6_000);
     // The user spoke before our line started: the agent's next turn answers the user, not
     // the line. Put the line back at the front and send it again once that answer is over.
     const c = this.current;
@@ -182,12 +216,21 @@ export class Mouth {
       this.queue.unshift(item as Item);
       // Re-sent when the answer ends (mode -> listening), or after a while if no answer comes.
       this.setSayTimer(this.d.sayStartTimeoutMs ?? 8_000);
+      this.armStale(); // still dropped if it hasn't started within sayStaleMs of arriving
     }
   }
 
   private onAgentResponse(text: string): void {
     const t = text.trim();
-    if (t) this.d.send({ type: "spoke", text: t });
+    if (!t) return;
+    this.d.send({ type: "spoke", text: t });
+    // The agent sometimes answers a [SAY] line ("Yep. On it.") instead of speaking it. It still
+    // counts as spoken (it was said, and re-sending would pile up); just log it.
+    const c = this.current;
+    if (c && c.kind === "say" && c.started && !this.answeredWarned) {
+      this.answeredWarned = true;
+      if (!resembles(t, c.text)) this.d.log(`say ${c.id} answered instead of spoken: "${t}" (line: "${c.text}")`);
+    }
   }
 
   private onModeChange(mode: VoiceMode): void {
@@ -236,12 +279,85 @@ export class Mouth {
   /** Send the next queued line to the agent when nothing is being spoken. */
   private pump(): void {
     if (this.state !== "live" || this.current || this.mode === "speaking") return;
+    this.dropStale();
     const next = this.queue.shift();
     if (!next) return;
     this.current = { ...next, started: false, dispatchedAt: this.now() };
+    this.answeredWarned = false;
     const tag = next.kind === "say" ? SAY_TAG : CORRECT_TAG;
     this.session!.sendUserMessage(`${tag} ${next.text}`);
-    this.setSayTimer(this.d.sayStartTimeoutMs ?? 8_000);
+    // A say must start within sayStaleMs of arriving, or it is dropped as stale.
+    let ms = this.d.sayStartTimeoutMs ?? 8_000;
+    if (next.kind === "say") ms = Math.min(ms, Math.max(0, next.queuedAt + this.staleMs() - this.now()));
+    this.setSayTimer(ms);
+  }
+
+  private staleMs(): number {
+    return this.d.sayStaleMs ?? 4_000;
+  }
+
+  /** Queued says (not yet sent to the agent) older than sayStaleMs get say_done spoken:false. */
+  private dropStale(): void {
+    const now = this.now();
+    this.queue = this.queue.filter((it) => {
+      if (it.kind !== "say" || now - it.queuedAt < this.staleMs()) return true;
+      this.d.log(`say ${it.id} dropped: not started ${now - it.queuedAt} ms after it arrived`);
+      this.d.send({ type: "say_done", re: it.id, spoken: false });
+      return false;
+    });
+  }
+
+  private dropQueuedSays(why: string): void {
+    this.queue = this.queue.filter((it) => {
+      if (it.kind !== "say") return true;
+      this.d.log(`say ${it.id} dropped: ${why}`);
+      this.d.send({ type: "say_done", re: it.id, spoken: false });
+      return false;
+    });
+  }
+
+  /** Wake up when the oldest queued say goes stale, even if nothing else happens. */
+  private armStale(): void {
+    if (this.staleTimer) clearTimeout(this.staleTimer);
+    this.staleTimer = null;
+    const says = this.queue.filter((it) => it.kind === "say") as { queuedAt: number }[];
+    if (!says.length) return;
+    const due = Math.min(...says.map((it) => it.queuedAt)) + this.staleMs() - this.now();
+    this.staleTimer = setTimeout(() => {
+      this.staleTimer = null;
+      if (this.state !== "live") return;
+      this.dropStale();
+      this.pump();
+      this.armStale();
+    }, Math.max(0, due) + 1);
+  }
+
+  // ---------- push-to-talk ----------
+
+  private openMic(): void {
+    this.clearMicTimer();
+    this.listening = true;
+    this.session?.setMicMuted(false);
+    this.d.log("listening");
+    // Hard caps, so a noisy room can't keep the mic open.
+    this.micCap = setTimeout(() => this.closeMic(), this.d.micMaxMs ?? 12_000);
+  }
+
+  private closeMic(): void {
+    this.clearMicTimer();
+    if (!this.listening) return;
+    this.listening = false;
+    this.session?.setMicMuted(true);
+    this.d.log("mic closed");
+  }
+
+  private clearMicTimer(): void {
+    if (this.micTimer) clearTimeout(this.micTimer);
+    this.micTimer = null;
+    if (this.micCap) clearTimeout(this.micCap);
+    this.micCap = null;
+    if (this.commandCap) clearTimeout(this.commandCap);
+    this.commandCap = null;
   }
 
   private finishCurrent(spokenIfStarted: boolean): void {
@@ -256,6 +372,8 @@ export class Mouth {
   private dropQueue(): void {
     for (const it of this.queue) if (it.kind === "say") this.d.send({ type: "say_done", re: it.id, spoken: false });
     this.queue = [];
+    if (this.staleTimer) clearTimeout(this.staleTimer);
+    this.staleTimer = null;
   }
 
   private flushHeld(): void {
@@ -287,4 +405,13 @@ export class Mouth {
     if (this.backstop) clearTimeout(this.backstop);
     this.backstop = null;
   }
+}
+
+/** Loosely: does the agent's reply contain most of the line's words? ("Yep. On it." vs "Finding Gmail." -> no) */
+export function resembles(reply: string, line: string): boolean {
+  const words = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((w) => w.length > 1);
+  const want = words(line);
+  if (!want.length) return true;
+  const got = new Set(words(reply));
+  return want.filter((w) => got.has(w)).length / want.length >= 0.5;
 }

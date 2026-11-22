@@ -45,7 +45,7 @@ export function stubModel(opts: { slowMs?: number } = {}) {
 function decide(user: string) {
   const heard = (/The user just said: "(.*)"/.exec(user)?.[1] ?? "").toLowerCase();
   if (heard.includes("reply to sarah"))
-    return { ...blank, action: "task", title: "Reply to Sarah", goal: 'Reply to Sarah Chen\'s email with "3 works for me."', steps: [{ do: "Open Gmail", why: "Sarah's message is an email" }, { do: "Reply", why: "to answer her" }], say: "I'll find Gmail and answer Sarah." };
+    return { ...blank, action: "task", title: "Reply to Sarah", goal: 'Reply to Sarah Chen\'s email with "3 works for me."', steps: [{ do: "Open Gmail", why: "Sarah's message is an email" }, { do: "Reply", why: "to answer her" }], say: "Finding Gmail." };
   if (heard.startsWith("open "))
     return { ...blank, action: "task", title: `Open ${heard.slice(5)}`, goal: `Open the ${heard.slice(5)} app`, steps: [{ do: "Find the icon", why: "to open it" }] };
   if (heard.startsWith("call ")) {
@@ -111,7 +111,7 @@ export async function setup(
     log,
     hints: [],
     model: opts.model ? opts.model(hub, model.fn) : model.fn,
-    timing: { actMs: 2000, sayMs: 2000, callMs: 5000, sleepMs: opts.sleepMs ?? 60_000, ...(opts.timing ?? {}) },
+    timing: { actMs: 2000, sayMs: 2000, callMs: 5000, sleepMs: opts.sleepMs ?? 60_000, commandMs: 40, listenMs: 300, ...(opts.timing ?? {}) },
   });
   const url = (role: string) => `ws://localhost:${port}/${role}?token=test`;
   const mouth = opts.mouth === false ? null : startFakeMouth({ url: url("mouth"), log, msPerChar: opts.msPerChar ?? 0 });

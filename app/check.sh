@@ -45,6 +45,10 @@ if [ "$CLEAN" = 1 ] || [ ! -d android ]; then
   npx expo prebuild --platform android --no-install $([ "$CLEAN" = 1 ] && echo --clean) >"$LOGS/app-prebuild.log" 2>&1 \
     || { tail -20 "$LOGS/app-prebuild.log"; fail "prebuild"; }
 fi
+# Gradle only watches app/ for the JS bundle, not the linked ../hands, ../mind and ../mouth, so a
+# change there would ship a stale bundle. Deleting the outputs makes it bundle again.
+rm -rf android/app/build/generated/assets/react android/app/build/generated/sourcemaps/react \
+  android/app/build/intermediates/sourcemaps/react android/app/build/intermediates/assets/release
 (cd android && ./gradlew assembleRelease >"$LOGS/app-gradle.log" 2>&1) \
   || { grep -E "^e: |error:|What went wrong" -A3 "$LOGS/app-gradle.log" | head -30; fail "gradle"; }
 grep -E "BUILD SUCCESSFUL" "$LOGS/app-gradle.log" | tail -1

@@ -33,6 +33,7 @@ const voice = async (c: any) => {
     },
     sendContextualUpdate(t: string) { lines.push(`voice: (whisper) ${t}`); },
     interrupt() { lines.push("voice: (hush)"); },
+    setMicMuted(m: boolean) { lines.push(`voice: (mic ${m ? "closed" : "open"})`); },
     async end() {},
   };
 };
@@ -58,10 +59,12 @@ check("Mind sends say to the Mouth", await until(() => wire().includes("mind->mo
 check("Mouth answers say with say_started and say_done", await until(() => wire().includes("mouth->mind say_started") && wire().includes("mouth->mind say_done")));
 check("task runs on the phone to done (email sent)", await until(() => hub.watched.some((m: any) => m.type === "task" && m.status === "done"), 30000));
 
+await mouth.wake(); // push-to-talk: one command per press
 cb.onUserTranscript("Call Alex and tell him I'm running late");
 check("Mind sends call to the Caller", await until(() => wire().includes("mind->caller call")));
 check("Caller answers with call_status and call_result", await until(() => wire().includes("caller->mind call_result")));
 
+await mouth.wake();
 cb.onUserTranscript("thanks, bye");
 check("Mind sends sleep, Mouth answers asleep", await until(() => wire().includes("mouth->mind asleep"), 15000));
 

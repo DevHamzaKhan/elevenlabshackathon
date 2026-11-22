@@ -57,6 +57,12 @@ export type Timing = {
   goodbyeMs: number;
   /** A step call slower than this makes Bobby say "give me a second" (once per task). */
   stallMs: number;
+  /** After `wake`, a command is taken once this long passes with no new `heard` (debounce). */
+  commandMs: number;
+  /** A listening window with nothing heard closes after this long. */
+  listenMs: number;
+  /** The final result line or the Send line waits this long at most for the previous line to finish. */
+  sayWaitMs: number;
 };
 
 export const DEFAULT_TIMING: Timing = {
@@ -67,6 +73,9 @@ export const DEFAULT_TIMING: Timing = {
   staleMs: 2_500,
   goodbyeMs: 3_000,
   stallMs: 7_000,
+  commandMs: 1_500,
+  listenMs: 14_000,
+  sayWaitMs: 4_000,
 };
 
 export type PlanStep = { n: number; do: string; why: string };

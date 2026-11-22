@@ -36,6 +36,7 @@ export function elevenLabsVoice(agentId: string, log: (l: string) => void): Voic
     return {
       sendUserMessage: (t) => conv.sendUserMessage(t),
       sendContextualUpdate: (t) => conv.sendContextualUpdate(t),
+      setMicMuted: (m) => conv.setMicMuted(m),
       interrupt: () => {
         muted = true;
         conv.setVolume({ volume: 0 });

@@ -32,7 +32,7 @@ test("Mouth examples: everything the Mind sends is handled; everything we send h
   assert.deepEqual(fromMouth.map((f) => f.type).sort(), ["asleep", "heard", "say_done", "say_started", "spoke", "wake"]);
 
   const sent: Frame[] = [];
-  const m = new Mouth({ send: (f) => sent.push(f), log: () => {}, voice: async () => ({ sendUserMessage() {}, sendContextualUpdate() {}, interrupt() {}, async end() {} }) });
+  const m = new Mouth({ send: (f) => sent.push(f), log: () => {}, voice: async () => ({ sendUserMessage() {}, sendContextualUpdate() {}, interrupt() {}, setMicMuted() {}, async end() {} }) });
   for (const f of toMouth) m.onHub(f); // asleep
   await m.wake();
   for (const f of toMouth) m.onHub(f); // live
@@ -90,7 +90,7 @@ test("Connecting/Routing examples: our hello matches, welcome makes us live, pee
   }
   // The Mouth ignores peers (and anything else it doesn't know) without sending anything.
   const out: Frame[] = [];
-  const m = new Mouth({ send: (f) => out.push(f), log: () => {}, voice: async () => ({ sendUserMessage() {}, sendContextualUpdate() {}, interrupt() {}, async end() {} }) });
+  const m = new Mouth({ send: (f) => out.push(f), log: () => {}, voice: async () => ({ sendUserMessage() {}, sendContextualUpdate() {}, interrupt() {}, setMicMuted() {}, async end() {} }) });
   m.onHub(peers);
   m.onHub({ type: "brand_new", to: "mouth" });
   assert.deepEqual(out, []);

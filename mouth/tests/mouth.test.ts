@@ -13,6 +13,8 @@ class FakeVoice implements VoiceSession {
   sendUserMessage(t: string) { this.userMessages.push(t); }
   sendContextualUpdate(t: string) { this.context.push(t); }
   interrupt() { this.interrupts++; }
+  micMuted: boolean[] = []; // every setMicMuted call, in order
+  setMicMuted(m: boolean) { this.micMuted.push(m); }
   async end() { this.ended++; }
 }
 
@@ -246,4 +248,142 @@ test("sleep while the session is still starting ends it once it connects", async
   assert.equal(s.v.ended, 1);
   assert.equal(s.m.status, "asleep");
   assert.deepEqual(s.sent, [{ type: "say_done", re: "m1", spoken: false }]);
+});
+
+// ---------- no stale narration ----------
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sayFrames = (sent: Frame[]) => sent.filter((f) => f.type === "say_started" || f.type === "say_done");
+
+test("a new say drops the queued ones (spoken:false) and only the newest waits; the queue never grows", async () => {
+  const s = await live();
+  s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "one" }); // idle: sent to the agent at once
+  assert.deepEqual(s.v.userMessages, ["[SAY] one"]);
+  s.v.cb.onModeChange("speaking");
+  for (const id of ["m2", "m3", "m4", "m5"]) s.m.onHub({ type: "say", to: "mouth", id, text: id });
+  assert.deepEqual(sayFrames(s.sent), [
+    { type: "say_started", re: "m1" },
+    { type: "say_done", re: "m2", spoken: false },
+    { type: "say_done", re: "m3", spoken: false },
+    { type: "say_done", re: "m4", spoken: false },
+  ]);
+  s.v.cb.onModeChange("listening");
+  assert.deepEqual(s.v.userMessages, ["[SAY] one", "[SAY] m5"]); // only the newest is spoken
+  s.v.cb.onModeChange("speaking");
+  s.v.cb.onModeChange("listening");
+  assert.deepEqual(sayFrames(s.sent).slice(4), [
+    { type: "say_done", re: "m1" },
+    { type: "say_started", re: "m5" },
+    { type: "say_done", re: "m5" },
+  ]);
+});
+
+test("a queued say that hasn't started within sayStaleMs of arriving is dropped", async () => {
+  const s = await live({ sayStaleMs: 30 });
+  s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "one" });
+  s.v.cb.onModeChange("speaking"); // Bobby keeps talking for a long time
+  s.m.onHub({ type: "say", to: "mouth", id: "m2", text: "two" });
+  await wait(50);
+  assert.deepEqual(sayFrames(s.sent), [
+    { type: "say_started", re: "m1" },
+    { type: "say_done", re: "m2", spoken: false },
+  ]);
+  s.v.cb.onModeChange("listening");
+  assert.deepEqual(s.v.userMessages, ["[SAY] one"], "the stale line is never sent to the agent");
+});
+
+test("a say sent to the agent that doesn't start within sayStaleMs of arriving gets spoken:false", async () => {
+  const s = await live({ sayStaleMs: 30 }); // sayStartTimeoutMs stays at its 8 s default
+  s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "one" });
+  await wait(50);
+  assert.deepEqual(sayFrames(s.sent), [{ type: "say_done", re: "m1", spoken: false }]);
+  s.m.onHub({ type: "say", to: "mouth", id: "m2", text: "two" }); // the next one goes straight out
+  assert.equal(s.v.userMessages.at(-1), "[SAY] two");
+});
+
+test("a say that arrives when idle goes to the agent at once and starts when Bobby speaks", async () => {
+  let t = 1000;
+  const s = await live({ now: () => t });
+  s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "Finding Gmail." });
+  assert.deepEqual(s.v.userMessages, ["[SAY] Finding Gmail."]);
+  t += 300;
+  s.v.cb.onModeChange("speaking");
+  assert.deepEqual(s.m.sayLatencies, [300]);
+});
+
+// ---------- [SAY] answered instead of spoken ----------
+
+test("an agent reply that doesn't match the [SAY] line still counts as spoken, is logged, and is not re-sent", async () => {
+  const logs: string[] = [];
+  const s = await live({ log: (l: string) => logs.push(l) });
+  s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "Finding Gmail." });
+  s.v.cb.onModeChange("speaking");
+  s.v.cb.onAgentResponse("Yep. On it.");
+  s.v.cb.onModeChange("listening");
+  assert.deepEqual(sayFrames(s.sent), [{ type: "say_started", re: "m1" }, { type: "say_done", re: "m1" }]);
+  assert.deepEqual(s.v.userMessages, ["[SAY] Finding Gmail."]);
+  assert.ok(logs.some((l) => l.includes("answered instead of spoken")));
+});
+
+test("resembles: the spoken line matches, an acknowledgement doesn't", async () => {
+  const { resembles } = await import("../src/mouth");
+  assert.equal(resembles("Finding Gmail.", "Finding Gmail."), true);
+  assert.equal(resembles("Okay, finding Gmail now.", "Finding Gmail."), true);
+  assert.equal(resembles("Yep. On it.", "Finding Gmail."), false);
+  assert.equal(resembles("Sure.", "I'm looking for the word 'Reply' to answer Sarah."), false);
+});
+
+// ---------- push-to-talk ----------
+
+test("push-to-talk: wake opens the mic; after the command and 1.8 s of silence it closes; no heard until the next wake", async () => {
+  const logs: string[] = [];
+  const s = await live({ micCloseMs: 40, log: (l: string) => logs.push(l) });
+  assert.deepEqual(s.v.micMuted, [false]);
+  assert.ok(logs.includes("listening"));
+  s.v.cb.onUserTranscript("reply to Sarah");
+  await wait(20);
+  s.v.cb.onUserTranscript("tell her 3 works"); // still inside the window: its own heard, and the wait restarts
+  await wait(30);
+  assert.deepEqual(s.v.micMuted, [false], "the second transcript restarted the wait");
+  await wait(30);
+  assert.deepEqual(s.v.micMuted, [false, true]);
+  assert.ok(logs.includes("mic closed"));
+  s.v.cb.onUserTranscript("room chatter"); // mic closed: never heard
+  assert.deepEqual(s.sent.filter((f) => f.type === "heard"), [
+    { type: "heard", text: "reply to Sarah" },
+    { type: "heard", text: "tell her 3 works" },
+  ]);
+  // Bobby still speaks while the mic is closed.
+  s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "Opening Gmail." });
+  s.v.cb.onModeChange("speaking");
+  s.v.cb.onModeChange("listening");
+  assert.deepEqual(sayFrames(s.sent), [{ type: "say_started", re: "m1" }, { type: "say_done", re: "m1" }]);
+});
+
+test("push-to-talk: wake while live reopens the mic for one more command and sends wake again (the Mind opens a window per press)", async () => {
+  const s = await live({ micCloseMs: 20 });
+  s.v.cb.onUserTranscript("open Gmail");
+  await wait(40);
+  assert.deepEqual(s.v.micMuted, [false, true]);
+  await s.m.wake();
+  assert.deepEqual(s.v.micMuted, [false, true, false]);
+  assert.equal(s.m.status, "live");
+  s.v.cb.onUserTranscript("actually, cancel that");
+  await wait(40);
+  assert.deepEqual(s.v.micMuted, [false, true, false, true]);
+  assert.deepEqual(s.sent.filter((f) => f.type === "wake" || f.type === "heard"), [
+    { type: "wake" },
+    { type: "heard", text: "open Gmail" },
+    { type: "wake" },
+    { type: "heard", text: "actually, cancel that" },
+  ]);
+});
+
+test("push-to-talk: the mic stays open until the user speaks, and sleep resets it", async () => {
+  const s = await live({ micCloseMs: 20 });
+  await wait(40);
+  assert.deepEqual(s.v.micMuted, [false], "no speech yet: still listening");
+  await s.m.sleep();
+  s.v.cb.onUserTranscript("late transcript");
+  assert.equal(s.sent.filter((f) => f.type === "heard").length, 0);
 });
