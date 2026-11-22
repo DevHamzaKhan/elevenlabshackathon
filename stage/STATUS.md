@@ -12,9 +12,10 @@
 - 2.4 Dashboard checked by screenshot in light, dark (`&theme=dark`) and at 390 px phone width; smaller type on narrow screens.
 - 3.1 `hints/home.md`: icons, dock, pages and swiping, folders, app drawer, widgets, what goes wrong.
 - 3.2 `hints/gmail.md`: rewritten for contract v1 (key names, text matching), adds a check of the sender before replying and "no leftover drafts".
+- 3.3 `hints/TO-CHECK.md`: one label per line for home and Gmail, pointing at `hands/HINTS-CHECK.md`.
 
 ## Doing now
-- 3.3 `hints/TO-CHECK.md`.
+- 4.1 One cursor in `cursor/ring/`, `CHOSEN`.
 
 ## Open
 Core (James H's AI, in order):
@@ -43,4 +44,4 @@ Extras (open to James C's AI from the start, most important first):
 - Screenshots use `puppeteer-core` with the installed Chrome: Chrome's `--virtual-time-budget` screenshots fire before the WebSocket connects.
 
 ## Contract questions
-- None.
+- Hands bundles every `stage/hints/*.md` and the Mind loads every `*.md` in `HINTS_DIR`, which includes `TO-CHECK.md` (the brief fixes that name). Suggest both skip `TO-CHECK.md`. Meanwhile its first line tells the model to ignore it.

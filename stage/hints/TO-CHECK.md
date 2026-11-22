@@ -1,34 +1,16 @@
-Not hints: verification list for Exec. Check each label with `screen` (no taps needed except to open the screen), write results to android/exec/HINTS-CHECK.md as confirmed / wrong (real label) / not found.
+Not navigation notes: ignore this file when planning. It lists labels for the Hands part to check on the real phone. Hands writes results to hands/HINTS-CHECK.md as confirmed, wrong (with the real label) or not found.
 
-# Labels to verify on the S21
-
-## Gmail
-- Inbox search field text "Search in mail"; Compose FAB text/desc "Compose".
-- Email row: is it one combined desc (sender, subject, snippet, unread) or separate text nodes?
-- Open email: "Reply", "Reply all", "Forward" buttons at the bottom; icons "Archive", "Delete", "More options".
-- Reply body field hint "Compose email"; send button desc "Send".
-- After send: snackbar text "Sent" + "Undo".
-
-## Messages
-- Which app is default: Google Messages or Samsung Messages?
-- Google: "Start chat" FAB; field hint "Text message"/"RCS message"; send desc ("Send SMS"? "Send message"?).
-- Samsung: "Compose new message"; field "Enter message"; "Send".
-
-## WhatsApp
-- Bottom tabs "Chats", "Updates", "Communities", "Calls"; FAB desc "New chat".
-- Search: icon "Search" or bar "Ask Meta AI or Search".
-- Chat field hint "Message"; send desc "Send"; mic desc "Voice message".
-
-## Chrome
-- Address bar at top or bottom; text "Search or type web address"; tab switcher desc "Switch or close tabs"; menu desc "Customize and control Google Chrome".
-
-## Maps
-- Search box text "Search here"; bottom tabs "Explore", "You", "Contribute".
-- Result row buttons "Directions", "Call"; place sheet "Start".
-
-## Spotify
-- Is it installed? Tabs "Home", "Search", "Your Library"; search field "What do you want to listen to?"; mini-player "Pause"/"Play".
-
-## Settings
-- Search icon desc "Search"; exact section names on this One UI version (esp. "Connections", "Display", "Modes and Routines").
-- Toggle rows: does the switch have its own node with desc "On"/"Off"?
+Home: the launcher's package is com.sec.android.app.launcher on the S21
+Home: app icons are nodes whose text is the app name (not only a description)
+Home: the page dots above the dock have a description like "Page 2 of 3"
+Home: Gmail is inside a folder named "Google" on the S21, or on which page it sits
+Home: swipe up from the middle opens the app drawer, with a field labelled "Search" at the top
+Home: a long press shows "Remove" / "Select" / "Edit" (check with point only, don't change anything)
+Gmail: inbox search field text "Search in mail", at the top
+Gmail: compose button text or description "Compose", bottom right
+Gmail: an email row is one combined description (sender, subject, preview, unread) or separate text nodes
+Gmail: open email shows "Reply", "Reply all", "Forward" at the bottom of the message
+Gmail: open email top-right icons "Archive", "Delete", "More options"
+Gmail: reply body field hint "Compose email"
+Gmail: send button description "Send", top right of the reply screen
+Gmail: after sending, a "Sent" message with "Undo" at the bottom
