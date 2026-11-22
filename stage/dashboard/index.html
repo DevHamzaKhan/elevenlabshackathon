@@ -89,6 +89,28 @@ main { display: grid; gap: 16px; min-height: 0;
 .plan-note { font-size: 15px; color: var(--warn); font-weight: 700; margin: 0 0 8px; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 8px transparent; transform: scale(1.08); } }
 
+/* Phone feed */
+#feed { display: flex; flex-direction: column; gap: 8px; }
+.act { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: baseline; font-size: 20px; animation: pop .25s ease-out; }
+.act .res { font-weight: 800; text-align: center; color: var(--muted); }
+.act.ok .res { color: var(--ok); }
+.act.fail .res { color: var(--bad); }
+.act.fail .what::after { content: attr(data-err); display: block; font-size: 14px; color: var(--bad); }
+.act.pending .what { font-weight: 700; }
+.act.note { font-size: 16px; color: var(--muted); }
+.act.note .res { color: var(--warn); }
+
+/* Call */
+#call-panel { border-color: var(--accent); }
+#call .status { font-size: 24px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+#call .status.live::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--bad); animation: blink 1s infinite; }
+#call .number { color: var(--muted); font-size: 15px; margin-top: 2px; }
+#call .summary { font-size: 22px; margin-top: 10px; padding: 10px 12px; background: var(--ok-soft); border-radius: 10px; }
+#call .summary.failed { background: var(--bad-soft); }
+#call .tx { margin-top: 10px; font-size: 15px; color: var(--muted); display: grid; gap: 4px; max-height: 9em; overflow-y: auto; }
+#call .tx b { color: var(--ink); }
+@keyframes blink { 50% { opacity: .25; } }
+
 @media (max-width: 900px) {
   body { padding: 12px 16px; height: auto; }
   html, body { height: auto; }
@@ -243,6 +265,109 @@ wire.heard = (m) => addLine("you", "You", m.text);
 wire.spoke = (m) => addLine("bobby", "Bobby", m.text);
 wire.wake = () => addLine("sys", "", "Bobby is listening");
 wire.asleep = () => addLine("sys", "", "Bobby went to sleep");
+
+// ---------- peers ----------
+const PEERS = [["hands", "Hands"], ["mind", "Mind"], ["mouth", "Mouth"], ["caller", "Caller"]];
+handlers.peers = (m) => {
+  const box = $("peers");
+  box.textContent = "";
+  for (const [key, label] of PEERS) {
+    const p = el("div", "peer" + (m[key] ? " on" : ""));
+    p.title = label + (m[key] ? " connected" : " not connected");
+    p.append(el("span", "dot"), document.createTextNode(label));
+    box.append(p);
+  }
+};
+
+// ---------- phone feed ----------
+function targetWords(on) {
+  if (!on) return "";
+  if (on.text != null) return "“" + on.text + "”";
+  if (on.n != null) return "item " + on.n;
+  if (on.x != null) return "(" + on.x + ", " + on.y + ")";
+  return "";
+}
+function actWords(m) {
+  const t = targetWords(m.on);
+  switch (m.do) {
+    case "tap": return "Tap " + t;
+    case "long_press": return "Long-press " + t;
+    case "point": return "Point at " + t;
+    case "type": return "Type “" + (m.text || "") + "”";
+    case "swipe": return "Swipe " + (m.dir || "") + (t ? " on " + t : "");
+    case "key": return { home: "Go home", back: "Go back", recents: "Open recent apps",
+      notifications: "Open notifications", enter: "Press Enter" }[m.name] || "Press " + m.name;
+    case "launch": return "Open " + (m.app || "app");
+    case "wait": return "Wait " + ((m.ms || 0) / 1000) + " s";
+    default: return m.do || "Action";
+  }
+}
+const acts = new Map();   // act id -> feed row
+function addFeed(row) {
+  const box = $("feed");
+  clearEmpty(box);
+  stickToBottom(box, () => {
+    box.append(row);
+    while (box.children.length > 80) box.firstChild.remove();
+  });
+}
+function feedRow(cls, mark, text) {
+  const row = el("div", "act " + cls);
+  row.append(el("span", "res", mark), el("span", "what", text));
+  return row;
+}
+wire.act = (m) => {
+  const row = feedRow("pending", "…", actWords(m));
+  acts.set(m.id, row);
+  addFeed(row);
+};
+wire.act_result = (m) => {
+  const row = acts.get(m.re);
+  if (!row) return;
+  acts.delete(m.re);
+  row.className = "act " + (m.ok ? "ok" : "fail");
+  row.querySelector(".res").textContent = m.ok ? "✓" : "✕";
+  if (!m.ok) row.querySelector(".what").dataset.err = m.error || "failed";
+};
+wire.screen = () => addFeed(feedRow("note", "◎", "Reading the screen"));
+wire.notification = (m) => addFeed(feedRow("note", "🔔", (m.title ? m.title + ": " : "") + (m.text || "")));
+
+// ---------- call ----------
+const CALL_WORDS = { dialing: "Dialing…", answered: "On the call", ended: "Call ended", failed: "Call failed" };
+let callNumber = "";
+function callPanel() { $("call-panel").hidden = false; return $("call"); }
+wire.call = (m) => {
+  callNumber = m.number || "";
+  const box = callPanel();
+  box.textContent = "";
+  box.append(el("div", "status", "Starting call…"), el("div", "number", callNumber));
+  if (m.goal) box.append(el("div", "number", "Goal: " + m.goal));
+};
+wire.call_status = (m) => {
+  const box = callPanel();
+  let s = box.querySelector(".status");
+  if (!s) { s = el("div", "status"); box.prepend(s); }
+  s.textContent = CALL_WORDS[m.status] || m.status;
+  s.className = "status" + (m.status === "dialing" || m.status === "answered" ? " live" : "");
+};
+wire.call_result = (m) => {
+  const box = callPanel();
+  box.querySelector(".summary")?.remove();
+  box.querySelector(".tx")?.remove();
+  const s = box.querySelector(".status") || box.appendChild(el("div", "status"));
+  s.className = "status";
+  s.textContent = m.ok ? "Call ended" : "Call failed";
+  box.append(el("div", "summary" + (m.ok ? "" : " failed"), m.ok ? m.summary : "Didn't get through: " + (m.error || "failed")));
+  if (Array.isArray(m.transcript) && m.transcript.length) {
+    const tx = el("div", "tx");
+    for (const t of m.transcript) {
+      const line = el("div");
+      line.append(el("b", null, t.who === "me" ? "Bobby: " : "Them: "), document.createTextNode(t.text));
+      tx.append(line);
+    }
+    box.append(tx);
+  }
+};
 
 connect();
 </script>
