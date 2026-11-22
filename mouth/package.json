@@ -1,0 +1,24 @@
+{
+  "name": "bobby-mouth",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bobby's voice (ElevenLabs realtime agent) and the Caller, for the Bobby Expo app.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "hub": "node fakes/hub.mjs"
+  },
+  "peerDependencies": {
+    "@elevenlabs/react-native": "*",
+    "@livekit/react-native": "*",
+    "@livekit/react-native-webrtc": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "ws": "^8.23.0"
+  }
+}
