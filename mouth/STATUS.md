@@ -21,7 +21,7 @@ Core (Wajeeh's AI, in order):
 5. `npm test`, `check.sh`, `MERGE.md`.
 
 Extras (open to the backup, Hamza's AI, from the start; claim with `(claimed: <name>)`):
-1. Working from the back: the background test, with whatever it takes in `MERGE.md`.
+1. Working from the back: the background test, with whatever it takes in `MERGE.md`. (claimed: Wajeeh)
 2. The real Caller, `tools/caller.mjs`, tests with `fetch` stubbed, dry-run call in `check.sh`. (claimed: Hamza)
 3. The rest of `setup.mjs`: voice clone, caller agent + `caller-prompt.md`, Twilio number import. (claimed: Hamza)
 4. ~~Measuring the `say` delay~~: measured 0.26–0.28 s from `say` to `say_started` in the emulator (Realtime mode). Re-check on the real phone.
