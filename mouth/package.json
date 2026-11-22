@@ -13,7 +13,8 @@
   "peerDependencies": {
     "@elevenlabs/react-native": "*",
     "@livekit/react-native": "*",
-    "@livekit/react-native-webrtc": "*"
+    "@livekit/react-native-webrtc": "*",
+    "@elevenlabs/client": "*"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

@@ -1,0 +1,32 @@
+{
+  "name": "example",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@config-plugins/react-native-webrtc": "^15.0.2",
+    "@elevenlabs/client": "^1.37.1",
+    "@elevenlabs/react-native": "^1.2.42",
+    "@livekit/react-native": "^2.12.0",
+    "@livekit/react-native-expo-plugin": "~1.1.0",
+    "@livekit/react-native-webrtc": "^144.2.0",
+    "bobby-mouth": "file:..",
+    "expo": "~58.0.26",
+    "expo-build-properties": "~58.0.12",
+    "expo-dev-client": "~58.0.21",
+    "expo-status-bar": "~58.0.5",
+    "livekit-client": "^2.25.0",
+    "react": "19.3.0",
+    "react-native": "0.88.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "private": true
+}

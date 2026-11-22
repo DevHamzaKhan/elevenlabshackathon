@@ -1,12 +1,14 @@
 # Mouth: status (Wajeeh, 1x budget: Core only)
 
 ## Done
+- Core 3 (code): `src/hub.ts` (contract reconnect rules, 4001), `src/mouth.ts` (wake, held messages while starting, whisper, say queue with say_started/say_done, correct, hush, sleep, asleep rules, 5 min backstop, heard/spoke), `src/elevenlabs.ts` (the only ElevenLabs file), `src/index.ts` (`startMouth`, `startCaller`). 19 Node tests pass. Expo 58 test app in `example/` type-checks. Not yet run in the emulator.
+- Core 4: dry-run `startCaller` (`src/caller.ts`).
 - Read CLAUDE.md, CONTRACT.md v1, roles/mouth.md.
 - Core 2: `agent/setup.mjs` + `agent/bobby-prompt.md`: creates/updates the public "Bobby" agent, tries Realtime (`MOUTH_REALTIME_MODEL`, default `eleven_realtime_v1_mini`) and falls back to the standard mode, writes the id to `.env` and `example/.env`. Dry run checked; **not yet run for real: no API key** (see Needs the human).
 - Core 1: pretend hub `fakes/hub.mjs` (say, whisper, correct, hush, sleep, call, plus test-only `user`, `wait`, `expect`, `mark`). Smoke-tested from Node.
 
 ## Doing now
-- Core 3: the Mouth + Expo test app.
+- Core 3: building the test app (`npx expo run:android`) and running it in the emulator against the pretend hub.
 
 ## Open
 Core (Wajeeh's AI, in order):
@@ -33,6 +35,11 @@ Extras (open to the backup, Hamza's AI, from the start; claim with `(claimed: <n
 - (filled in as pieces land)
 
 ## Decisions
+- `@elevenlabs/react-native` doesn't export an imperative API, so `elevenlabs.ts` imports it for its side effect (native WebRTC audio setup) and drives `VoiceConversation` from `@elevenlabs/client` (same copy, 1.37.1).
+- `hush`: the SDK has no public interrupt for voice sessions, so hush sets the output volume to 0 until Bobby's turn ends, then restores it.
+- LiveKit versions follow ElevenLabs' own Expo example (`@livekit/react-native` 2.x, webrtc 144.x); `@livekit/react-native-expo-plugin` pinned to ~1.1 because 1.2 needs LiveKit 3.
+- `startMouth()` also returns `status()` (an extra, for test screens).
+- Test-only hub message `test_user_turn` {text}: the Mouth sends it to the agent as a typed user turn and reports it as `heard`. The real Mind never sends it.
 - `say` and `correct` reach the agent as typed user messages tagged `[SAY]` / `[CORRECT]`, which `bobby-prompt.md` tells it to speak and never answer; `whisper` is a contextual update. The tagged messages are never forwarded as `heard`.
 - Bobby's `first_message` is empty: the Mind decides what he says first.
 - Laptop tools (fake hub, setup script, tests) are Node `.mjs`/TypeScript run with `tsx`; the package itself is plain TS with no build step.
