@@ -1,0 +1,51 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git pull:*)",
+      "Bash(git push)",
+      "Bash(git push origin main)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(node:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(./gradlew:*)",
+      "Bash(java:*)",
+      "Bash(adb:*)",
+      "Bash(sdkmanager:*)",
+      "Bash(avdmanager:*)",
+      "Bash(emulator:*)",
+      "Bash(brew install:*)",
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(chmod:*)",
+      "Bash(sleep:*)",
+      "Bash(lsof:*)",
+      "Bash(./check.sh:*)",
+      "Bash(./hands/check.sh:*)",
+      "Bash(./app/check.sh:*)",
+      "Bash(./mind/check.sh:*)",
+      "Bash(./mouth/check.sh:*)",
+      "Bash(./stage/check.sh:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/keep-going.sh\"" }
+        ]
+      }
+    ]
+  }
+}

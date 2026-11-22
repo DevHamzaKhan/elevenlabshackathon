@@ -1,13 +1,31 @@
-# Secrets and local config (see CLAUDE.md rule 11)
+# Secrets and personal files
 .env
+.env.*
 local.properties
 private/
+
+# Dependencies, build output and caches
+node_modules/
+.expo/
+build/
+.gradle/
+.idea/
 logs/
 
-# Build output
-.gradle/
-build/
-.venv/
-__pycache__/
-*.apk
+# Native projects that Expo generates for apps. A package's own android/ folder is real source and stays.
+/app/android/
+/app/ios/
+**/example/android/
+**/example/ios/
+
+# Claude Code personal settings
+.claude/settings.local.json
+
+# Marker files the AIs use while a build is running
+.bobby-run
+.bobby-run.count
+
 .DS_Store
+
+# Who this clone belongs to (see CLAUDE.md, "Starting")
+.bobby-who

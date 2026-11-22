@@ -1,139 +1,86 @@
-# Bobby: an AI coworker on your phone
+# Bobby
 
-Bobby is one Android AI agent that operates your phone for you. You can reach it two ways:
+Bobby is a voice assistant that operates an Android phone for you. You double-press the phone's side button and talk to Bobby through your earbuds. He talks with you, and a cursor moves on the phone doing what you asked while Bobby explains each step and why ("I'm looking for the word 'Reply' to answer Sarah"). The demo story: he tells you about your notifications, replies to an email in Gmail, then phones a friend in the owner's cloned voice and reports back what they said.
 
-- **Voice.** Press the shortcut (Quick Settings tile, launcher shortcut, or the assistant gesture), talk naturally through your earbuds. Bobby acknowledges, operates the phone with a visible cursor, narrates each step and why ("I'm looking for 'Reply' to answer Sarah"), and takes corrections or "stop" mid-task.
-- **Text.** Type in the chat screen. The same agent does the same work and shows progress as messages, with a live plan checklist and a Stop button.
+**Everything runs on the phone, in one Expo (React Native) app.** There is no laptop server at the demo. The phone needs internet, because the AI models and the voice run in the cloud.
 
-**One system, two surfaces.** Voice and chat are thin front-ends. Both send the same `request` message to one **Orchestrator**, which owns every task, and both render the same `update` stream coming back. There is one planner, one task state machine, one execution engine. If you catch yourself building task logic inside a surface, stop: it belongs in the Orchestrator.
+**Expo and Kotlin, each in one place.** The app, the Mind and the Mouth are TypeScript on Expo. Kotlin appears only inside the Hands package, because reading and tapping other apps needs a native Android accessibility service.
 
-```
- ┌─────────── Android phone: one APK, dev.bobby.agent ───────────┐
- │                                                               │
- │  Voice surface ──┐                     ┌── Exec (accessibility│
- │  (ElevenLabs     │                     │   service + cursor)  │
- │   agent, tools)  │                     │                      │
- │  Chat surface ───┤                     │                      │
- └──────────────────┼─────────────────────┼──────────────────────┘
-                    │  WebSocket, one per role, via :core
-                    ▼                     ▲
-          ┌─────────────────────────────────────────┐
-          │  Orchestrator (Mac, Python)             │
-          │  hub · triage · planner · task loop     │
-          │  narration · interruptions · memory     │
-          └─────────────────────────────────────────┘
-                    │  watch
-                    ▼
-          Dashboard (Stage), read-only
-```
+Four people are building four parts at the same time, in this repo, each in their own folder. Each part is a package with its own small test app. At the end the packages are merged into one app, "Bobby".
 
-Voice flow, end to end:
+## Who you are working for
 
-1. User presses the shortcut. Voice surface opens an ElevenLabs agent session and sends `session live`.
-2. User: "Reply to Sarah, tell her 3 works." The ElevenLabs agent calls its client tool `start_task`. The voice surface sends `request {intent:"task"}`.
-3. Orchestrator acks within 300 ms (the tool result lets the agent say "On it"), plans, then loops: read screen → pick one action + one narration line → send `act` to Exec and `update` to surfaces **at the same instant** → wait for `act_result` (and `spoken` if narrated) → repeat.
-4. Exec glides the cursor, acts, waits for the screen to settle, replies.
-5. Orchestrator sends the final `update {kind:"done"}`. The voice agent says it; chat shows it.
+The human tells you their name. The name decides your part, your folders, your brief and how much you may spend.
 
-Text flow is identical, except the chat surface sends `request {intent:"auto"}` and the Orchestrator's triage decides chat reply vs new task vs amend vs cancel.
+| Name | Part | Folders | Brief | Budget | Backs up |
+|---|---|---|---|---|---|
+| **Hamza** | **Hands**: a Kotlin module for Expo that reads the screen and does the taps, with a cursor overlay. It also hosts the hub the parts talk through, and builds the final merged app. | `hands/`, `app/` | `roles/hands.md` | 20x | Wajeeh's Mouth |
+| **James C** | **Mind**: a TypeScript package, the slow brain (Claude) that plans tasks and drives the phone one step at a time. Only the Mind may start or cancel a task. | `mind/` | `roles/mind.md` | 10x | James H's Stage |
+| **Wajeeh** | **Mouth**: a TypeScript package, Bobby's voice, an ElevenLabs realtime speech agent started by the side button, and the code that places the phone call. Bobby only talks. | `mouth/` | `roles/mouth.md` | 1x | |
+| **James H** | **Stage**: live dashboard, cursor art, app icon, per-app hints, README material. Nothing depends on it. | `stage/` | `roles/stage.md` | 1x | |
 
-Interruptions work the same from both surfaces: `cancel` stops after the current action; `amend` re-plans with the change, keeping progress; voice barge-in pauses the loop briefly while the user is speaking. Details in `CONTRACT.md`.
+### Starting
 
-## Who builds what
+A message that is only a name, or a name plus "go", "start" or "continue", means: build your part, starting now.
 
-Four people work at the same time, each in their own folders, against `CONTRACT.md` only. Each person reads **this file, `CONTRACT.md`, and their own brief** in `roles/`.
+1. **Find the name.** It is in the human's message ("I'm Hamza", "Wajeeh here", or just "James H"), or in the file `.bobby-who` at the repo root, left by an earlier session. Match loosely: ignore case and small typos. "James" on its own fits two people, so ask "James C or James H?" once, and ask nothing else.
+2. **No name?** If the human asked for something specific, do that and don't start a build. If they want you to start and gave no name, ask "Which teammate are you: Hamza, James C, Wajeeh or James H?" once.
+3. **Remember it.** Write the name from the table into `.bobby-who`, and create the empty file `.bobby-run`, both at the repo root. Git ignores both.
+4. **Read.** Run `git pull`. Then read this file, `CONTRACT.md` and your brief. If your folder already has a `STATUS.md`, read it and your code too, and continue from where it says.
+5. **Go.** Start with "First steps" in your brief. Don't confirm the plan, don't summarise what you read, and don't ask whether to begin.
 
-| Part | Owner | Folders | Brief |
-|---|---|---|---|
-| **Orchestrator** (Mind) | James H | `mind/` | `roles/orchestrator.md` |
-| **Exec** (Hands) + Android shell | Hamza | `android/app/`, `android/core/`, `android/exec/`, `android/settings.gradle.kts`, `android/build.gradle.kts`, `android/gradle/`, `android/tools/` | `roles/exec.md` |
-| **Voice** (Mouth) | James C | `android/voice/`, `voice-agent/` | `roles/voice.md` |
-| **Chat + Stage + Caller** | Wajeeh | `android/chat/`, `stage/`, `caller/` | `roles/chat.md` |
+You are building one part, mostly on your own. Teammates you can't see are building the others right now, and your human is not watching. `CONTRACT.md` is the only thing the parts share. Build against it exactly, and build fakes of the other parts inside your own folder so you never wait for anyone.
 
-`INTEGRATION.md` is the merge plan: Day 0 scaffold, milestones, stitching order and the final acceptance script.
+## Budgets
 
-### Start your part
+The Budget column is how much AI usage each person has, relative to the smallest. Hamza has twenty times what Wajeeh or James H has. Work to your human's budget.
 
-Parts are matched to each person's AI usage limits. The heaviest parts went to the biggest plans:
+**1x: Wajeeh, James H. Build the core, cheaply.** Your session can end without warning when the budget runs out, so work as if every step were your last.
 
-| Person | Plans | Part | Why |
-|---|---|---|---|
-| **James H** | Claude Max (several) | Orchestrator | The most logic, model prompting and tests, and everyone else depends on it. |
-| **Hamza** | Claude Max 20x | Exec + Android shell | The Day 0 scaffold everyone builds on, plus long loops with phone screenshots, which use a lot of tokens. Needs the S21. |
-| **James C** | Codex + Claude, 10x | Voice | Hard but narrow: the ElevenLabs SDK, speech latency and interruptions. |
-| **Wajeeh** | Codex Pro ×2, Claude Pro | Chat + Stage + Caller | The most files but the lightest reasoning: UI, dashboard, hints. Also takes the phone-call feature off Voice so James C can focus on live speech. Suits running mostly on Codex. |
+- Build only the **Core** list in your brief's "Core and extras" section, in order. The **Extras** list belongs to your backup. In your first commit, copy it under "Open" in your `STATUS.md` so they can see it.
+- Commit and push after every step, with `STATUS.md` updated in the same commit. Whatever isn't pushed is lost when the session ends.
+- Don't start subagents or parallel work. Don't read other parts' folders.
+- Keep command output short: send long build and test output to a file under `logs/` and read only the errors or the last lines.
+- Look up docs only for the exact call you're about to write.
+- No refactors, no polish, and no tests beyond the ones Core lists.
+- When the same thing has failed twice, write it under "Open" and move to the next item.
+- When Core is done, update `STATUS.md`, delete `.bobby-run` and stop.
 
-Clone the repo, `cd` into it and start your agent with your line. Claude Code reads this file automatically; Codex reads `AGENTS.md`, which points here.
+**10x: James C. Build the whole brief**, including its tuning section. Use a subagent only for independent work that is clearly worth its cost. You also back up Stage.
 
-```sh
-# James H
-claude "I'm James H. Build my part, the Orchestrator. Read CLAUDE.md, CONTRACT.md and roles/orchestrator.md, then follow 'How to work'."
-# Hamza (do Day 0 first: push the Android scaffold within the first hour)
-claude "I'm Hamza. Build my part, Exec + Android shell. Read CLAUDE.md, CONTRACT.md and roles/exec.md, then follow 'How to work'."
-# James C
-codex "I'm James C. Build my part, Voice. Read CLAUDE.md, CONTRACT.md and roles/voice.md, then follow 'How to work'."
-# Wajeeh
-codex "I'm Wajeeh. Build my part, Chat + Stage + Caller. Read CLAUDE.md, CONTRACT.md and roles/chat.md, then follow 'How to work'."
-```
+**20x: Hamza. Build the whole brief and its "Then keep going" list.** Check generously: screenshots after each action, and repeated runs. Use subagents for independent pieces that can run side by side, such as tests, tools and the final app's stand-ins. You also back up Mouth.
 
-Use `claude` or `codex` for any line, whichever you have quota for. Resuming later: the same line works, because the agent picks up from your `STATUS.md`.
+### Backing up a 1x part
 
-### Repo layout
+Hamza backs up Mouth. James C backs up Stage. Backing up means working in your partner's folder, and it is the one exception to "Stay in your folder".
 
-```
-CLAUDE.md  AGENTS.md  CONTRACT.md  INTEGRATION.md  roles/   # shared, read-only for everyone
-.env.example                                       # shared, read-only; real values in .env (gitignored)
-mind/                  Orchestrator: uv project, `uv run mind`
-android/               ONE Gradle project, ONE APK (dev.bobby.agent)
-  settings.gradle.kts  auto-includes every subfolder that has a build.gradle.kts
-  app/                 thin shell: MainActivity, setup screen, feature registry
-  core/                hub client library shared by all modules (frozen API)
-  exec/                accessibility service, cursor overlay, notification listener
-  voice/               ElevenLabs session, shortcut entry points, audio routing
-  chat/                chat UI
-  tools/               grant.sh, drive.py (Exec's fake hub)
-voice-agent/           ElevenLabs agent prompt + client-tool definitions
-caller/                stretch: outbound phone call in the owner's cloned voice
-stage/                 dashboard, hints, cursor art, README material
-```
-
-### Why one APK with modules
-
-The user sees one agent, so it ships as one app. Modules keep the four people out of each other's files:
-
-- `settings.gradle.kts` discovers modules by scanning folders, so adding `android/voice/` needs no edit outside it.
-- `android/app` depends on each feature module **only if it exists** (`findProject(":voice")?.let { implementation(it) }`), so the app builds with any subset present.
-- Each module declares its own services, activities and permissions in its own `AndroidManifest.xml`. Manifest merging does the rest.
-- Each module registers itself with the shell through `java.util.ServiceLoader` (`META-INF/services/dev.bobby.core.Feature`). That's how the setup screen lists its permissions and entry points.
-- Modules never call each other's code. They talk only through the hub, each with its own socket and role, exactly as if they were separate apps. That keeps the Orchestrator the single source of truth and makes every step visible on the dashboard.
+- **Order of work.** Your own "Done when" comes first. Then your partner's "Open" items. Then your own extra list.
+- **Extras are yours from the start.** After each `git pull`, read your partner's `STATUS.md`. Anything under "Open" that came from their Extras list is yours to take once your own "Done when" is met.
+- **Core items stay with your partner**, unless your human tells you to take them, or their folder has had no new commit for 45 minutes while Core items are still open (`git log -1 --format=%cr -- <folder>/`). If their folder doesn't exist yet, they haven't started: leave it alone.
+- **Claim before you touch.** Write `(claimed: <your name>)` next to the item in their `STATUS.md`, commit only that file, `git pull --rebase`, and push. If the pull shows the item is already claimed or done, pick another.
+- **Work to their brief.** Read `roles/<their part>.md` and follow it as if it were yours. Their `check.sh` must pass before you push. Move each finished item to "Done" in their `STATUS.md`.
+- **You don't have their keys.** Build against fakes and stubs. Whatever needs a real key goes under "Needs the human" in their `STATUS.md`, as "send <your name> these `.env` lines: ...", by variable name only.
+- **If you are the 1x owner and you come back:** `git pull`, read your `STATUS.md`, and skip anything that is claimed or done.
 
 ## How to work
 
-You work mostly on your own. Teammates you can't see are building the other parts right now. The human who started you is not watching all the time.
+The human said their name and walked away. They expect not to be needed again. They may look at `<your folder>/STATUS.md` now and then, and won't otherwise see what you do. Work on your own until your part is done.
 
-1. **Read first.** This file, `CONTRACT.md`, your `roles/<part>.md`. If you start with no memory of earlier work, read your `STATUS.md` and your code, then continue from where it says.
-2. **Keep going.** Don't stop to report progress or ask whether to continue. Finish "Done when" in your brief, check it, then work down its "Then keep going" list. Stop only when everything is done or only human-only items remain.
-3. **Decide, don't ask.** For an open choice, pick the sensible option, write it under "Decisions" in your `STATUS.md` with one line on why, carry on. Ask only for what only a person can do: create an account, pay, read out a code, speak, listen, handle the phone.
-4. **Ask for human work once, early.** In your first few minutes, list every human task your part will need, start to finish, under "Needs the human" in `STATUS.md`, as one numbered list with exact clicks. Meanwhile use placeholders (fake keys, built-in alternatives) so nothing stalls.
-5. **`STATUS.md`** lives in your main folder (`mind/`, `android/exec/`, `android/voice/`, `android/chat/`). Five short sections: Done, Doing now, Needs the human (open items first), Decisions, Contract questions. Replace old text; don't pile up. Commit it with your work.
-6. **Fakes, not waiting.** Build fakes of every part you talk to, inside your own folder. Never block on a teammate.
-7. **Check your own work.** Run what you build. Keep a `check.sh` in your main folder that runs every check needing no person (tests, scripted runs against fakes, screenshots where relevant). Run it before each push. A step isn't done until you've seen it work.
-8. **When stuck,** don't try the same thing a fourth time. Re-read the error and the docs, try a different approach, or move on and note it in `STATUS.md`.
-9. **Stay in your folders** (table above). Commit only files there. The one file outside you may change is the root `.env`, which git ignores. Never edit `CLAUDE.md`, `AGENTS.md`, `CONTRACT.md`, `INTEGRATION.md`, `roles/`, `.gitignore`, `.env.example` or `.claude/`.
-10. **The contract.** Build against `CONTRACT.md` exactly. Re-read it whenever a `git pull` changes it. If it looks wrong or is missing something, write it under "Contract questions" and work around it meanwhile. Extra fields are always safe: every part ignores fields it doesn't know. New message types need a team-agreed contract change.
-11. **Secrets and personal files.** Python keys go in the root `.env`; Android values go in `android/local.properties`. Voice recordings and anything personal go in a `private/` folder inside your part. All are gitignored. Never print a full key in logs, output or `STATUS.md`. **No API key ever goes into the APK.**
-12. **Real-world actions.** Never send a real email or message or place a real call except in the tests your brief lists, and then at most once per run. Don't touch accounts or devices beyond what your part needs.
-13. **Commit small and often** to `main`: add your folders, commit, `git pull --rebase`, `git push`. Never force-push. If a push fails for any reason other than being behind, note it in `STATUS.md` and keep committing locally.
-14. **Look things up.** ElevenLabs Agents and its Android SDK, OpenAI's newest models, and current Android SDKs change often. Read the current official docs before writing integration code; don't trust memory. Keep model names and ids in config. Where the docs disagree with a brief, follow the docs and note it under "Decisions".
-15. **Install what you need** with Homebrew or `uv`, without asking. Ask only if an install needs the human's password. Single-file Python scripts declare dependencies inline so `uv run <script>` works with no setup.
-16. **Write a `README.md`** in your main folder: how to run your part, how to run it against your fakes, and the exact steps to connect to the real Orchestrator on stitching day.
+Inside this repo, these rules come before any personal instructions your human has set up elsewhere, such as asking clarifying questions before coding or walking through each change afterwards. The briefs already answer the questions, and the walkthrough goes in `STATUS.md`.
 
-## Shared conventions
-
-- **Language.** Python 3.12+ with `uv` on the Mac. Kotlin, minSdk 30, current target SDK, Jetpack Compose for UI on Android.
-- **Port.** The hub and every fake hub listen on 8765. Only one runs at a time on a machine. A phone reaches it at `localhost` after `adb reverse tcp:8765 tcp:8765`, an emulator at `10.0.2.2`.
-- **Ids.** Message ids are prefixed by sender: `o` Orchestrator, `v` voice, `c` chat, `x` exec. Task ids are `t1`, `t2`, … from the Orchestrator.
-- **Time.** Unix milliseconds everywhere.
-- **Logging.** Every part logs every frame it sends and receives, one JSON line each, to a gitignored `logs/` folder in its own part (Android: logcat tag `Bobby/<role>` plus a file in app storage that `adb pull` can fetch).
-- **Device.** The team has one Galaxy S21. Exec owns it until stitching day. Voice and Chat develop on a personal Android phone or an emulator with the host mic on.
-- **Words.** In code and docs: Orchestrator (not "brain"), Exec (not "hands"), Voice, Chat, Stage. The codename Bobby stays. Roles on the wire are `exec`, `voice`, `chat`, `watch`, `caller`.
+1. **Keep going.** The file `.bobby-run` at the repo root is how Claude Code sends you back to work if you stop early. Other tools ignore it. Don't stop to report progress or to ask whether to continue. Finish "Done when" (Core, on a 1x budget), check it, then carry on with whatever your budget gives you next. Stop only when everything is done, or when only items that need the human are left. When that moment comes, update `STATUS.md`, delete `.bobby-run`, and stop. If the human later tells you to continue, create it again.
+2. **Decide, don't ask.** When a choice is open, pick the sensible option, write it under "Decisions" in `STATUS.md` with one line on why, and carry on. The few things only a person can do, such as creating an account, paying, speaking, listening or handling the phone, go in `STATUS.md`. They are never a reason to stop and ask.
+3. **Never wait for the human.** They did their setup before starting you, and your brief lists what that was. Check each item in your first minute. Whatever is missing goes under "Needs the human" in `STATUS.md`, with the exact steps, and you carry on with a placeholder: a fake key, a stand-in file, a skipped test. Each time you finish a step, look again. When a missing item has turned up, go back and finish what was waiting on it. Nothing in your part may block on a person speaking, listening, answering a phone or tapping a screen. Checks like those go under "Try it yourself", for the human to do whenever they like.
+4. **Keep `STATUS.md` current** and commit it with your work. It has seven short sections: Done, Doing now, Open (what's left, most important first, with any claims), Needs the human (open items first), Try it yourself, Decisions, Contract questions. Replace old text rather than piling it up.
+5. **Check your own work.** Run what you build. Prefer checks you can do alone: tests, scripted runs against your fakes, screenshots, logs. Keep `<your folder>/check.sh`, which runs every check that needs no person, and run it before each push. A step isn't done until you've seen it work.
+6. **When stuck,** don't try the same thing a fourth time. Re-read the error and the docs and try a different approach, or move on to the next item and note the problem in `STATUS.md`.
+7. **Stay in your folder.** Commit only files inside your folders from the table. The only files outside them you may change are the root `.env`, `.bobby-who` and `.bobby-run`, which git ignores. You may read other parts' folders, and never edit them, except when backing up as described above. Never edit `CLAUDE.md`, `AGENTS.md`, `CONTRACT.md`, `VERSIONS.md`, the root `README.md`, `roles/`, `env/`, `.gitignore` or `.claude/`.
+8. **The contract.** Re-read `CONTRACT.md` whenever a `git pull` changes it. If it looks wrong or is missing something, write that under "Contract questions" and work around it meanwhile. Extra fields are always safe, because every part ignores fields it doesn't know.
+9. **Secrets and personal files.** Keys go in the root `.env`, or in a `.env` inside your test app's folder. Voice recordings and anything else personal go in a `private/` folder inside your part. Git ignores all of these. Never write a key into source code or into the files in `env/`, and never print a full key in logs, output or `STATUS.md`.
+10. **Only the keys you were given.** Use only the variables your brief lists. A new setting that isn't secret is fine: start its name with your part (`HANDS_`, `MIND_`, `MOUTH_`, `CALLER_`, `STAGE_`) and list it in your README. Never ask for a new secret key or account. If you're sure you need one, explain why under "Needs the human" and carry on without it.
+11. **Real-world actions.** Never send a real email or message or place a real call, except in the tests your brief lists, and then at most once per run of that test. Don't touch accounts or devices beyond what your part needs.
+12. **Commit small and often** to `main`: add your folder, commit, `git pull --rebase`, `git push`. Never force-push. If a push fails for any reason other than being behind, note it in `STATUS.md` and keep committing locally.
+13. **Look things up.** The vendor products here are new: ElevenLabs' realtime speech model, Anthropic's newest Claude models, the current Expo SDK and Android SDKs. Read the current official docs before writing integration code instead of relying on memory, and keep model names and ids in variables. Where the docs disagree with your brief about how a product works, follow the docs and note it under "Decisions".
+14. **Install what you need.** Install missing developer tools yourself with Homebrew or npm, without asking. Ask only if an install needs the human's password. Use Node and npm for everything that runs on a laptop: scripts are plain `.mjs` or TypeScript files, and each folder has its own `package.json` and lockfile. There is no shared root `package.json`.
+15. **Use the shared versions.** The root `VERSIONS.md` names the Expo SDK version. Create every Expo app and package for exactly that version, add React Native libraries with `npx expo install`, and never upgrade it. The parts get merged into one app at the end, and mismatched versions would break that.
+16. **Write `<your folder>/README.md`** with how to run your part and how to run it against your fakes. Also keep `<your folder>/MERGE.md`, as the contract's "Packages" section describes, so the final app can include your package without asking you anything.
