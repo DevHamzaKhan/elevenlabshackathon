@@ -98,6 +98,8 @@ export class Brain {
   private handsWaits = new Set<string>();
   /** When set, send `sleep` at this time (lets Bobby finish his goodbye). */
   private sleepAt = 0;
+  /** Push-to-talk feel: once Bobby has answered a chat turn, go to sleep. */
+  private sleepAfterReply = false;
   /** Things the Mind knows are true, newest last, for corrections and for "what happened?". */
   facts: string[] = [];
   private ticker: ReturnType<typeof setInterval>;
@@ -241,6 +243,7 @@ export class Brain {
     this.lastActivity = Date.now();
     this.sleepSent = false;
     this.sleepAt = 0;
+    this.sleepAfterReply = false;
     this.awake = true;
     this.answerPending = true;
     this.convo.push({ who: "user", text });
@@ -285,12 +288,16 @@ export class Brain {
       return;
     }
     if (!d) {
-      await this.say("Sorry, something went wrong on my side. Could you say that again?");
+      await this.say("Hm, something broke on my end. Try again in a sec.");
+      this.sleepSoon();
       return;
     }
     switch (d.action) {
       case "chat":
         this.whisper(String(d.whisper ?? ""));
+        // Bobby answers by himself; once he has (onSpoke), the session ends.
+        if (this.answerPending) this.sleepAfterReply = true;
+        else this.sleepSoon();
         break;
       case "sleep":
         this.whisper(String(d.whisper ?? ""));
@@ -449,7 +456,7 @@ export class Brain {
       const stall = setTimeout(() => {
         if (!task.cancelled && !task.stalled && this.pendingSays.size === 0) {
           task.stalled = true;
-          lastSay = this.say("Give me a second, I'm working out the next step.");
+          lastSay = this.say("One sec.");
         }
       }, this.o.timing.stallMs);
       // A "stop" doesn't wait for a slow model call: the reply is simply ignored.
@@ -611,6 +618,7 @@ export class Brain {
     this.facts.push(`Task "${task.title}" ${status === "done" ? "finished" : "failed"}: ${line}`);
     this.lastActivity = Date.now();
     await this.say(line);
+    this.sleepSoon();
   }
 
   private finishCancelled(task: Task) {
@@ -706,6 +714,7 @@ export class Brain {
     this.watch({ type: "task", task: call.taskId, title, status: ok ? "done" : "failed" });
     this.facts.push(`Call to ${who}: ${line}`);
     await this.say(line);
+    this.sleepSoon();
   }
 
   // ---------- corrections ----------
@@ -721,6 +730,10 @@ export class Brain {
     const duringOurs = this.pendingSays.size > 0 || now - this.lastSayDoneAt < 1500;
     if (likeOurs || (duringOurs && !this.answerPending)) return;
     this.answerPending = false;
+    if (this.sleepAfterReply) {
+      this.sleepAfterReply = false;
+      this.sleepSoon();
+    }
     this.convo.push({ who: "bobby", text });
     if (this.convo.length > 12) this.convo.splice(0, this.convo.length - 12);
 
@@ -799,6 +812,12 @@ export class Brain {
   }
 
   // ---------- sleeping ----------
+
+  /** A request has been handled: Bobby only listens again after the side button. */
+  private sleepSoon() {
+    if (this.task || this.call) return;
+    this.sleepAt = Date.now() + this.o.timing.goodbyeMs;
+  }
 
   private sendSleep() {
     if (!this.peers.mouth || this.sleepSent) return;

@@ -63,9 +63,9 @@ export const DEFAULT_TIMING: Timing = {
   actMs: 10_000,
   sayMs: 15_000,
   callMs: 180_000,
-  sleepMs: 20_000,
+  sleepMs: 10_000,
   staleMs: 2_500,
-  goodbyeMs: 2_500,
+  goodbyeMs: 3_000,
   stallMs: 7_000,
 };
 

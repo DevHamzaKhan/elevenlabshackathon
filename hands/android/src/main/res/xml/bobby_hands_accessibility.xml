@@ -3,8 +3,9 @@
   android:description="@string/bobby_hands_service_description"
   android:accessibilityEventTypes="typeAllMask"
   android:accessibilityFeedbackType="feedbackGeneric"
-  android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagReportViewIds|flagRetrieveInteractiveWindows|flagInputMethodEditor"
+  android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagReportViewIds|flagRetrieveInteractiveWindows|flagInputMethodEditor|flagRequestFilterKeyEvents"
   android:canRetrieveWindowContent="true"
   android:canPerformGestures="true"
   android:canTakeScreenshot="true"
+  android:canRequestFilterKeyEvents="true"
   android:notificationTimeout="50" />

@@ -216,10 +216,10 @@ test("a slow step makes Bobby fill the silence once", async () => {
     });
     await sleep(300);
     t.mouth!.hear("open Spotify");
-    const ok = await until(() => t.fromMind("say").some((s) => /Give me a second/.test(s.text)), 5000);
+    const ok = await until(() => t.fromMind("say").some((s) => /One sec/.test(s.text)), 5000);
     assert.ok(ok, "stall line said");
     await sleep(1500);
-    assert.equal(t.fromMind("say").filter((s) => /Give me a second/.test(s.text)).length, 1, "only once");
+    assert.equal(t.fromMind("say").filter((s) => /One sec/.test(s.text)).length, 1, "only once");
     mind.stop();
   } finally {
     await t.close();

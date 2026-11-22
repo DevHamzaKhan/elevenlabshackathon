@@ -77,6 +77,47 @@ class HandsService : AccessibilityService() {
 
   override fun onInterrupt() {}
 
+  // --- the wake chord: Volume Up + Volume Down together ---
+
+  private var volUpDown = false
+  private var volDownDown = false
+  /** True from the moment the chord fired until both keys are released; their events are eaten. */
+  private var chordActive = false
+
+  override fun onKeyEvent(event: android.view.KeyEvent?): Boolean {
+    val e = event ?: return false
+    val up = e.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP
+    val down = e.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN
+    if (!up && !down) return false
+    val pressed = e.action == android.view.KeyEvent.ACTION_DOWN
+    if (e.action == android.view.KeyEvent.ACTION_DOWN || e.action == android.view.KeyEvent.ACTION_UP) {
+      if (up) volUpDown = pressed else volDownDown = pressed
+    }
+    if (chordActive) {
+      if (!volUpDown && !volDownDown) chordActive = false
+      return true
+    }
+    if (volUpDown && volDownDown && pressed && e.repeatCount == 0) {
+      chordActive = true
+      Hub.log("wake chord: Volume Up + Volume Down")
+      worker.execute { onWakeChord() }
+      return true
+    }
+    return false
+  }
+
+  /** Buzz, make sure the screen is on, then open the app: opening it wakes Bobby. */
+  private fun onWakeChord() {
+    try {
+      val vib = getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+      vib?.vibrate(android.os.VibrationEffect.createOneShot(60, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+    } catch (_: Exception) {}
+    try { ensureAwake() } catch (e: Exception) { Hub.log("wake chord: ${e.message}") }
+    val launch = packageManager.getLaunchIntentForPackage(packageName) ?: return
+    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+    try { startActivity(launch) } catch (e: Exception) { Hub.log("wake chord: can't open the app: ${e.message}") }
+  }
+
   // --- frames from the hub ---
 
   fun onHandsFrame(raw: String) {

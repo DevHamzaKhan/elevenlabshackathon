@@ -1,6 +1,7 @@
 # Mouth: status (Wajeeh, 1x budget: Core only)
 
 ## Done
+- (Hamza, at his request, 2026-11-22) `agent/bobby-prompt.md` rewritten: talks like a friend, a few words, no customer-service lines, no follow-up questions, silent when speech isn't for him. Pushed to the live Bobby agent with `setupBobby` only (steps 2-4 of setup.mjs not run).
 - **Extra 1, working from the back (Wajeeh):** without a microphone foreground service Android froze the test app ~8 s after Home (hub sockets dropped). With one (test app: `react-native-background-actions` + `example/plugins/withMicForegroundService.js`), Bobby still hears and speaks after Home, right away and 60 s later, then sleeps cleanly. In the final app Hands' keep-alive is that service; `MERGE.md` §5 says what the app must do (grant RECORD_AUDIO first; startKeepAlive → wake → moveToBack).
 - **Integration with the other parts (laptop):** `tools/integration-with-mind.mts` runs the real Mind (stand-in model) on the Mind's fake hub and phone with the real Mouth and Caller code: wake → heard → task with narrated says → email sent on the fake phone → call through the Caller → bye → sleep/asleep; every `say` got exactly one `say_done`. 9/9 pass. The real package also type-checks against `app/src/types.ts` (`PartConfig` → `MouthHandle`, `Stoppable`).
 - **Fixed from the background run:** Bobby said "Are you still there?" every ~9 s of silence (ElevenLabs' turn timeout); `setup.mjs` now sets `turn.turn_timeout = -1`. Noise-only transcripts like "..." are no longer sent as `heard`.
