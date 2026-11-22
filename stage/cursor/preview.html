@@ -61,14 +61,14 @@
 <body>
 <header>
   <h1>Bobby cursor designs</h1>
-  <p>Each phone is 360 × 760 dp at true size, top half light, bottom half dark. The cursor glides between targets with ease-in-out (400–900 ms by distance) and taps with a ripple. Exec draws the ripple on the phone; the drawable is only the resting cursor.</p>
+  <p>Each phone is 360 × 760 dp at true size, top half light, bottom half dark. The cursor glides between targets with ease-in-out (400–900 ms by distance) and taps with a ripple. Hands draws the ripple on the phone; the drawable is only the resting cursor.</p>
   <div class="controls">
     <button id="hot" aria-pressed="true">Show hotspot</button>
     <button id="pause" aria-pressed="false">Pause</button>
   </div>
 </header>
 <main id="phones"></main>
-<p class="legend"><i></i> marks the hotspot: the exact centre (24, 24) of the 48 × 48 drawable, where Exec touches. Sources: <code>ring.svg</code>, <code>glow.svg</code>, <code>bobby.svg</code> (and matching <code>(and matching <code>cursor_*.xml</code>)lt;name(and matching <code>cursor_*.xml</code>)gt;/cursor.xml</code>).</p>
+<p class="legend"><i></i> marks the hotspot: the exact centre (24, 24) of the 48 × 48 drawable, where Hands touches. Sources: <code>ring/ring.svg</code>, <code>glow/glow.svg</code>, <code>bobby/bobby.svg</code>, each with a matching <code>&lt;name&gt;/cursor.xml</code>.</p>
 
 <template id="phone-tpl">
   <figure>

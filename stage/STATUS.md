@@ -16,6 +16,8 @@
 - 4.1 Cursors moved to `cursor/<name>/` (`cursor.xml` + SVG) for ring, glow and bobby; `CHOSEN` = ring; `preview.html` paths fixed; Python `make.py` removed.
 - 5.1 `check.sh` (+ `tools/check.mjs`): story lines are valid JSON with known types, Mind frames carry `to`, act targets are one form, each `cursor.xml` is a 48dp/48x48 vector, CHOSEN exists, required hints exist, XML well-formed, replay plays through. Passes; verified it fails on a bad line.
 - 5.2 `README.md` (how to run against the replay and the real phone) and `MERGE.md` (hints, cursor, icon pickup), replacing the dropped design's README.
+- Extra 2 (James C): app icon in `icon/`: SVG + 1024 PNG matching the ring cursor, plus an adaptive-icon foreground; `tools/icon.mjs` renders the PNGs; `MERGE.md` says how the app picks them up.
+- Extra 5 (James C): `cursor/preview.html` checked by headless screenshot: all three designs render and animate, no page errors. Fixed its legend (garbled HTML, "Exec" renamed to Hands).
 
 ## Doing now
 - Nothing. Core is done and pushed; James H's AI has stopped (1x budget).
@@ -25,10 +27,8 @@ Core: all done.
 
 Extras (open to James C's AI from the start, most important first):
 1. Hints for Messages, WhatsApp, Chrome, Maps, Spotify, Settings (drafts from the old design are already in `hints/`; check them against the new brief) (claimed: James C)
-2. App icon in `stage/icon/` (1024 PNG + SVG) (claimed: James C)
 3. README draft + architecture diagram (SVG and Mermaid) in `stage/readme/` (the current files describe the dropped design) (claimed: James C)
 4. Fix hints from `hands/HINTS-CHECK.md` after each pull
-5. Two more cursor designs + `cursor/preview.html`: glow and bobby already exist from the old design and preview paths are fixed; check the preview renders and the designs still fit (claimed: James C)
 6. Experiments: timing strip, record button, phone panel, sounds, more hints
 
 ## Needs the human
