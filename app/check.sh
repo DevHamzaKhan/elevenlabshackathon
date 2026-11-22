@@ -32,6 +32,7 @@ fail() { echo "FAIL: $*"; exit 1; }
 step "deps and hints"
 [ -d node_modules ] || npm install >"$LOGS/app-npm.log" 2>&1 || fail "npm install (see logs/app-npm.log)"
 node tools/gen-hints.mjs
+node tools/gen-dashboard.mjs
 
 step "typecheck"
 npx tsc --noEmit || fail "typecheck"
