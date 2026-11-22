@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bobby Stage</title>
+<style>
+:root {
+  --bg: #f4f2ee; --panel: #ffffff; --ink: #1b1d22; --muted: #6b6f78; --line: #e2dfd8;
+  --accent: #2f6df6; --accent-soft: #e4ecff; --ok: #1f9d55; --ok-soft: #dcf3e5;
+  --bad: #d64545; --bad-soft: #fbe3e3; --warn: #c98a00; --you: #efece6; --bobby: #e4ecff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115; --panel: #171a21; --ink: #eef0f4; --muted: #9298a5; --line: #262b35;
+    --accent: #6d9bff; --accent-soft: #1b2742; --ok: #3ccf7f; --ok-soft: #133324;
+    --bad: #ff6b6b; --bad-soft: #3a1a1c; --warn: #f2b84b; --you: #222630; --bobby: #1b2742;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1115; --panel: #171a21; --ink: #eef0f4; --muted: #9298a5; --line: #262b35;
+  --accent: #6d9bff; --accent-soft: #1b2742; --ok: #3ccf7f; --ok-soft: #133324;
+  --bad: #ff6b6b; --bad-soft: #3a1a1c; --warn: #f2b84b; --you: #222630; --bobby: #1b2742;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: grid; grid-template-rows: auto 1fr; gap: 16px; padding: 16px 20px;
+}
+header { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.brand { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; }
+.brand span { color: var(--accent); }
+#task { flex: 1; min-width: 240px; display: flex; align-items: baseline; gap: 14px; }
+#task-title { font-size: 28px; font-weight: 700; }
+.badge { font-size: 15px; font-weight: 700; padding: 3px 12px; border-radius: 999px;
+  text-transform: uppercase; letter-spacing: 0.06em; background: var(--line); color: var(--muted); }
+.badge.started { background: var(--accent-soft); color: var(--accent); }
+.badge.done { background: var(--ok-soft); color: var(--ok); }
+.badge.failed, .badge.cancelled { background: var(--bad-soft); color: var(--bad); }
+#peers { display: flex; gap: 14px; font-size: 16px; color: var(--muted); }
+.peer { display: flex; align-items: center; gap: 6px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--line); }
+.peer.on .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.peer.on { color: var(--ink); }
+#conn { font-size: 14px; color: var(--muted); }
+#conn.live { color: var(--ok); }
+#conn.down { color: var(--bad); }
+
+main { display: grid; gap: 16px; min-height: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
+  grid-template-areas: "talk plan feed"; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px 18px; display: flex; flex-direction: column; min-height: 0; }
+.panel h2 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.scroll { overflow-y: auto; min-height: 0; flex: 1; }
+#talk-panel { grid-area: talk; }
+#plan-panel { grid-area: plan; }
+#side { grid-area: feed; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+#feed-panel { flex: 1; }
+.empty { color: var(--muted); font-style: italic; }
+
+@media (max-width: 900px) {
+  body { padding: 12px 16px; height: auto; }
+  html, body { height: auto; }
+  main { grid-template-columns: minmax(0, 1fr); grid-template-areas: "plan" "talk" "feed"; }
+  .scroll { max-height: 60vh; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Bobby<span>.</span></div>
+  <div id="task"><span id="task-title" class="empty">Waiting for a task</span><span id="task-status"></span></div>
+  <div id="peers"></div>
+  <div id="conn">connecting…</div>
+</header>
+<main>
+  <section class="panel" id="talk-panel"><h2>Conversation</h2><div class="scroll" id="talk"><p class="empty">Nothing said yet</p></div></section>
+  <section class="panel" id="plan-panel"><h2>Plan</h2><div class="scroll" id="plan"><p class="empty">No plan yet</p></div></section>
+  <div id="side">
+    <section class="panel" id="call-panel" hidden><h2>Phone call</h2><div id="call"></div></section>
+    <section class="panel" id="feed-panel"><h2>Phone</h2><div class="scroll" id="feed"><p class="empty">No actions yet</p></div></section>
+  </div>
+</main>
+<script>
+"use strict";
+const params = new URLSearchParams(location.search);
+const hub = (params.get("hub") || "ws://localhost:8765").replace(/\/+$/, "");
+const hubUrl = (/^wss?:\/\//.test(hub) ? hub : "ws://" + hub) + "/watch?token=" + encodeURIComponent(params.get("token") || "");
+if (params.get("theme")) document.documentElement.dataset.theme = params.get("theme");
+
+const $ = (id) => document.getElementById(id);
+const handlers = {};            // type -> fn(msg), filled in below
+function handle(msg) {
+  const fn = handlers[msg.type];
+  if (fn) { try { fn(msg); } catch (e) { console.error("handler", msg.type, e); } }
+}
+
+// Connection: hello, then every frame goes to handle(). Reconnect 1 s, 2 s, 5 s, then every 5 s.
+const backoff = [1000, 2000, 5000];
+let tries = 0;
+function setConn(text, cls) { const el = $("conn"); el.textContent = text; el.className = cls || ""; }
+function connect() {
+  setConn("connecting…");
+  let ws;
+  try { ws = new WebSocket(hubUrl); } catch (e) { return retry(); }
+  ws.onopen = () => ws.send(JSON.stringify({ type: "hello", role: "watch", v: 1 }));
+  ws.onmessage = (e) => {
+    let msg; try { msg = JSON.parse(e.data); } catch { return; }
+    if (msg.type === "welcome") { tries = 0; setConn("live", "live"); return; }
+    handle(msg);
+  };
+  ws.onclose = (e) => {
+    if (e.code === 4003) setConn("wrong token", "down");
+    retry();
+  };
+}
+function retry() {
+  const wait = backoff[Math.min(tries++, backoff.length - 1)];
+  if ($("conn").textContent !== "wrong token") setConn("reconnecting in " + wait / 1000 + " s", "down");
+  setTimeout(connect, wait);
+}
+connect();
+</script>
+</body>
+</html>
