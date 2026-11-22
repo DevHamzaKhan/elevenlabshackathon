@@ -87,7 +87,7 @@ class CursorOverlay(private val service: AccessibilityService) {
       val cy = (fy + ty) / 2 + dx / (dist.coerceAtLeast(1f)) * bend
       val a = ValueAnimator.ofFloat(0f, 1f)
       a.duration = ms
-      a.interpolator = PathInterpolator(0.45f, 0f, 0.2f, 1f)
+      a.interpolator = PathInterpolator(0.42f, 0f, 0.22f, 1.1f) // eases in, overshoots ~3%, settles
       a.addUpdateListener {
         val t = it.animatedValue as Float
         val u = 1 - t

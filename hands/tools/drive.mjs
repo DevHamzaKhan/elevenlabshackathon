@@ -202,8 +202,8 @@ function screenTable(r) {
   return lines.join('\n');
 }
 
-async function getScreen() {
-  const { reply, ms } = await request({ type: 'screen', to: 'hands' });
+async function getScreen(image = false) {
+  const { reply, ms } = await request({ type: 'screen', to: 'hands', ...(image ? { image: true } : {}) });
   if (reply.type !== 'screen_result') throw new Error(`screen failed: ${reply.error || reply.type} (${ms} ms)`);
   lastScreen = reply;
   return { r: reply, ms };
@@ -241,7 +241,7 @@ function parseCommand(line) {
   const rest = m[2];
   const need = (on) => { if (!on) throw new Error(`${cmd} needs a target`); return on; };
   switch (cmd) {
-    case 'screen': case 's': return { kind: 'screen' };
+    case 'screen': case 's': return { kind: 'screen', image: /^\s*(image|img)\b/i.test(rest || ''), file: (rest || '').trim().split(/\s+/)[1] };
     case 'tap': return { kind: 'act', frame: { do: 'tap', on: need(parseTarget(rest)) } };
     case 'long': case 'long_press': return { kind: 'act', frame: { do: 'long_press', on: need(parseTarget(rest)) } };
     case 'point': return { kind: 'act', frame: { do: 'point', on: need(parseTarget(rest)) } };
@@ -322,8 +322,15 @@ async function run(line) {
       return true;
     case 'screen': {
       try {
-        const { r, ms } = await getScreen();
+        const { r, ms } = await getScreen(c.image);
         out(`${stamp()} screen: ok  ${ms} ms\n${screenTable(r)}`);
+        if (c.image) {
+          if (r.image) {
+            const file = c.file || `screen-${Date.now()}.jpg`;
+            (await import('node:fs')).writeFileSync(file, Buffer.from(r.image, 'base64'));
+            out(`${stamp()} image: ${Math.round(r.image.length * 3 / 4 / 1024)} KB -> ${file}`);
+          } else out(`${stamp()} image: none (${r.image_error || 'not supported'})`);
+        }
         await screenshot('screen');
         return true;
       } catch (e) { out(`${stamp()} ${e.message}`); return false; }
