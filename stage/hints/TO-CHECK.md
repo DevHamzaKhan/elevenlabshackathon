@@ -1,43 +1,20 @@
 Not navigation notes: ignore this file when planning. It lists labels for the Hands part to check on the real phone. Hands writes results to hands/HINTS-CHECK.md as confirmed, wrong (with the real label) or not found.
 
+Second pass: everything confirmed in the first pass (2026-11-22) has been folded into the hint files and removed from here. What's left needs a screen other than the app's start screen, or wasn't checked yet.
+
 Home: the launcher's package is com.sec.android.app.launcher on the S21
 Home: app icons are nodes whose text is the app name (not only a description)
 Home: the page dots above the dock have a description like "Page 2 of 3"
 Home: Gmail is inside a folder named "Google" on the S21, or on which page it sits
 Home: swipe up from the middle opens the app drawer, with a field labelled "Search" at the top
-Home: a long press shows "Remove" / "Select" / "Edit" (check with point only, don't change anything)
-Gmail: inbox search field text "Search in mail", at the top
-Gmail: compose button text or description "Compose", bottom right
-Gmail: an email row is one combined description (sender, subject, preview, unread) or separate text nodes
-Gmail: open email shows "Reply", "Reply all", "Forward" at the bottom of the message
-Gmail: open email top-right icons "Archive", "Delete", "More options"
-Gmail: reply body field hint "Compose email"
-Gmail: send button description "Send", top right of the reply screen
-Gmail: after sending, a "Sent" message with "Undo" at the bottom
-Messages: which app the phone uses for texts, Google Messages (com.google.android.apps.messaging) or Samsung Messages (com.samsung.android.messaging)
-Messages: new-message button bottom right, "Start chat" (Google) or "Compose new message" (Samsung)
-Messages: text field hint at the bottom of a conversation, "Text message" / "RCS message" (Google) or "Enter message" (Samsung)
-Messages: send button description starts with "Send", right of the text field, only after typing
-WhatsApp: chat list search bar text "Ask Meta AI or Search", at the top
-WhatsApp: new chat button description "New chat", bottom right
-WhatsApp: in a chat, text field hint "Message" and the button right of it "Voice message", turning into "Send" after typing
-Chrome: empty address bar text "Search or type web address", at the top
-Chrome: three dots menu description "Customize and control Google Chrome", right of the address bar
-Maps: search box text "Search here", at the top
-Maps: bottom tabs "Explore", "You", "Contribute"
-Maps: place sheet buttons "Directions", "Start", "Call", "Save", "Share"
-Spotify: search field text "What do you want to listen to?", on the Search tab
-Spotify: green play button description "Play" (or "Play playlist") on an artist or playlist page
-Settings: search icon description "Search", top right of the main list
-Settings: switches are separate nodes described "On" / "Off", next to the row's text
-Settings: Do not disturb sits under "Modes and Routines" or under "Notifications" on this One UI version
-Settings: quick settings tile descriptions like "Wi-Fi, On" after key notifications and a second swipe down
+Messages: inside a conversation, the text field hint ("RCS message", "Text message" or "Chat message") and a send button described "Send…" once text is typed
+WhatsApp: inside a chat, the field hint "Message", and "Voice message" turning into "Send" once text is typed
+Maps: after a search, a place sheet with "Directions", "Start", "Call", "Save", "Share"
+Spotify: on the Search tab, the field "What do you want to listen to?"
+Settings: inside "Connections", the Wi-Fi row's switch is its own node described "On" or "Off"
 Clock: app label "Clock" and package com.sec.android.app.clockpackage; bottom tabs "Alarm", "World clock", "Stopwatch", "Timer"
 Clock: add-alarm button description "Add alarm" at the top right; "Save" at the bottom of the new-alarm screen
-Clock: alarm row switch is a separate tappable node whose description holds the time
 Calendar: which calendar app opens from the "Calendar" icon on the S21 (Samsung or Google package)
 Calendar: add-event button description ("Add event" or "Create"), bottom right
-Calendar: new-event screen has a "Title" field and a "Save" button (top or bottom)
 YouTube: search button description "Search" at the top right, field hint "Search YouTube"
 YouTube: result rows carry the title in their description; ads marked "Sponsored"
-YouTube: player buttons "Pause video" / "Play video" after one tap on the video; "Skip ad" during ads

@@ -35,14 +35,16 @@
 
 - Item 4b (James H): `chrome.md`: address-bar hint "Search Google or type URL", tabs button "See N tabs", new-tab-page extras.
 
+- Item 4c–4g (James H): `messages.md`, `whatsapp.md`, `maps.md`, `spotify.md`, `settings.md` fixed from the first `HINTS-CHECK.md`; `TO-CHECK.md` cut to the 16 labels still unchecked (home screen, in-app screens, Clock, Calendar, YouTube).
+
 ## Doing now
-- Item 4: fixing hints from `hands/HINTS-CHECK.md` (first pass), one app per commit.
+- Nothing. Item 4 first pass done; a second pass waits for Hands to check the new `TO-CHECK.md`.
 
 ## Open
 Core: all done.
 
 Extras (open to James C's AI from the start, most important first):
-4. Fix hints from `hands/HINTS-CHECK.md` after each pull (claimed: James H, first pass)
+4. Fix hints from `hands/HINTS-CHECK.md` after each pull (first pass done by James H; repeat when Hands updates it)
 6. Experiments: more hints for other apps, if wanted (Clock, Calendar, YouTube done)
 
 ## Needs the human
