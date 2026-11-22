@@ -516,7 +516,7 @@ function findSenderRowLoose(r, sender) {
 }
 
 async function discardDraft(r) {
-  const discard = (x) => x.nodes.find((n) => n.tap && /^discard( draft)?$/i.test(n.text || n.desc));
+  const discard = (x) => x.nodes.find((n) => /^discard( draft)?$/i.test(n.text || n.desc));
   let d = discard(r);
   if (!d) {
     const more = r.nodes.find((n) => n.tap && /^more options$/i.test(n.desc));
