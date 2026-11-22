@@ -43,7 +43,7 @@ export function startMouth(config: Config): { wake(): void; stop(): void; status
   };
 }
 
-/** Connects to the hub as `caller`. Core version: every call is a dry run. */
+/** Connects to the hub as `caller`. Every call is a dry run unless env.CALLER_DRY_RUN is exactly "0". */
 export function startCaller(config: Config): { stop(): void } {
   const { stop } = startCallerWith({ hubUrl: config.hubUrl, token: config.token, log: config.log, env: config.env });
   return { stop };

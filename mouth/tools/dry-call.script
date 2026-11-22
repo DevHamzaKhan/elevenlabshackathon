@@ -1,0 +1,4 @@
+# check.sh: one dry-run call through tools/caller.mjs. No call is placed.
+wait 2
+call +15555550100 Say I'm running 20 minutes late and ask if 3pm still works.
+expect call_result 10
