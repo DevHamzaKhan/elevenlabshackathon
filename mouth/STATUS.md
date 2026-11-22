@@ -22,12 +22,12 @@ Core (Wajeeh's AI, in order):
 
 Extras (open to the backup, Hamza's AI, from the start; claim with `(claimed: <name>)`):
 1. Working from the back: the background test, with whatever it takes in `MERGE.md`.
-2. The real Caller, `tools/caller.mjs`, tests with `fetch` stubbed, dry-run call in `check.sh`.
-3. The rest of `setup.mjs`: voice clone, caller agent + `caller-prompt.md`, Twilio number import.
+2. The real Caller, `tools/caller.mjs`, tests with `fetch` stubbed, dry-run call in `check.sh`. (claimed: Hamza)
+3. The rest of `setup.mjs`: voice clone, caller agent + `caller-prompt.md`, Twilio number import. (claimed: Hamza)
 4. ~~Measuring the `say` delay~~: measured 0.26–0.28 s from `say` to `say_started` in the emulator (Realtime mode). Re-check on the real phone.
 5. The 5 minute backstop and earbud routing.
 6. A real call to the team's own Twilio number.
-7. The remaining tests in item 6 of the brief.
+7. The remaining tests in item 6 of the brief. (claimed: Hamza)
 
 ## Needs the human
 1. For the Extras only: `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` (James C is sending them), a bought Twilio number, `OWNER_NUMBER` verified as a caller ID in Twilio, `CALL_ALLOWLIST` (a teammate who agreed to one test call), and 1–2 minutes of the owner talking in `mouth/private/`. Whoever builds the Extras (Hamza) needs these `.env` lines from Wajeeh: `ELEVENLABS_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `OWNER_NUMBER`, `CALL_ALLOWLIST`.
