@@ -74,6 +74,11 @@ export interface CallDeps {
 
 export type Line = { who: "me" | "them"; text: string };
 
+/** Drops the voice model's expression tags ("[sorry] Hey" -> "Hey"): they're directions, not words. */
+export function stripTags(text: string): string {
+  return text.replace(/\[[a-z][a-z \-]{0,30}\]\s*/gi, "").replace(/\s{2,}/g, " ").trim();
+}
+
 class ApiError extends Error {
   constructor(message: string, public status: number, public body: any) { super(message); }
 }
@@ -102,7 +107,7 @@ export function mapTwilioStatus(s: string): { status: "dialing" | "answered" | "
 export function toTranscript(items: unknown): Line[] {
   if (!Array.isArray(items)) return [];
   return items
-    .map((t) => ({ who: (t?.role === "agent" ? "me" : "them") as Line["who"], text: String(t?.message ?? "").trim() }))
+    .map((t) => ({ who: (t?.role === "agent" ? "me" : "them") as Line["who"], text: stripTags(String(t?.message ?? "")) }))
     .filter((l) => l.text);
 }
 

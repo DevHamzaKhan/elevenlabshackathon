@@ -105,7 +105,7 @@ export function callerAgentBody(prompt, voiceId, ttsModel) {
       data_collection: {
         their_answer: {
           type: "string",
-          description: "In one or two short sentences, what the other person said in answer to the goal of the call, written in the third person (for example: \"Alex said 3pm works.\"). If they gave no answer, say so.",
+          description: "In one or two short sentences, what the other person said in answer to the goal of the call, written in the third person, naming them if you know their name and otherwise saying \"they\", never \"the user\" (for example: \"Alex said 3pm works.\"). If they gave no answer, say so.",
         },
       },
     },

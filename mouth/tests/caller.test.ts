@@ -244,3 +244,9 @@ test("startCaller with CALLER_DRY_RUN unset never fetches, even with every key p
   c.stop();
   wss.close();
 });
+
+test("transcript lines drop the voice model's expression tags", async () => {
+  const { stripTags } = await import("../src/caller");
+  assert.equal(stripTags("[sorry] Hey, I'm running late."), "Hey, I'm running late.");
+  assert.equal(stripTags("[happy] Three thirty works great. [laughs] See you!"), "Three thirty works great. See you!");
+});
