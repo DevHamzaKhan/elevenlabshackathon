@@ -1,6 +1,5 @@
-// Adds the parts that may or may not exist yet, so the app always builds:
-// - the Hands config plugin (../hands/app.plugin.js) once it lands,
-// - the app icon from ../stage/icon/ when Stage has made one.
+// Adds what may or may not exist yet, so the app always builds:
+// the app icon from ../stage/icon/ when Stage has made one.
 const fs = require('fs');
 const path = require('path');
 
@@ -8,9 +7,6 @@ const root = path.resolve(__dirname, '..');
 
 module.exports = ({ config }) => {
   const plugins = [...(config.plugins || [])];
-
-  const handsPlugin = path.join(root, 'hands', 'app.plugin.js');
-  if (fs.existsSync(handsPlugin)) plugins.unshift(handsPlugin);
 
   const iconDir = path.join(root, 'stage', 'icon');
   const pick = (...names) => names.map((n) => path.join(iconDir, n)).find((p) => fs.existsSync(p));

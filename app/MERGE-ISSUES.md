@@ -1,47 +1,45 @@
 # Merge issues
 
 Problems found while putting the packages into the final app, with the exact fix each owner
-should make. The app works around each one meanwhile.
+should make. The app works around each one meanwhile. Last checked 2026-11-22, after the real
+`bobby-mind` and `bobby-mouth` were swapped in (release APK builds).
 
-## bobby-mind (`mind/`), checked 2026-11-22
+## bobby-mouth (`mouth/`)
 
-1. **No entry point yet.** `package.json` `main` is `src/index.ts`, which doesn't exist, and nothing
-   exports `startMind`. Fix: add `mind/src/index.ts` exporting
-   `startMind(config: {hubUrl, token, env, log, hints: string[]}): {stop(): void}`.
-   Workaround: `app/standins/mind.ts`.
-2. **No `MERGE.md`.** Fix: add one. It should say whether `@anthropic-ai/sdk` works under React
-   Native/Hermes (it needs `fetch` streaming; if it needs polyfills, list them), and that the app must
-   `npm install` it, since Metro resolves `@anthropic-ai/sdk` from `app/node_modules` first and only
-   falls back to `mind/node_modules`.
+1. **`@elevenlabs/client` and `@elevenlabs/react-native` don't resolve under the final app's Metro.**
+   Both packages have only an `exports` map and no `main`. In this app Expo's resolver falls back to
+   `main` (`index`) and fails with "Unable to resolve "@elevenlabs/client"". This happens even with a
+   plain `getDefaultConfig()` metro config and an import from inside `app/`, so it isn't caused by the
+   app's custom resolver.
+   - Workaround in the app: `metro.config.js` catches the failure and resolves through the package's
+     `exports` itself, trying the conditions `react-native`, `require`, `import`, `default` in that
+     order. The bundle then has the right files (`client/dist/platform/react-native/index.js`,
+     `react-native/dist/index.react-native.js`) and one copy of each.
+   - Fix for Mouth: run `npx expo export --platform android` in `mouth/example` with a clean
+     `npm install`. If it fails the same way, add the same fallback (or an `extraNodeModules` /
+     `resolveRequest` entry) to the example's `metro.config.js` and to step 2 of `MERGE.md`.
+2. **Not verified from the back yet** (your MERGE.md section 5). The app starts Hands' keep-alive
+   (foreground service type `microphone|dataSync`; `microphone` when RECORD_AUDIO is granted) before
+   `wake()` and `moveToBack()`. Nothing to change in `mouth/`; this needs a test on the phone.
+3. The WebRTC plugin adds a second foreground service of type `mediaProjection` (screen share),
+   which is never started. Harmless; noting it in case Play-style checks complain.
 
-## bobby-mouth (`mouth/`), checked 2026-11-22
+## bobby-mind (`mind/`)
 
-1. **No entry point yet.** There is no `mouth/src/` at all; `main` points at `src/index.ts`. Fix: add
-   `mouth/src/index.ts` exporting `startMouth(config): {wake(), stop()}` and
-   `startCaller(config): {stop()}`. Workaround: `app/standins/mouth.ts`.
-2. **No `MERGE.md`.** The peer dependencies `@elevenlabs/react-native`, `@livekit/react-native` and
-   `@livekit/react-native-webrtc` are native and need config plugins. Fix: add `MERGE.md` listing the
-   exact `npx expo install ...` line, every plugin for `app.json` (e.g. `@livekit/react-native-expo-plugin`,
-   `@config-plugins/react-native-webrtc`), the permissions, and the foreground service type it needs
-   (the app uses Hands' keep-alive, which is `microphone` when RECORD_AUDIO is granted).
-3. **If the ElevenLabs SDK needs a React provider** (`<ElevenLabsProvider>` or a hook), `startMouth`
-   can't be a plain function. Fix: export the provider/component as well, and say in `MERGE.md` where
-   it goes; the app will wrap `App` in it.
+1. **Its typecheck can't find `@anthropic-ai/sdk` from the app** when `mind/node_modules` isn't
+   installed, because TypeScript looks for it next to `mind/src`. Nothing to fix in `mind/`. In the
+   app, `tsconfig.json` `paths` maps it, and the other packages' deps, to `app/node_modules`. The app
+   installs `@anthropic-ai/sdk@1.12.0` itself (the "alternative" in your MERGE.md) and Metro never
+   reads `mind/node_modules`.
+2. The React Refresh shim from your MERGE.md is in `app/index.ts`.
 
 ## bobby-hands (`hands/`)
 
-None open. Notes:
-- The app relies on `openedFromNotification()` being set before the activity resumes (in
-  `onCreate`/`onNewIntent`); the app waits 400 ms after coming to the front before reading it.
-- **`openedFromNotification()` misses taps while the app is already running** (the usual case,
-  since the keep-alive service keeps it alive). It reads `currentActivity.intent`, but React
-  Native's `ReactActivity.onNewIntent` never calls `setIntent()`, so the activity still holds its
-  first launch intent. Fix in Hands: add an `OnNewIntent { intent -> fromNotification =
-  intent.getBooleanExtra(KeepAliveService.FROM_NOTIFICATION, false) }` block (and set it from the
-  launch intent in `OnCreate`/first call), and have `openedFromNotification()` return that flag.
-  Workaround in the app: `plugins/with-new-intent.js` adds `onNewIntent { setIntent(intent) }`
-  to `MainActivity`.
-- **minSdk 30.** `bobby-hands` declares `minSdkVersion 30`, Expo's default is 24, so the manifest
-  merge fails. Fix in Hands: say so in `hands/MERGE.md` (or set it from `app.plugin.js` with
-  `withGradleProperties` / `android.minSdkVersion=30`). Workaround in the app:
-  `expo-build-properties` `android.minSdkVersion: 30` in `app.json`.
+None open.
+- Fixed by Hands: the 12:40 release APK crashed the Hands service with an R8 `VerifyError` in the
+  minified java-websocket (Expo 58 release builds run R8). `hands/android/consumer-rules.pro` now keeps
+  `org.java_websocket.**` and `dev.bobby.hands.**`. LiveKit and WebRTC ship their own consumer rules.
+- `openedFromNotification()` is now tracked natively through `OnNewIntent`.
+  `app/plugins/with-new-intent.js` (`setIntent` in `MainActivity.onNewIntent`) is kept; it's harmless.
+- minSdk 30 and cleartext come from `../hands/app.plugin.js`, which is now in `app.json`;
+  `expo-build-properties` sets the same values again.

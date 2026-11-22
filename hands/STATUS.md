@@ -9,12 +9,15 @@
 - Extras: `screen` with `"image":true` adds a base64 JPEG (720 px wide) as `image`; a tap target hidden under the keyboard makes Hands hide the keyboard first; screen off / Swipe lock screen: any `screen` or `act` wakes the phone and clears the lock first (checked: dozing + locked → home screen); hints checked (`HINTS-CHECK.md`); web pages: a plain label repeating its parent's label over the same box is dropped (Chrome Wikipedia page 100 → 74 nodes), and a still-loading web view gets one 700 ms retry; `demo` falls back to the app drawer (pages and folders) when Gmail is on no home page (`drawer-gmail` checks that route alone: found and pointed at Gmail on the phone); cursor glide has a slight overshoot; `drive.mjs` `screen image [file]` saves the screenshot; scrolling inside a node checked (`swipe up` on Settings' list brings "Display" into view).
 - Laptop tools: `drive.mjs`, `fakehub.mjs`, `hub-test.mjs`, `grant.sh`, `check.sh`, README, MERGE.
 
+- **Job 2:** final app `app/` ("Bobby", `dev.bobby.app`) with the real Hands, Mind and Mouth/Caller packages, release APK installed on the S21. Checked on the phone (the steps of `app/check.sh`): `grant.sh dev.bobby.app` all granted, `push-config.mjs` sent the `.env`, Mind switched off, `drive.mjs` smoke script passes against the app's hub, opening the app logs "woke (came to front), moved to back" with the launcher in front, keep-alive foreground service runs with the microphone type, and after 75 s with the screen off the Mouth and Caller are still connected (`peers`). **Job 2 "Done when" met** (Mind/Mouth can't do real work until their keys are pushed; see Needs the human).
+- Mouth backup: Extras 2 (real Caller), 3 (rest of `setup.mjs`), 7 (remaining tests) done and pushed in `mouth/`, all against stubs (no keys here).
+
 ## Doing now
-- Job 2: final app on the phone (`app/check.sh`).
+- Nothing that doesn't need a person: see Needs the human.
 
 ## Open
-1. Final app `app/` installed on the phone, passing `app/check.sh`; swap in real Mind/Mouth as they land.
-2. Mouth backup (open items in `mouth/STATUS.md`).
+1. With keys: run the real Mind + Mouth on the phone end to end (wake, notifications, Gmail reply by voice).
+2. Mouth Extras 4, 5, 6 (need the phone + keys + a person); Extra 1 claimed by Wajeeh.
 3. Then-keep-going leftovers: open a chat in Messages/WhatsApp to check field/send labels (would need a real conversation; reading only).
 
 ## Needs the human
@@ -35,6 +38,7 @@
 - `type` replaces the field's text (ACTION_SET_TEXT) rather than appending.
 - Unknown role or no configured token: the hub closes with 4003.
 - WebSocket server: `org.java-websocket` 1.6.0.
+- Release builds: R8 broke `org.java_websocket` (VerifyError at hub start), so the package ships `consumer-rules.pro` keeping `org.java_websocket.**` and `dev.bobby.hands.**`.
 - Waking: `TURN_SCREEN_ON` (appop granted by `grant.sh`) plus an invisible `WakeActivity` that calls `requestDismissKeyguard`, because Android 15 ignores `ACQUIRE_CAUSES_WAKEUP` without that permission.
 
 ## Contract questions

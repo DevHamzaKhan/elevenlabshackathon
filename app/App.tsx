@@ -17,6 +17,7 @@ import type { SettingsPage } from 'bobby-hands';
 import {
   getState,
   handleUrl,
+  EXPECTED_ENV,
   HUB_URL,
   init,
   missing,
@@ -199,6 +200,9 @@ export default function App() {
 
         <Text style={styles.h}>Stored settings ({names.length})</Text>
         <Text style={styles.small}>{names.length ? names.join('\n') : 'None. Run app/tools/push-config.mjs.'}</Text>
+        {EXPECTED_ENV.some((n) => !st.env[n]) && st.ready ? (
+          <Text style={styles.warn}>Not stored yet: {EXPECTED_ENV.filter((n) => !st.env[n]).join(', ')}</Text>
+        ) : null}
 
         <Text style={styles.h}>Log</Text>
         <Text style={styles.mono} selectable>

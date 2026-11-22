@@ -101,6 +101,10 @@ export async function setSwitch(part: Part, on: boolean) {
   log(`${part} switched ${on ? 'on' : 'off'}`);
 }
 
+/** Settings the real packages read (by name; see mind/MERGE.md and mouth/MERGE.md). Shown as a
+ *  warning on the settings screen when not stored; they don't block waking. */
+export const EXPECTED_ENV = ['ANTHROPIC_API_KEY', 'ELEVENLABS_BOBBY_AGENT_ID', 'HUB_TOKEN'];
+
 /** Which required settings are missing (empty means complete). */
 export function missing(): string[] {
   const s = hands.status();

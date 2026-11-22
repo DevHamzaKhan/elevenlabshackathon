@@ -8,26 +8,80 @@ const root = path.resolve(appDir, '..');
 const config = getDefaultConfig(appDir);
 
 // Let Metro see the sibling packages' files.
-config.watchFolders = ['hands', 'mind', 'mouth']
-  .map((d) => path.join(root, d))
-  .filter((d) => fs.existsSync(d));
+const pkgs = ['hands', 'mind', 'mouth'].map((d) => path.join(root, d)).filter((d) => fs.existsSync(d));
+config.watchFolders = pkgs;
 
-// One copy of every shared library: a bare import from a file outside app/ is resolved
-// as if it came from app/ first (react, react-native, expo...), and only falls back to
-// the package's own node_modules when the app doesn't have it (e.g. Mind's own SDK).
+// One copy of every library: never load anything from a sibling package's own node_modules
+// (the app installs every runtime dependency the packages need, per their MERGE.md).
+const esc = (p) => p.replace(/[/\\]/g, '[/\\\\]').replace(/\./g, '\\.');
+config.resolver.blockList = [
+  ...[].concat(config.resolver.blockList || []),
+  ...pkgs.map((p) => new RegExp(`^${esc(path.join(p, 'node_modules'))}[/\\\\].*`)),
+];
+config.resolver.nodeModulesPaths = [path.join(appDir, 'node_modules')];
+
+// Fallback for packages that only have an `exports` map and no `main` (e.g. @elevenlabs/client):
+// Expo's resolver chain falls back to `main` for them and fails, so read `exports` ourselves.
+const CONDITIONS = ['react-native', 'require', 'import', 'default'];
+function pickTarget(t) {
+  if (typeof t === 'string') return t;
+  if (Array.isArray(t)) return t.map(pickTarget).find(Boolean) || null;
+  if (t && typeof t === 'object') {
+    for (const c of CONDITIONS) if (c in t) { const r = pickTarget(t[c]); if (r) return r; }
+  }
+  return null;
+}
+function resolveFromExports(moduleName) {
+  const parts = moduleName.split('/');
+  const name = moduleName.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
+  const sub = '.' + moduleName.slice(name.length);
+  const dir = path.join(appDir, 'node_modules', name);
+  let pkg;
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+  const ex = pkg.exports;
+  if (!ex) return null;
+  const map = typeof ex === 'string' || Array.isArray(ex) || !Object.keys(ex).some((k) => k.startsWith('.')) ? { '.': ex } : ex;
+  let target = sub in map ? pickTarget(map[sub]) : null;
+  if (!target) {
+    for (const [k, v] of Object.entries(map)) {
+      const star = k.indexOf('*');
+      if (star < 0) continue;
+      const pre = k.slice(0, star), post = k.slice(star + 1);
+      if (sub.startsWith(pre) && sub.endsWith(post) && sub.length >= pre.length + post.length) {
+        const t = pickTarget(v);
+        if (t) target = t.replace('*', sub.slice(pre.length, sub.length - post.length));
+        break;
+      }
+    }
+  }
+  if (!target) return null;
+  const file = path.join(dir, target);
+  return fs.existsSync(file) ? { type: 'sourceFile', filePath: file } : null;
+}
+
+// A bare import from a file outside app/ is resolved as if it came from app/.
 const appOrigin = path.join(appDir, 'index.ts');
 const upstream = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  const resolve = upstream || context.resolveRequest;
+  const resolve = typeof upstream === 'function' ? upstream : context.resolveRequest;
   const bare = !moduleName.startsWith('.') && !path.isAbsolute(moduleName);
+  let ctx = context;
   if (bare && !context.originModulePath.startsWith(appDir + path.sep)) {
-    try {
-      return resolve({ ...context, originModulePath: appOrigin }, moduleName, platform);
-    } catch {
-      // fall through to the normal lookup
-    }
+    // Not a spread: some context fields may be inherited.
+    ctx = Object.create(context);
+    ctx.originModulePath = appOrigin;
   }
-  return resolve(context, moduleName, platform);
+  try {
+    return resolve(ctx, moduleName, platform);
+  } catch (e) {
+    const viaExports = bare ? resolveFromExports(moduleName) : null;
+    if (viaExports) return viaExports;
+    throw e;
+  }
 };
 
 module.exports = config;
