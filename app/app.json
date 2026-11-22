@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Bobby",
+    "slug": "bobby",
+    "scheme": "bobby",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "experiments": {
+      "autolinkingModuleResolution": true
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.bobby.app"
+    },
+    "android": {
+      "package": "dev.bobby.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "android.permission.WAKE_LOCK"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "minSdkVersion": 30
+          }
+        }
+      ],
+      "./plugins/with-bobby-art.js",
+      "./plugins/with-new-intent.js"
+    ]
+  }
+}

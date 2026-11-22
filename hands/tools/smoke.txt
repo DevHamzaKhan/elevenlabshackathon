@@ -1,0 +1,6 @@
+# check.sh smoke run: read the home screen and point without tapping
+home
+wait 500
+screen
+point 540 1200
+cursor on

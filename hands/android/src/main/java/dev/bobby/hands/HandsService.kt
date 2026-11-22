@@ -263,14 +263,27 @@ class HandsService : AccessibilityService() {
       if (ref != null && sn.edit) {
         node = ref
       } else {
-        // Not a text field itself: tap it, then type into whatever field got focus.
+        // Not a text field itself (or a web view): tap it, then type into whatever got focus.
         cursor?.press(60)
         gesture(Path().apply { moveTo(target.x.toFloat(), target.y.toFloat()) }, 60)
         waitSettled()
-        node = focusedInput() ?: return "not_editable" to "the target isn't a text field"
+        node = focusedInput()
+        if (node == null) return if (commitViaInputMethod(text)) { waitSettled(); null }
+          else "not_editable" to "the target isn't a text field"
       }
     } else {
-      node = focusedInput() ?: return "not_found" to "no text field has focus"
+      node = focusedInput()
+      if (node == null) {
+        // Web views (e.g. Gmail's reply body) hide their editor from the tree, but the
+        // focused editor still has an input connection.
+        val any = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (any != null) {
+          val r = Rect(); any.getBoundsInScreen(r)
+          cursor?.glideTo(r.exactCenterX(), r.exactCenterY(), w, h)
+        }
+        return if (commitViaInputMethod(text) || (any != null && paste(any, text))) { waitSettled(); null }
+          else "not_found" to "no text field has focus"
+      }
       val r = Rect(); node.getBoundsInScreen(r)
       cursor?.glideTo(r.exactCenterX(), r.exactCenterY(), w, h)
     }
@@ -283,7 +296,10 @@ class HandsService : AccessibilityService() {
       // Some fields only accept text once they've been clicked.
       node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
       Thread.sleep(150)
-      if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return "not_editable" to "the field refused the text"
+      if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+        if (commitViaInputMethod(text) || paste(node, text)) { waitSettled(); return null }
+        return "not_editable" to "the field refused the text"
+      }
     }
     // Put the caret at the end, like a person who just typed.
     val sel = Bundle().apply {
@@ -294,6 +310,30 @@ class HandsService : AccessibilityService() {
     waitSettled()
     return null
   }
+
+  /** Types through the service's own input-method connection (Android 13+). */
+  private fun commitViaInputMethod(text: String): Boolean {
+    if (android.os.Build.VERSION.SDK_INT < 33) return false
+    return try {
+      val ic = inputMethod?.currentInputConnection ?: return false
+      ic.commitText(text, 1, null)
+      true
+    } catch (e: Exception) {
+      Hub.log("input-method typing failed: ${e.message}")
+      false
+    }
+  }
+
+  /** Last resort: put the text on the clipboard and paste it into [node]. */
+  private fun paste(node: AccessibilityNodeInfo, text: String): Boolean = try {
+    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    val latch = CountDownLatch(1)
+    android.os.Handler(mainLooper).post {
+      try { cm.setPrimaryClip(android.content.ClipData.newPlainText("bobby", text)) } finally { latch.countDown() }
+    }
+    latch.await(1, TimeUnit.SECONDS)
+    node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+  } catch (e: Exception) { false }
 
   private fun key(name: String): Pair<String, String?>? {
     val ok = when (name) {

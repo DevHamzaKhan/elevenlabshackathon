@@ -11,11 +11,24 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
 class BobbyHandsModule : Module() {
+  /** Set when the activity receives an intent from Bobby's keep-alive notification. */
+  @Volatile private var fromNotification = false
+
   private val ctx: Context
     get() = appContext.reactContext ?: throw IllegalStateException("no React context")
 
   override fun definition() = ModuleDefinition {
     Name("BobbyHands")
+
+    OnCreate {
+      fromNotification = appContext.currentActivity?.intent
+        ?.getBooleanExtra(KeepAliveService.FROM_NOTIFICATION, false) ?: false
+    }
+
+    // React Native doesn't call setIntent() for new intents, so track them here.
+    OnNewIntent { intent ->
+      fromNotification = intent.getBooleanExtra(KeepAliveService.FROM_NOTIFICATION, false)
+    }
 
     Function("configure") { options: Map<String, Any?> ->
       val token = options["token"]?.toString() ?: throw IllegalArgumentException("configure needs {token}")
@@ -84,10 +97,12 @@ class BobbyHandsModule : Module() {
 
     /** True when the current activity was opened from Bobby's own notification. */
     Function("openedFromNotification") {
-      appContext.currentActivity?.intent?.getBooleanExtra(KeepAliveService.FROM_NOTIFICATION, false) ?: false
+      fromNotification || (appContext.currentActivity?.intent
+        ?.getBooleanExtra(KeepAliveService.FROM_NOTIFICATION, false) ?: false)
     }
 
     Function("clearOpenedFromNotification") {
+      fromNotification = false
       appContext.currentActivity?.intent?.removeExtra(KeepAliveService.FROM_NOTIFICATION)
       Unit
     }

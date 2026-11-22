@@ -31,9 +31,9 @@ class CursorOverlay(private val service: AccessibilityService) {
   private val fade = Runnable { animateAlpha(0f, 300) }
 
   /** Screen position (pixels) of the hotspot. */
-  @Volatile var x = -1f
+  @Volatile var curX = -1f
     private set
-  @Volatile var y = -1f
+  @Volatile var curY = -1f
     private set
 
   fun attach() = main.post {
@@ -74,9 +74,9 @@ class CursorOverlay(private val service: AccessibilityService) {
       if (v == null) { done.countDown(); return@post }
       main.removeCallbacks(fade)
       v.animator?.cancel()
-      val wasHidden = v.alpha < 0.05f || x < 0
-      if (x < 0) { x = screenW / 2f; y = screenH * 0.62f }
-      val fx = x; val fy = y
+      val wasHidden = v.alpha < 0.05f || curX < 0
+      if (curX < 0) { curX = screenW / 2f; curY = screenH * 0.62f }
+      val fx = curX; val fy = curY
       ms = TargetMatcher.glideMs(fx, fy, tx, ty, screenW, screenH)
       if (wasHidden) { v.alpha = 1f; v.invalidate() } else v.alpha = 1f
       // A gentle arc: the control point sits off the straight line, so the motion feels natural.
@@ -91,13 +91,13 @@ class CursorOverlay(private val service: AccessibilityService) {
       a.addUpdateListener {
         val t = it.animatedValue as Float
         val u = 1 - t
-        x = u * u * fx + 2 * u * t * cx + t * t * tx
-        y = u * u * fy + 2 * u * t * cy + t * t * ty
+        curX = u * u * fx + 2 * u * t * cx + t * t * tx
+        curY = u * u * fy + 2 * u * t * cy + t * t * ty
         v.invalidate()
       }
       a.addListener(object : android.animation.AnimatorListenerAdapter() {
         override fun onAnimationEnd(animation: android.animation.Animator) {
-          x = tx; y = ty; v.invalidate(); done.countDown()
+          curX = tx; curY = ty; v.invalidate(); done.countDown()
         }
         override fun onAnimationCancel(animation: android.animation.Animator) { done.countDown() }
       })
@@ -114,7 +114,7 @@ class CursorOverlay(private val service: AccessibilityService) {
     v.pressStart = System.currentTimeMillis()
     v.pressHold = holdMs
     v.rippleStart = System.currentTimeMillis() + holdMs
-    v.rippleX = x; v.rippleY = y
+    v.rippleX = curX; v.rippleY = curY
     v.invalidate()
   }
 
@@ -129,9 +129,9 @@ class CursorOverlay(private val service: AccessibilityService) {
     val v = view ?: return@post
     v.animator?.cancel()
     if (visible) {
-      if (x < 0) {
+      if (curX < 0) {
         val m = wm.currentWindowMetrics.bounds
-        x = m.width() / 2f; y = m.height() * 0.62f
+        curX = m.width() / 2f; curY = m.height() * 0.62f
       }
       v.alpha = 1f
       v.invalidate()
@@ -209,10 +209,10 @@ class CursorOverlay(private val service: AccessibilityService) {
         again = true
       }
 
-      if (x >= 0) {
+      if (curX >= 0) {
         val d = icon ?: return
         val half = (sizePx * scale / 2).toInt()
-        val cx = (x - loc[0]).toInt(); val cy = (y - loc[1]).toInt()
+        val cx = (curX - loc[0]).toInt(); val cy = (curY - loc[1]).toInt()
         d.setBounds(cx - half, cy - half, cx + half, cy + half)
         d.draw(canvas)
       }

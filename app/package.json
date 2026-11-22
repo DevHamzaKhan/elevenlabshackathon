@@ -1,0 +1,32 @@
+{
+  "name": "bobby",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "bobby-hands": "file:../hands",
+    "expo": "~58.0.26",
+    "expo-build-properties": "~58.0.12",
+    "expo-crypto": "~58.0.8",
+    "expo-secure-store": "~58.0.3",
+    "expo-status-bar": "~58.0.5",
+    "react": "19.3.0",
+    "react-native": "0.88.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "hints": "node tools/gen-hints.mjs",
+    "postinstall": "node tools/gen-hints.mjs",
+    "start": "node tools/gen-hints.mjs && expo start",
+    "prebuild": "node tools/gen-hints.mjs && expo prebuild --platform android",
+    "android": "expo run:android",
+    "push-config": "node tools/push-config.mjs",
+    "typecheck": "tsc --noEmit",
+    "check": "bash check.sh",
+    "test": "tsx --test --test-force-exit --test-timeout=30000 tests/*.test.ts"
+  },
+  "private": true
+}

@@ -1,0 +1,6 @@
+peers
+home
+screen
+point 540 1200
+wait 300
+screen

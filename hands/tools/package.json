@@ -1,0 +1,16 @@
+{
+  "name": "bobby-hands-tools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Laptop tools for Bobby Hands: drive.mjs (plays the Mind), fakehub.mjs (fake phone hub), hub-test.mjs, grant.sh",
+  "type": "module",
+  "scripts": {
+    "fakehub": "node fakehub.mjs",
+    "drive": "node drive.mjs",
+    "test:fake": "node hub-test.mjs --fake",
+    "test:phone": "node hub-test.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.23.0"
+  }
+}
