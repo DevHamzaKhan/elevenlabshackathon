@@ -43,7 +43,7 @@ export function openLog(name: string, echo: (line: string) => boolean = () => fa
   const dir = path.join(MIND_DIR, "logs");
   fs.mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const file = path.join(dir, `${name}-${stamp}.log`);
+  const file = path.join(dir, `${name}-${stamp}-${process.pid}.log`);
   const fd = fs.openSync(file, "a");
   const log = (line: string) => {
     const l = `${new Date().toISOString().slice(11, 23)} ${line}`;

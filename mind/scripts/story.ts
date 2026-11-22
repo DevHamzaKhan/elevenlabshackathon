@@ -2,7 +2,7 @@
 // Starts the fake hub + phone, the Mind, the fake Caller and the fake Mouth in one process, plays
 // "what did I miss?", "reply to Sarah and tell her 3 works", "call Alex and tell him I'm running late",
 // then a task interrupted by "stop", and prints PASS or FAIL plus the log path.
-// Flags: --flaky (fake phone sometimes fails or shows a pop-up), --port N, --only email|call|stop|digest
+// Flags: --flaky [--flaky-rate 0.3] (fake phone sometimes fails or shows a pop-up), --port N, --only email|call|stop|digest
 
 import { startMind } from "../src/index";
 import { startFakeHub } from "../fakes/hub";
@@ -33,7 +33,7 @@ if (!env.ANTHROPIC_API_KEY) {
   process.exit(1);
 }
 
-const hub = startFakeHub({ port, log: (s) => log(s), flaky: flag("--flaky") });
+const hub = startFakeHub({ port, log: (s) => log(s), flaky: flag("--flaky") ? Number(arg("--flaky-rate") ?? 0.12) : false });
 await hub.ready;
 const t0 = Date.now();
 const mind = startMind({ hubUrl: `ws://localhost:${port}`, token: "story", env, hints, log });

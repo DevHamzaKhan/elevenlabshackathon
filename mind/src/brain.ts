@@ -344,6 +344,8 @@ export class Brain {
     let lastKey = "";
     let lastActionSig = "";
     let lastFailed = false;
+    let lastError = "";
+    let retriedTimeout = false;
 
     for (let i = 0; i < MAX_STEPS; i++) {
       if (task.cancelled || this.stopped) return this.finishCancelled(task, lastSay);
@@ -401,7 +403,7 @@ export class Brain {
         continue;
       }
       const sig = JSON.stringify(built.act) + "|" + key;
-      if (sig === lastActionSig && lastFailed) {
+      if (sig === lastActionSig && lastFailed && !(lastError === "timeout" && !retriedTimeout)) {
         task.history.push({
           action: describeDecision(d, screen),
           result: "not done: this exact action just failed on this same screen; choose something different",
@@ -411,6 +413,7 @@ export class Brain {
         if (fails >= MAX_CONSECUTIVE_FAILS) return this.giveUp(task, lastSay);
         continue;
       }
+      retriedTimeout = sig === lastActionSig && lastFailed;
       lastActionSig = sig;
 
       // Wait for Bobby to finish the previous line, then speak and act at the same instant.
@@ -428,14 +431,17 @@ export class Brain {
         task.history.push({ action: desc, result: "failed: timeout (no answer within 10 s)", say: sayText });
         fails += 1;
         lastFailed = true;
+        lastError = "timeout";
       } else if (res.ok) {
         task.history.push({ action: desc, result: "ok", say: sayText });
         fails = 0;
         lastFailed = false;
+        lastError = "";
       } else {
         task.history.push({ action: desc, result: `failed: ${res.error ?? "unknown"}`, say: sayText });
         fails += 1;
         lastFailed = true;
+        lastError = String(res.error ?? "unknown");
       }
       if (fails >= MAX_CONSECUTIVE_FAILS) return this.giveUp(task, lastSay);
     }

@@ -83,10 +83,11 @@ Bobby's line ("say"):
 
 Finishing:
 - "done" when the current screen shows the goal is achieved (for an email, the sent confirmation or your message shown in the thread). "say" is one short sentence telling the user the result. No action.
-- "failed" when the goal can't be reached, or you have tried several different approaches and none worked. "say" briefly says what went wrong. No action.
+- "failed" only when the goal can't be reached, or you have tried at least three different approaches and none worked. A pop-up that keeps coming back is not a reason to stop: dismiss it again and carry on. "say" briefly says what went wrong. No action.
 
 Recovering:
-- If the last action failed, or the screen isn't what you expected, read the screen fresh and adapt. Never repeat the exact action that just failed: pick another target, go back, or take another route.
+- If the last action failed, or the screen isn't what you expected, read the screen fresh and adapt.
+- A failure with "timeout" means the phone was slow: if the screen still shows the same target, retrying that action once is the right move. After any other failure (not_found, not_editable, ...), or a second timeout, don't repeat the exact action: pick another target, go back, or take another route. Prefer the obvious target over a workaround (retry "Reply" rather than switching to "Reply all").
 - Pop-ups and dialogs: dismiss them ("Not now", "Cancel", "Close", "No thanks", or back) unless they are part of the task.
 - If the plan no longer fits what you see, put a new full plan in "plan" (2 to 6 steps, each with what to do and why). Otherwise leave "plan" empty.
 - "step" is the number of the plan step this action works on.

@@ -67,8 +67,8 @@ export type PhoneOptions = {
   log?: (s: string) => void;
   /** Multiplies every delay; 0 makes acts answer almost at once (tests). */
   speed?: number;
-  /** Sometimes fail an action or show a pop-up, to test recovery. */
-  flaky?: boolean;
+  /** Sometimes fail an action or show a pop-up, to test recovery. A number sets the chance per action. */
+  flaky?: boolean | number;
   /** Random source, replaceable for deterministic tests. */
   random?: () => number;
 };
@@ -97,6 +97,7 @@ export class Phone {
   log: (s: string) => void;
   speed: number;
   flaky: boolean;
+  flakyRate: number;
   random: () => number;
   lastCursor: [number, number] = [W / 2, H / 2];
   actsDone = 0;
@@ -105,6 +106,7 @@ export class Phone {
     this.log = opts.log ?? ((s) => console.log(s));
     this.speed = opts.speed ?? 1;
     this.flaky = !!opts.flaky;
+    this.flakyRate = typeof opts.flaky === "number" ? opts.flaky : 0.12;
     this.random = opts.random ?? Math.random;
   }
 
@@ -483,11 +485,13 @@ export class Phone {
   /** Runs one `act` and returns the `act_result` body (without `re`). */
   async act(m: any): Promise<{ ok: boolean; error?: string }> {
     const d = this.speed;
+    const hadPopup = !!this.popup;
     const r = await this.actInner(m, d);
     this.actsDone += 1;
     // Settle time.
     await sleep(300 * d);
-    if (r.ok && this.flaky && !this.popup && this.random() < 0.12) {
+    // A pop-up never reappears straight after one was dismissed.
+    if (r.ok && this.flaky && !hadPopup && !this.popup && this.random() < this.flakyRate) {
       this.popup = "Update available";
       this.log("phone: (flaky) an \"Update available\" pop-up appeared");
     }
@@ -503,7 +507,7 @@ export class Phone {
 
   private async actInner(m: any, d: number): Promise<{ ok: boolean; error?: string }> {
     const kind = m.do;
-    if (this.flaky && ["tap", "type"].includes(kind) && this.random() < 0.1) {
+    if (this.flaky && ["tap", "type"].includes(kind) && this.random() < this.flakyRate * 0.8) {
       this.log(`phone: (flaky) ${kind} timed out`);
       await sleep(500 * d);
       return { ok: false, error: "timeout" };

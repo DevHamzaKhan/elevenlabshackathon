@@ -14,7 +14,7 @@ export type FakeHubOptions = {
   port?: number;
   log?: (s: string) => void;
   speed?: number;
-  flaky?: boolean;
+  flaky?: boolean | number;
   /** When set, a wrong token is closed with 4003. Pretend hubs accept any token by default. */
   token?: string;
   random?: () => number;
@@ -213,7 +213,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const port = Number(argValue("--port", "8765"));
   const hub = startFakeHub({
     port,
-    flaky: hasFlag("--flaky"),
+    flaky: hasFlag("--flaky") ? Number(argValue("--flaky-rate", "0.12")) : false,
     token: hasFlag("--strict-token") ? process.env.HUB_TOKEN : undefined,
     log: (s) => console.log(`[hub] ${s}`),
   });
