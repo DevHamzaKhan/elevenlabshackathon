@@ -32,7 +32,7 @@ Extras (open to the backup, Hamza's AI, from the start; claim with `(claimed: <n
 2. Twilio, voice sample (`mouth/private/`), test contact: only needed for the Extras.
 
 ## Try it yourself
-- (filled in as pieces land)
+- **Listen test** (after `node mouth/agent/setup.mjs` has run with your key): start the emulator with the host mic (`emulator -avd bobby -allow-host-audio`, then `adb emu avd hostmicon`), run `node mouth/fakes/hub.mjs --port 8766`, open the test app (`cd mouth/example && npx expo start --dev-client`, then `npx expo run:android`). Say out loud "Hi Bobby, how are you?": you should hear a short friendly answer, and the hub prints `heard` then `spoke`. Then type `say I'm looking for the word Reply to answer Sarah` in the hub: Bobby should say it within about a second, in his own words. Type it again and then `hush` straight away: he should stop mid-sentence.
 
 ## Decisions
 - `@livekit/react-native-webrtc` pinned to exactly 144.1.2: 144.2.0 renamed its Java package and breaks `@livekit/react-native` 2.12.0.
