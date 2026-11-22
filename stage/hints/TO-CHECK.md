@@ -35,3 +35,6 @@ Settings: quick settings tile descriptions like "Wi-Fi, On" after key notificati
 Clock: app label "Clock" and package com.sec.android.app.clockpackage; bottom tabs "Alarm", "World clock", "Stopwatch", "Timer"
 Clock: add-alarm button description "Add alarm" at the top right; "Save" at the bottom of the new-alarm screen
 Clock: alarm row switch is a separate tappable node whose description holds the time
+Calendar: which calendar app opens from the "Calendar" icon on the S21 (Samsung or Google package)
+Calendar: add-event button description ("Add event" or "Create"), bottom right
+Calendar: new-event screen has a "Title" field and a "Save" button (top or bottom)
