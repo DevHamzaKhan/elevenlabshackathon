@@ -78,7 +78,27 @@ mouth.wake();                       // each time the app is opened (side button)
 - **`CALLER_DRY_RUN` defaults to 1.** Every call is faked unless `env.CALLER_DRY_RUN` is exactly `"0"`. Leave it at 1 until the human chooses to place a real call.
 - A call runs while the app is in the back without a foreground service: it's only HTTPS polling (every 2 s) while Twilio and ElevenLabs carry the audio. If Android pauses the JS thread, the `call_result` arrives late but still arrives.
 
-## 5. Not yet verified (open items in STATUS.md)
+## 5. Working from the back (tested)
 
-- **Working from the back** (Extra 1). After `wake()` the final app moves itself to the back. Android stops giving the microphone to a background app unless a **foreground service of type `microphone`** is running, started while the app is still in front. Expected needs: permissions `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_MICROPHONE`, a service declared with `android:foregroundServiceType="microphone"` and an ongoing notification. Hands' native module is the natural place for that service. This hasn't been tested yet.
+After `wake()` the final app moves itself to the back. Without a **foreground service of type `microphone`**, Android freezes the app about 8 s later: in the emulator both hub sockets dropped (1006) and Bobby went deaf and silent. With one, the session keeps going: tested in the emulator with Home pressed right after `wake`, then a typed user turn → `heard` + `spoke`, a `say` → `say_started`/`say_done` right away and again 60 s later, then `sleep` → `asleep`.
+
+**In the final app, Hands' keep-alive is that service.** `hands.startKeepAlive()` runs `KeepAliveService` with `foregroundServiceType="microphone|dataSync"` and uses the microphone type only when `RECORD_AUDIO` is granted. So:
+
+1. **Grant `RECORD_AUDIO` before the first wake** (runtime request or `adb shell pm grant`). Without it the keep-alive falls back to `dataSync` and the Mouth loses the microphone in the back.
+2. **Order:** `startKeepAlive()` → `mouth.wake()` → `moveToBack()`, all while the app is in front. That is what `app/src/bobby.ts` already does.
+3. **Don't add `react-native-background-actions`** to the final app: the test app uses it (plus `example/plugins/withMicForegroundService.js`) only because it has no Hands. One microphone service is enough.
+
+## 6. Agent settings the Mouth relies on
+
+`agent/setup.mjs` sets these on the Bobby agent; re-run it after any change:
+- `turn.turn_timeout = -1`: Bobby never speaks up on his own after a silence. With ElevenLabs' default (7 s) he kept saying "Are you still there?" while the user was quiet, which would talk over a task.
+- Realtime voice mode, empty `first_message`, public (no signed URL), the prompt in `agent/bobby-prompt.md`.
+
+## 7. No React provider needed
+
+`startMouth` is a plain function: it drives `@elevenlabs/client`'s `VoiceConversation` directly, so the app doesn't wrap anything in `ConversationProvider`. (Answers MERGE-ISSUES.md, Mouth item 3.)
+
+## 8. Not yet verified
+
 - **Earbuds** (Extra 5): check that Bobby plays through connected Bluetooth earbuds. `@elevenlabs/react-native` sets the output to the speaker by default, so routing may need `AudioSession` from `@livekit/react-native`. Untested; the emulator can't check it.
+- **On the real phone:** the `say` delay (0.26–0.28 s in the emulator) and the background behaviour on Samsung's battery settings.

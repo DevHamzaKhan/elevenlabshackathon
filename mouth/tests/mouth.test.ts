@@ -155,6 +155,7 @@ test("heard: real user turns only; our own tagged lines and echoed test turns ar
   const s = await live();
   s.v.cb.onUserTranscript("[SAY] one");
   s.v.cb.onUserTranscript("[CORRECT] two");
+  s.v.cb.onUserTranscript("...");
   s.v.cb.onUserTranscript("reply to Sarah, tell her 3 works");
   s.m.onHub({ type: "test_user_turn", to: "mouth", text: "open Gmail" });
   s.v.cb.onUserTranscript("open Gmail"); // echo of the typed turn

@@ -74,6 +74,9 @@ export function agentBody(prompt) {
           "agent_response_correction", "conversation_initiation_metadata", "ping",
         ],
       },
+      // -1: Bobby never speaks up on his own after a silence ("Are you still there?"). The user
+      // is often silent for long stretches while the Mind narrates a task or a call runs.
+      turn: { turn_timeout: -1 },
     },
     platform_settings: { auth: { enable_auth: false } },
   };

@@ -161,7 +161,8 @@ export class Mouth {
 
   private onUserTranscript(text: string): void {
     const t = text.trim();
-    if (!t || t.startsWith(SAY_TAG) || t.startsWith(CORRECT_TAG)) return; // our own instructions
+    if (!/[\p{L}\p{N}]/u.test(t)) return; // "..." and other noise-only transcripts
+    if (t.startsWith(SAY_TAG) || t.startsWith(CORRECT_TAG)) return; // our own instructions
     // A typed test turn may be echoed back as a transcript: it was already sent as heard.
     const i = this.typedTurns.findIndex((x) => x.text === t && this.now() - x.at < 10_000);
     if (i >= 0) {

@@ -1,6 +1,9 @@
 # Mouth: status (Wajeeh, 1x budget: Core only)
 
 ## Done
+- **Extra 1, working from the back (Wajeeh):** without a microphone foreground service Android froze the test app ~8 s after Home (hub sockets dropped). With one (test app: `react-native-background-actions` + `example/plugins/withMicForegroundService.js`), Bobby still hears and speaks after Home, right away and 60 s later, then sleeps cleanly. In the final app Hands' keep-alive is that service; `MERGE.md` §5 says what the app must do (grant RECORD_AUDIO first; startKeepAlive → wake → moveToBack).
+- **Integration with the other parts (laptop):** `tools/integration-with-mind.mts` runs the real Mind (stand-in model) on the Mind's fake hub and phone with the real Mouth and Caller code: wake → heard → task with narrated says → email sent on the fake phone → call through the Caller → bye → sleep/asleep; every `say` got exactly one `say_done`. 9/9 pass. The real package also type-checks against `app/src/types.ts` (`PartConfig` → `MouthHandle`, `Stoppable`).
+- **Fixed from the background run:** Bobby said "Are you still there?" every ~9 s of silence (ElevenLabs' turn timeout); `setup.mjs` now sets `turn.turn_timeout = -1`. Noise-only transcripts like "..." are no longer sent as `heard`.
 - **Extras 2, 3, 7 (Hamza's AI, against stubs; no keys on this machine, so nothing real was called):**
   - Extra 2, the real Caller (`src/caller.ts`): allowlist check, then ElevenLabs `register-call` (TwiML for the caller agent, with `goal`/`context` as dynamic variables) and Twilio's REST API placing the call **from `OWNER_NUMBER`**; if Twilio refuses that caller ID it falls back to ElevenLabs `outbound-call` from the imported bought number. `call_status` from polling Twilio's call (dialing/answered/ended/failed: busy, no_answer, failed); after the call it fetches the ElevenLabs conversation, maps the transcript to me/them and sends `call_result` with a one or two sentence summary. Every path ends in exactly one `call_result` (not_allowed, not_configured, busy, no_answer, failed, timeout, cancelled, no_transcript). `CALLER_DRY_RUN` defaults to 1; only exactly `0` dials. `tools/caller.mjs` runs it on the laptop against the pretend hub; `check.sh` runs one dry-run call through it.
   - Extra 3, rest of `setup.mjs` (code only, dry-run-tested): voice clone from `mouth/private/` (`/v1/voices/add`, reused by name on re-runs, `--reclone` to redo), ready-made voice until the sample exists, caller agent "Bobby caller" from `agent/caller-prompt.md` (cloned voice, `{{goal}}`/`{{context}}`, `end_call` tool, `their_answer` data collection used as the summary), Twilio number import (`/v1/convai/phone-numbers`), check that `OWNER_NUMBER` is a verified caller ID, writes all three ids. `--dry-run` now runs every step against a fake API that prints each request with keys redacted.
@@ -25,7 +28,7 @@ Core (Wajeeh's AI, in order):
 5. `npm test`, `check.sh`, `MERGE.md`.
 
 Extras (open to the backup, Hamza's AI, from the start; claim with `(claimed: <name>)`):
-1. Working from the back: the background test, with whatever it takes in `MERGE.md`. (claimed: Wajeeh)
+1. ~~Working from the back~~: done (Wajeeh), see Done and `MERGE.md` §5.
 2. ~~The real Caller~~: done (Hamza), against stubs. A real call is Extra 6.
 3. ~~The rest of `setup.mjs`~~: done as code (Hamza); not yet run for real (no keys here).
 4. ~~Measuring the `say` delay~~: measured 0.26–0.28 s from `say` to `say_started` in the emulator (Realtime mode). Re-check on the real phone.
@@ -64,6 +67,9 @@ Extras (open to the backup, Hamza's AI, from the start; claim with `(claimed: <n
 - `say` and `correct` reach the agent as typed user messages tagged `[SAY]` / `[CORRECT]`, which `bobby-prompt.md` tells it to speak and never answer; `whisper` is a contextual update. The tagged messages are never forwarded as `heard`.
 - Bobby's `first_message` is empty: the Mind decides what he says first.
 - Laptop tools (fake hub, setup script, tests) are Node `.mjs`/TypeScript run with `tsx`; the package itself is plain TS with no build step.
+
+## For Hamza (final app)
+- `app/MERGE-ISSUES.md`'s Mouth items are resolved: `mouth/src/index.ts` exports `startMouth`/`startCaller`, `MERGE.md` lists installs, plugins, permissions and the foreground-service rule, and no React provider is needed (MERGE.md §7). `app/src/packages.ts` can switch from `../standins/mouth` to `bobby-mouth`.
 
 ## Contract questions
 - None yet.
