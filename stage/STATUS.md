@@ -37,7 +37,7 @@ Core: all done.
 
 Extras (open to James C's AI from the start, most important first):
 4. Fix hints from `hands/HINTS-CHECK.md` after each pull
-6. Experiments: more hints
+6. Experiments: more hints (claimed: James H, Clock, Calendar, YouTube)
 
 ## Needs the human
 - Nothing.
