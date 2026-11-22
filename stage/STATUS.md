@@ -23,8 +23,10 @@
 - Extra 6, record button (James C): "● Record" in the dashboard header saves the live stream as a `.jsonl` in the `story.jsonl` format; checked headless: 45 frames recorded, downloaded, and played back by `replay.mjs --story`.
 - Extra 5 (James C): `cursor/preview.html` checked by headless screenshot: all three designs render and animate, no page errors. Fixed its legend (garbled HTML, "Exec" renamed to Hands).
 
+- Extra 6, phone panel (James H): a phone-shaped column draws the latest `screen_result` as labelled boxes and glides the chosen cursor to each `act` target, resolved like Hands (`n`, `text` exact then contains, `x/y`); ripple on tap, trail on swipe, a label for every action, screen dims when out of date, cursor hides 2 s after. `?phone=0` hides it, `?cursor=glow` swaps the design.
+
 ## Doing now
-- E6.1 Phone panel on the dashboard (James H, asked to keep going).
+- E6.2 Gmail screen reads in `story.jsonl` so the phone panel has targets.
 
 ## Open
 Core: all done.

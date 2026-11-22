@@ -50,7 +50,9 @@ header { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
 #conn.down { color: var(--bad); }
 
 main { display: grid; gap: 16px; min-height: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) auto minmax(0, 1fr);
+  grid-template-areas: "talk plan phone feed"; }
+body.no-phone main { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
   grid-template-areas: "talk plan feed"; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
   padding: 16px 18px; display: flex; flex-direction: column; min-height: 0; }
@@ -127,10 +129,38 @@ main { display: grid; gap: 16px; min-height: 0;
 .sync-row.off .gap { color: var(--warn); }
 .sync-legend { font-size: 13px; color: var(--muted); margin: -6px 0 8px; }
 .sync-legend b.v { color: var(--accent); } .sync-legend b.c { color: var(--ok); }
+
+/* Phone panel (experiment): latest screen_result + the cursor at each act target */
+#phone-panel { grid-area: phone; padding: 16px 14px; align-items: center; }
+body.no-phone #phone-panel { display: none; }
+.phone { position: relative; height: 100%; max-height: 100%; aspect-ratio: 1080 / 2400; min-height: 0;
+  border: 10px solid #1b1d22; border-radius: 34px; background: #0d0f13; box-shadow: 0 6px 24px rgba(0,0,0,.18); overflow: hidden; }
+.phone .app { position: absolute; top: 0; left: 0; right: 0; z-index: 3; padding: 8px 10px 4px; font-size: 12px; font-weight: 700;
+  color: #cfd3dc; background: linear-gradient(#0d0f13, rgba(13,15,19,0)); text-align: center; letter-spacing: .04em; }
+.phone .screen { position: absolute; inset: 0; transition: opacity .25s; }
+.phone .screen.stale { opacity: .3; }
+.node { position: absolute; border: 1px solid rgba(255,255,255,.22); border-radius: 6px; color: #e9ecf2;
+  font-size: 11px; line-height: 1.15; padding: 2px 3px; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  text-align: center; word-break: break-word; background: rgba(255,255,255,.05); }
+.node.tap { border-color: rgba(109,155,255,.55); }
+.node.edit { border-style: dashed; justify-content: flex-start; text-align: left; }
+.node.hit { background: rgba(109,155,255,.35); border-color: #6d9bff; }
+.phone .cursor { position: absolute; z-index: 5; width: 44px; height: 44px; margin: -22px 0 0 -22px; left: 50%; top: 55%;
+  transition: left .65s cubic-bezier(.45,.05,.25,1), top .65s cubic-bezier(.45,.05,.25,1), opacity .4s; opacity: 0; pointer-events: none; }
+.phone .cursor.on { opacity: 1; }
+.phone .cursor img { width: 100%; height: 100%; display: block; }
+.phone .ripple { position: absolute; z-index: 4; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%;
+  border: 3px solid #6d9bff; animation: ripple .6s ease-out forwards; pointer-events: none; }
+@keyframes ripple { to { transform: scale(3.2); opacity: 0; } }
+.phone .chip { position: absolute; z-index: 6; left: 50%; transform: translateX(-50%); bottom: 8%; max-width: 88%;
+  background: rgba(255,255,255,.94); color: #1b1d22; font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 10px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: pop .25s ease-out; }
+.phone .empty-screen { position: absolute; inset: 0; display: grid; place-items: center; color: #7d8390; font-size: 13px; font-style: italic; padding: 12px; text-align: center; }
 @media (max-width: 900px) {
   body { padding: 12px 16px; height: auto; }
   html, body { height: auto; }
-  main { grid-template-columns: minmax(0, 1fr); grid-template-areas: "plan" "talk" "feed"; }
+  main, body.no-phone main { grid-template-columns: minmax(0, 1fr); grid-template-areas: "plan" "phone" "talk" "feed"; }
+  .phone { height: 70vh; }
   .scroll { max-height: 60vh; }
   .brand { font-size: 26px; } #task-title { font-size: 22px; }
   .step { grid-template-columns: 34px 1fr; padding: 10px 12px; } .step .mark { width: 32px; height: 32px; font-size: 15px; }
@@ -149,6 +179,11 @@ main { display: grid; gap: 16px; min-height: 0;
 <main>
   <section class="panel" id="talk-panel"><h2>Conversation</h2><div class="scroll" id="talk"><p class="empty">Nothing said yet</p></div></section>
   <section class="panel" id="plan-panel"><h2>Plan</h2><div class="scroll" id="plan"><p class="empty">No plan yet</p></div></section>
+  <section class="panel" id="phone-panel"><div class="phone" id="phone">
+    <div class="app" id="phone-app">Phone</div>
+    <div class="screen" id="phone-screen"><div class="empty-screen">Waiting for the first screen read</div></div>
+    <div class="cursor" id="phone-cursor"><img src="../cursor/ring/ring.svg" alt=""></div>
+  </div></section>
   <div id="side">
     <section class="panel" id="call-panel" hidden><h2>Phone call</h2><div id="call"></div></section>
     <section class="panel" id="feed-panel"><h2>Phone</h2><div class="scroll" id="feed"><p class="empty">No actions yet</p></div></section>
@@ -459,6 +494,134 @@ wire.say_done = (m, f) => {
     showResult(m, f);
     const p = sync.byAct.get(m.re);
     if (p) { p.resAt = at(f); syncRender(p); sync.byAct.delete(m.re); }
+  };
+}
+
+// ---------- phone panel (experiment) ----------
+// Draws the latest screen_result and moves the cursor to each act's target, resolved the way
+// the contract says Hands does it: {n}, {text} (exact beats contains, text or desc), or {x,y}.
+// ?phone=0 hides the panel. ?cursor=<name> picks a design from stage/cursor/ (default ring).
+if (params.get("phone") === "0") document.body.classList.add("no-phone");
+if (params.get("cursor")) {
+  const c = params.get("cursor").replace(/[^a-z0-9_-]/gi, "");
+  $("phone-cursor").querySelector("img").src = "../cursor/" + c + "/" + c + ".svg";
+}
+const APP_NAMES = { "com.google.android.gm": "Gmail", "com.sec.android.app.launcher": "Home screen",
+  "com.whatsapp": "WhatsApp", "com.android.chrome": "Chrome", "com.google.android.apps.maps": "Maps",
+  "com.spotify.music": "Spotify", "com.android.settings": "Settings", "com.samsung.android.messaging": "Messages",
+  "com.google.android.apps.messaging": "Messages" };
+const phone = { size: [1080, 2400], nodes: [], hideTimer: 0 };
+function pct(v, total) { return (100 * v / total) + "%"; }
+function drawScreen(m) {
+  phone.size = Array.isArray(m.size) && m.size.length === 2 ? m.size : [1080, 2400];
+  phone.nodes = Array.isArray(m.nodes) ? m.nodes : [];
+  $("phone").style.aspectRatio = phone.size[0] + " / " + phone.size[1];
+  $("phone-app").textContent = APP_NAMES[m.app] || m.app || "Phone";
+  const scr = $("phone-screen");
+  scr.textContent = "";
+  scr.classList.remove("stale");
+  const [W, H] = phone.size;
+  for (const n of phone.nodes) {
+    if (!Array.isArray(n.bounds)) continue;
+    const [l, t, r, b] = n.bounds;
+    const d = el("div", "node" + (n.tap ? " tap" : "") + (n.edit ? " edit" : ""), n.text || n.desc || "");
+    d.dataset.n = n.n;
+    Object.assign(d.style, { left: pct(l, W), top: pct(t, H), width: pct(r - l, W), height: pct(b - t, H) });
+    scr.append(d);
+  }
+  if (!phone.nodes.length) scr.append(el("div", "empty-screen", "Nothing readable on screen"));
+}
+function findNode(on) {
+  if (!on) return null;
+  if (on.n != null) return phone.nodes.find((n) => n.n === on.n) || null;
+  if (on.text != null) {
+    const q = String(on.text).toLowerCase();
+    const label = (n) => [(n.text || "").toLowerCase(), (n.desc || "").toLowerCase()];
+    return phone.nodes.find((n) => label(n).includes(q)) || phone.nodes.find((n) => label(n).some((s) => s.includes(q))) || null;
+  }
+  return null;
+}
+function targetPoint(on) {          // -> {x, y} in screen pixels, or null
+  if (on && on.x != null && on.y != null) return { x: on.x, y: on.y };
+  const n = findNode(on);
+  if (n && Array.isArray(n.bounds)) return { x: (n.bounds[0] + n.bounds[2]) / 2, y: (n.bounds[1] + n.bounds[3]) / 2, node: n };
+  return null;
+}
+function moveCursor(p) {
+  const c = $("phone-cursor");
+  c.classList.add("on");
+  c.style.left = pct(p.x, phone.size[0]);
+  c.style.top = pct(p.y, phone.size[1]);
+  clearTimeout(phone.hideTimer);
+}
+function hideCursorSoon() {          // Hands shows the cursor during an act and for 2 s after
+  clearTimeout(phone.hideTimer);
+  phone.hideTimer = setTimeout(() => $("phone-cursor").classList.remove("on"), 2000);
+}
+function chip(text) {
+  $("phone").querySelectorAll(".chip").forEach((c) => c.remove());
+  const c = el("div", "chip", text);
+  $("phone").append(c);
+  setTimeout(() => c.remove(), 2200);
+}
+function ripple(p) {
+  const r = el("div", "ripple");
+  r.style.left = pct(p.x, phone.size[0]);
+  r.style.top = pct(p.y, phone.size[1]);
+  $("phone").append(r);
+  setTimeout(() => r.remove(), 700);
+}
+const SWIPE = { left: [0.8, 0.5, 0.2, 0.5], right: [0.2, 0.5, 0.8, 0.5], up: [0.5, 0.75, 0.5, 0.3], down: [0.5, 0.3, 0.5, 0.75] };
+const phoneActs = new Map();         // act id -> {do, point}
+function phoneAct(m) {
+  const [W, H] = phone.size;
+  let point = null;
+  $("phone-screen").querySelectorAll(".node.hit").forEach((n) => n.classList.remove("hit"));
+  if (["tap", "long_press", "point"].includes(m.do) || (m.do === "type" && m.on)) {
+    point = targetPoint(m.on);
+    if (point) {
+      moveCursor(point);
+      if (point.node) $("phone-screen").querySelector('.node[data-n="' + point.node.n + '"]')?.classList.add("hit");
+    } else {
+      moveCursor({ x: W / 2, y: H * 0.55 });   // target isn't in the last screen read: show where it's headed
+    }
+    chip(actWords(m));
+  } else if (m.do === "swipe") {
+    const s = SWIPE[m.dir] || SWIPE.left;
+    const from = targetPoint(m.on) || { x: s[0] * W, y: s[1] * H };
+    const c = $("phone-cursor");
+    c.style.transition = "none";
+    moveCursor(from);
+    void c.offsetWidth;                          // restart the transition from the swipe's start point
+    c.style.transition = "";
+    setTimeout(() => moveCursor({ x: from.x + (s[2] - s[0]) * W, y: from.y + (s[3] - s[1]) * H }), 30);
+    chip(actWords(m));
+  } else if (m.do === "type") {
+    chip("⌨ " + (m.text || ""));
+  } else {
+    chip(actWords(m));
+  }
+  phoneActs.set(m.id, { do: m.do, point });
+}
+function phoneResult(m) {
+  const a = phoneActs.get(m.re);
+  if (!a) return;
+  phoneActs.delete(m.re);
+  if (m.ok && a.point && (a.do === "tap" || a.do === "long_press")) ripple(a.point);
+  if (!m.ok) chip("✕ " + (m.error || "failed"));
+  // After anything that can change the screen, the drawn screen is out of date until the next read.
+  if (m.ok && a.do !== "point" && a.do !== "wait") $("phone-screen").classList.add("stale");
+  hideCursorSoon();
+}
+{
+  const prevAct = wire.act, prevResult = wire.act_result, prevScreenResult = wire.screen_result;
+  wire.act = (m, f) => { prevAct && prevAct(m, f); try { phoneAct(m); } catch (e) { console.error("phone act", e); } };
+  wire.act_result = (m, f) => { prevResult && prevResult(m, f); try { phoneResult(m); } catch (e) { console.error("phone result", e); } };
+  wire.screen_result = (m, f) => { prevScreenResult && prevScreenResult(m, f); drawScreen(m); };
+  const prevCursor = wire.cursor;
+  wire.cursor = (m, f) => {
+    prevCursor && prevCursor(m, f);
+    if (m.show === false) { clearTimeout(phone.hideTimer); $("phone-cursor").classList.remove("on"); }
   };
 }
 
