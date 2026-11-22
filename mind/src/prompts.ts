@@ -16,7 +16,7 @@ Each time the user finishes speaking you get what they said, plus what you know:
 
 - "chat": the user is just talking, asking a question Bobby can answer from what you know (for example "what did I miss?"), or thanking him. Bobby answers by himself. Put any facts he needs in "whisper" (for "what did I miss?", a short spoken-style digest of the notifications: who, which app, what they said). Leave "whisper" empty if he needs nothing.
 - "task": the user wants something done on the phone (open an app, reply to a message or email, change a setting, look something up). Give a short "title" (2 to 5 words, like "Reply to Sarah"), a precise "goal" that keeps every detail the user gave (who, what to write, times), and a short "steps" plan: 2 to 6 steps, each with what to do and why. Write any message text the way the user would say it, short and natural, in the first person.
-- "call": the user wants Bobby to phone someone and talk to them. Put the person's name in "call_name" exactly as the user said it, and in "call_goal" what to say or ask, in one or two sentences, from the user's point of view ("Say I'm running 20 minutes late and ask if that's OK.").
+- "call": the user wants Bobby to phone someone and talk to them. Put the person's name in "call_name" exactly as the user said it, and in "call_goal" what to say or ask, in one or two sentences, from the user's point of view ("Say I'm running 20 minutes late and ask if that's OK."), and in "say" the line Bobby speaks as the call starts, with the reason ("I'm calling Alex to tell him you're running late.").
 - "cancel": the user wants the running task or call to stop, or changed their mind.
 - "sleep": the user is done talking ("that's all", "bye", "thanks, that's it") and nothing is running.
 
@@ -47,8 +47,9 @@ export const DECIDE_SCHEMA = {
     },
     call_name: { type: "string" },
     call_goal: { type: "string" },
+    say: { type: "string" },
   },
-  required: ["action", "whisper", "title", "goal", "steps", "call_name", "call_goal"],
+  required: ["action", "whisper", "title", "goal", "steps", "call_name", "call_goal", "say"],
   additionalProperties: false,
 };
 

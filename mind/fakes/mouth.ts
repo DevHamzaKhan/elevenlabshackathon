@@ -25,7 +25,7 @@ export function startFakeMouth(opts: FakeMouthOptions) {
     const s = queue.shift()!;
     conn.send({ type: "say_started", re: s.id });
     log(`BOBBY SAYS: ${s.text}`);
-    const ms = Math.max(200, s.text.length * msPerChar);
+    const ms = Math.max(msPerChar ? 200 : 5, s.text.length * msPerChar);
     speaking = {
       id: s.id,
       timer: setTimeout(() => {

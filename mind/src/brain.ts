@@ -255,7 +255,7 @@ export class Brain {
         break;
       }
       case "call":
-        void this.startCall(String(d.call_name ?? ""), String(d.call_goal || text), String(d.whisper ?? ""));
+        void this.startCall(String(d.call_name ?? ""), String(d.call_goal || text), String(d.whisper ?? ""), String(d.say ?? ""));
         break;
     }
   }
@@ -526,7 +526,7 @@ export class Brain {
     return first ?? null;
   }
 
-  private async startCall(name: string, goal: string, whisper: string) {
+  private async startCall(name: string, goal: string, whisper: string, startLine = "") {
     const found = this.lookup(name);
     if (!found) {
       this.facts.push(`No number for ${name}, so no call was made.`);
@@ -562,7 +562,7 @@ export class Brain {
       context: `You are speaking as the phone's owner. ${who} is someone they know and expects this call.`,
     });
     this.o.log(`mind: calling ${who} (${number}): ${goal}`);
-    void this.say(`I'm calling ${who} now.`);
+    void this.say(startLine && startLine.toLowerCase().includes(who.toLowerCase().split(/\s+/)[0]) ? startLine : `I'm calling ${who} now.`);
     const r = await result;
     if (this.call !== call) return;
     this.call = null;
@@ -572,7 +572,9 @@ export class Brain {
     if (!r) line = `The call to ${who} didn't finish in time, so I don't know how it went.`;
     else if (r.ok) {
       ok = true;
-      line = `I spoke to ${who}. ${String(r.summary ?? "").trim() || "The call went fine."}`;
+      const summary = String(r.summary ?? "").trim();
+      const first = who.split(/\s+/)[0].toLowerCase();
+      line = !summary ? `I spoke to ${who} and the call went fine.` : summary.toLowerCase().includes(first) ? summary : `I spoke to ${who}: ${summary}`;
     } else line = `I couldn't get through to ${who}: ${callError(String(r.error ?? "failed"))}.`;
     this.watch({ type: "step", task: call.taskId, n: 1, status: ok ? "done" : "failed" });
     this.watch({ type: "task", task: call.taskId, title, status: ok ? "done" : "failed" });

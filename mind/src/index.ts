@@ -1,5 +1,5 @@
 // bobby-mind: the entry point the final app calls. Everything arrives through `config`.
-// No fs, no process.env, no Node-only modules anywhere under src/.
+// Nothing under src/ reads files or environment variables, or imports Node-only modules.
 
 import { Brain, parseContacts } from "./brain";
 import { HubClient } from "./hub";
