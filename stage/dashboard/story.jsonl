@@ -43,6 +43,8 @@
 {"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m9"}}
 {"type":"step","to":"watch","task":"t1","n":2,"status":"done","dt":200}
 {"type":"step","to":"watch","task":"t1","n":3,"status":"running","dt":300}
+{"type":"wire","from":"mind","to":"hands","at":0,"dt":300,"msg":{"type":"screen","to":"hands","id":"m30"}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":400,"msg":{"type":"screen_result","re":"m30","app":"com.google.android.gm","size":[1080,2400],"nodes":[{"n":0,"text":"Search in mail","desc":"","cls":"EditText","bounds":[40,150,1040,270],"tap":true,"edit":true,"scroll":false},{"n":1,"text":"Primary","desc":"","cls":"TextView","bounds":[40,320,400,390],"tap":false,"edit":false,"scroll":false},{"n":2,"text":"Sarah Chen, Running late, can we push to 3?, Unread","desc":"","cls":"View","bounds":[0,420,1080,640],"tap":true,"edit":false,"scroll":false},{"n":3,"text":"Amazon, Your order has shipped","desc":"","cls":"View","bounds":[0,640,1080,860],"tap":true,"edit":false,"scroll":false},{"n":4,"text":"Alex Kim, Coffee later?","desc":"","cls":"View","bounds":[0,860,1080,1080],"tap":true,"edit":false,"scroll":false},{"n":5,"text":"Compose","desc":"","cls":"Button","bounds":[680,2140,1040,2290],"tap":true,"edit":false,"scroll":false}]}}
 {"type":"wire","from":"mind","to":"mouth","at":0,"dt":900,"msg":{"type":"say","to":"mouth","id":"m11","text":"Opening Sarah Chen's email, the newest one at the top."}}
 {"type":"wire","from":"mind","to":"hands","at":0,"dt":0,"msg":{"type":"act","to":"hands","id":"m12","do":"tap","on":{"text":"Sarah Chen"}}}
 {"type":"wire","from":"mouth","to":"mind","at":0,"dt":450,"msg":{"type":"say_started","re":"m11"}}
@@ -51,12 +53,16 @@
 {"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m11"}}
 {"type":"step","to":"watch","task":"t1","n":3,"status":"done","dt":200}
 {"type":"step","to":"watch","task":"t1","n":4,"status":"running","dt":300}
+{"type":"wire","from":"mind","to":"hands","at":0,"dt":300,"msg":{"type":"screen","to":"hands","id":"m31"}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":400,"msg":{"type":"screen_result","re":"m31","app":"com.google.android.gm","size":[1080,2400],"nodes":[{"n":0,"text":"","desc":"Archive","cls":"Button","bounds":[700,150,800,250],"tap":true,"edit":false,"scroll":false},{"n":1,"text":"","desc":"Delete","cls":"Button","bounds":[830,150,930,250],"tap":true,"edit":false,"scroll":false},{"n":2,"text":"Running late","desc":"","cls":"TextView","bounds":[40,310,1040,410],"tap":false,"edit":false,"scroll":false},{"n":3,"text":"Sarah Chen","desc":"","cls":"TextView","bounds":[150,450,700,530],"tap":true,"edit":false,"scroll":false},{"n":4,"text":"Running late, can we push to 3?","desc":"","cls":"TextView","bounds":[40,620,1040,760],"tap":false,"edit":false,"scroll":false},{"n":5,"text":"Reply","desc":"","cls":"Button","bounds":[40,1000,340,1120],"tap":true,"edit":false,"scroll":false},{"n":6,"text":"Reply all","desc":"","cls":"Button","bounds":[370,1000,700,1120],"tap":true,"edit":false,"scroll":false},{"n":7,"text":"Forward","desc":"","cls":"Button","bounds":[730,1000,1040,1120],"tap":true,"edit":false,"scroll":false}]}}
 {"type":"wire","from":"mind","to":"mouth","at":0,"dt":900,"msg":{"type":"say","to":"mouth","id":"m13","text":"I'm looking for the word 'Reply' to answer Sarah."}}
 {"type":"wire","from":"mind","to":"hands","at":0,"dt":0,"msg":{"type":"act","to":"hands","id":"m14","do":"tap","on":{"text":"Reply"}}}
 {"type":"wire","from":"mouth","to":"mind","at":0,"dt":450,"msg":{"type":"say_started","re":"m13"}}
 {"type":"wire","from":"hands","to":"mind","at":0,"dt":900,"msg":{"type":"act_result","re":"m14","ok":true}}
 {"type":"wire","from":"mouth","to":"mind","at":0,"dt":1300,"msg":{"type":"spoke","text":"Looking for 'Reply' to answer Sarah."}}
 {"type":"wire","from":"mouth","to":"mind","at":0,"dt":100,"msg":{"type":"say_done","re":"m13"}}
+{"type":"wire","from":"mind","to":"hands","at":0,"dt":300,"msg":{"type":"screen","to":"hands","id":"m32"}}
+{"type":"wire","from":"hands","to":"mind","at":0,"dt":400,"msg":{"type":"screen_result","re":"m32","app":"com.google.android.gm","size":[1080,2400],"nodes":[{"n":0,"text":"","desc":"Send","cls":"Button","bounds":[930,150,1040,250],"tap":true,"edit":false,"scroll":false},{"n":1,"text":"Sarah Chen","desc":"","cls":"EditText","bounds":[40,310,1040,410],"tap":true,"edit":true,"scroll":false},{"n":2,"text":"Re: Running late","desc":"","cls":"EditText","bounds":[40,430,1040,530],"tap":true,"edit":true,"scroll":false},{"n":3,"text":"Compose email","desc":"","cls":"EditText","bounds":[40,570,1040,1000],"tap":true,"edit":true,"scroll":false}]}}
 {"type":"wire","from":"mind","to":"mouth","at":0,"dt":300,"msg":{"type":"say","to":"mouth","id":"m15","text":"Writing: \"Hi Sarah, 3 works for me. See you then!\""}}
 {"type":"wire","from":"mind","to":"hands","at":0,"dt":0,"msg":{"type":"act","to":"hands","id":"m16","do":"type","text":"Hi Sarah, 3 works for me. See you then!"}}
 {"type":"wire","from":"mouth","to":"mind","at":0,"dt":450,"msg":{"type":"say_started","re":"m15"}}

@@ -25,8 +25,10 @@
 
 - Extra 6, phone panel (James H): a phone-shaped column draws the latest `screen_result` as labelled boxes and glides the chosen cursor to each `act` target, resolved like Hands (`n`, `text` exact then contains, `x/y`); ripple on tap, trail on swipe, a label for every action, screen dims when out of date, cursor hides 2 s after. `?phone=0` hides it, `?cursor=glow` swaps the design.
 
+- Extra 6, story screens (James H): `story.jsonl` now reads the Gmail inbox, the open email and the reply screen before acting on them, so the phone panel's cursor lands on "Sarah Chen", "Reply" and "Send". Checked by screenshot.
+
 ## Doing now
-- E6.2 Gmail screen reads in `story.jsonl` so the phone panel has targets.
+- E6.3 Sound effects in `stage/sounds/` (claim first).
 
 ## Open
 Core: all done.
