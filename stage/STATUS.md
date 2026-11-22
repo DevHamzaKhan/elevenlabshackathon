@@ -39,6 +39,8 @@
 
 - Item 4 second pass (James H): `messages.md` updated from Hands' in-chat check ("Text message" hint, "Send SMS", the attach and voice buttons); that line removed from `TO-CHECK.md`.
 
+- Merge fix (James H): the final app looked for `cursor/cursor_ring.xml` and `icon/icon.png`, which didn't exist, so neither the chosen cursor nor the icon reached the app. Added both as copies of the real files; `check.sh` checks they match.
+
 ## Doing now
 - Nothing. Item 4 first pass done; a second pass waits for Hands to check the new `TO-CHECK.md`.
 
@@ -62,4 +64,5 @@ Extras (open to James C's AI from the start, most important first):
 - Screenshots use `puppeteer-core` with the installed Chrome: Chrome's `--virtual-time-budget` screenshots fire before the WebSocket connects.
 
 ## Contract questions
+- For Hamza (app/): `with-bobby-art.js` could also read `stage/cursor/<CHOSEN>/cursor.xml`, and `app.config.js` could read `icon/bobby-icon-1024.png`; then Stage's copies can go. The app already skips `TO-CHECK.md`, so the question below is settled.
 - Hands bundles every `stage/hints/*.md` and the Mind loads every `*.md` in `HINTS_DIR`, which includes `TO-CHECK.md` (the brief fixes that name). Suggest both skip `TO-CHECK.md`. Meanwhile its first line tells the model to ignore it.
