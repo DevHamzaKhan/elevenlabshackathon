@@ -9,9 +9,10 @@
 - 2.1 `dashboard/index.html`: three-column layout (conversation, plan, call+phone), hub+token from URL, hello, reconnect 1/2/5 s, light/dark (`?theme=` override). `tools/shot.mjs` takes real-time headless screenshots with puppeteer-core and the installed Chrome.
 - 2.2 Dashboard: conversation (heard/spoke bubbles, wake/asleep notes), task title + status badge, plan checklist with what + why per step, running step highlighted, changed steps outlined when a plan is re-sent.
 - 2.3 Dashboard: phone feed (each `act` in plain words, ✓/✕ from `act_result`, screen reads and notifications as notes), call panel (live status, summary, transcript), connection lights for Hands, Mind, Mouth, Caller.
+- 2.4 Dashboard checked by screenshot in light, dark (`&theme=dark`) and at 390 px phone width; smaller type on narrow screens.
 
 ## Doing now
-- 2.4 Dashboard: check dark mode and phone width.
+- 3.1 `hints/home.md`.
 
 ## Open
 Core (James H's AI, in order):
