@@ -1,0 +1,48 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+  <!-- `launch` finds apps by label, so it needs to see launcher activities. -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+  </queries>
+
+  <application>
+    <service
+      android:name="dev.bobby.hands.HandsService"
+      android:exported="true"
+      android:label="@string/bobby_hands_service_label"
+      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+      <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+      </intent-filter>
+      <meta-data
+        android:name="android.accessibilityservice"
+        android:resource="@xml/bobby_hands_accessibility" />
+    </service>
+
+    <service
+      android:name="dev.bobby.hands.HandsNotificationListener"
+      android:exported="true"
+      android:label="@string/bobby_hands_notifications_label"
+      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+
+    <!-- Keeps the app's JavaScript alive while other apps are on screen (startKeepAlive). -->
+    <service
+      android:name="dev.bobby.hands.KeepAliveService"
+      android:exported="false"
+      android:foregroundServiceType="microphone|dataSync" />
+  </application>
+</manifest>

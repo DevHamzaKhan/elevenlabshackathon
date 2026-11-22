@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Bobby Hands Test",
+    "slug": "bobby-hands-example",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.bobby.hands"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "dev.bobby.hands"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "scheme": "bobbyhands",
+    "plugins": [
+      "../app.plugin.js"
+    ],
+    "experiments": {
+      "autolinkingModuleResolution": true
+    }
+  }
+}

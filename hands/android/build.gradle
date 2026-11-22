@@ -1,0 +1,31 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'dev.bobby.hands'
+version = '0.1.0'
+
+android {
+  namespace "dev.bobby.hands.lib"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+    minSdkVersion 30
+  }
+  lintOptions {
+    abortOnError false
+  }
+  testOptions {
+    unitTests.returnDefaultValues = true
+  }
+}
+
+dependencies {
+  // Small WebSocket server for the hub (server side only; clients use the platform WebSocket).
+  implementation 'org.java-websocket:Java-WebSocket:1.6.0'
+
+  testImplementation 'junit:junit:4.13.2'
+  // Real org.json for JVM unit tests (Android's copy is a stub off-device).
+  testImplementation 'org.json:json:20240303'
+}

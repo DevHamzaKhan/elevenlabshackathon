@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="bobby_hands_service_label">Bobby Hands</string>
+  <string name="bobby_hands_notifications_label">Bobby notifications</string>
+  <string name="bobby_hands_service_description">Lets Bobby read the screen and tap, swipe and type for you while you talk to him. A cursor shows every action before it happens.</string>
+</resources>
