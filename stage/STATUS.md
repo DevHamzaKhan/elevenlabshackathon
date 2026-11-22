@@ -14,9 +14,10 @@
 - 3.2 `hints/gmail.md`: rewritten for contract v1 (key names, text matching), adds a check of the sender before replying and "no leftover drafts".
 - 3.3 `hints/TO-CHECK.md`: one label per line for home and Gmail, pointing at `hands/HINTS-CHECK.md`.
 - 4.1 Cursors moved to `cursor/<name>/` (`cursor.xml` + SVG) for ring, glow and bobby; `CHOSEN` = ring; `preview.html` paths fixed; Python `make.py` removed.
+- 5.1 `check.sh` (+ `tools/check.mjs`): story lines are valid JSON with known types, Mind frames carry `to`, act targets are one form, each `cursor.xml` is a 48dp/48x48 vector, CHOSEN exists, required hints exist, XML well-formed, replay plays through. Passes; verified it fails on a bad line.
 
 ## Doing now
-- 5.1 `check.sh`.
+- 5.2 `README.md` and `MERGE.md`.
 
 ## Open
 Core (James H's AI, in order):
