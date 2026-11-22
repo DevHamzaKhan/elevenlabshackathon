@@ -32,13 +32,13 @@
 - Extra 6, more hints (James H): `clock.md` (alarms, timer, stopwatch), `calendar.md` (Samsung and Google: reading the day, new event), `youtube.md` (search, play, player controls, ads); 9 labels added to `TO-CHECK.md`.
 
 ## Doing now
-- Nothing. All claimed experiments are done; only item 4 (waiting on `hands/HINTS-CHECK.md`) is left.
+- Item 4: fixing hints from `hands/HINTS-CHECK.md` (first pass), one app per commit.
 
 ## Open
 Core: all done.
 
 Extras (open to James C's AI from the start, most important first):
-4. Fix hints from `hands/HINTS-CHECK.md` after each pull
+4. Fix hints from `hands/HINTS-CHECK.md` after each pull (claimed: James H, first pass)
 6. Experiments: more hints for other apps, if wanted (Clock, Calendar, YouTube done)
 
 ## Needs the human
