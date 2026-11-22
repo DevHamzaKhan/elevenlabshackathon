@@ -13,7 +13,7 @@ export function allowlist(env: Record<string, string | undefined>): string[] {
 export function dryRunCall(msg: Frame, allowed: string[]): Frame[] {
   const re = String(msg.id ?? "");
   const number = String(msg.number ?? "");
-  if (!E164.test(number) || (allowed.length > 0 && !allowed.includes(number))) {
+  if (!E164.test(number) || !allowed.includes(number)) { // an empty allowlist allows nothing
     return [{ type: "call_result", re, ok: false, error: "not_allowed" }];
   }
   const goal = String(msg.goal ?? "");

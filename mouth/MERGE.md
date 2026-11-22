@@ -9,13 +9,13 @@ From the final app's folder, with the Expo version in `VERSIONS.md`:
 ```sh
 npm install bobby-mouth@file:../mouth
 npm install @elevenlabs/react-native@1.2.42 @elevenlabs/client@1.37.1 \
-  "@livekit/react-native@^2.12.0" "@livekit/react-native-webrtc@^144.1.2" livekit-client \
+  "@livekit/react-native@2.12.0" "@livekit/react-native-webrtc@144.1.2" livekit-client \
   "@livekit/react-native-expo-plugin@~1.1.0" "@config-plugins/react-native-webrtc@^15.0.2"
 npx expo install expo-dev-client expo-build-properties
 ```
 
 - **Exactly one copy of `@elevenlabs/client`**, the version `@elevenlabs/react-native` depends on (1.37.1 here). Check with `npm ls @elevenlabs/client`. Two copies would leave the voice without its native audio setup.
-- The LiveKit versions follow ElevenLabs' own Expo example. Don't upgrade `@livekit/react-native` to 3.x or the expo plugin to 1.2: the ElevenLabs SDK's peers want LiveKit 2 / webrtc 144.
+- **Pin `@livekit/react-native-webrtc` to exactly 144.1.2.** 144.2.0 renamed its Java package (`org.webrtc` → `livekit.org.webrtc`) and `@livekit/react-native` 2.12.0 no longer compiles against it. The LiveKit versions follow ElevenLabs' own Expo example. Don't upgrade `@livekit/react-native` to 3.x or the expo plugin to 1.2: the ElevenLabs SDK's peers want LiveKit 2 / webrtc 144.
 - A development build is required (`npx expo run:android`); Expo Go can't run the native WebRTC code.
 
 ## 2. Metro

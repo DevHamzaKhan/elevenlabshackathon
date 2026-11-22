@@ -59,7 +59,8 @@ test("dry-run caller: status sequence then exactly one call_result; not_allowed 
   assert.equal(ok.at(-1)!.ok, true);
   assert.deepEqual(dryRunCall({ type: "call", id: "m1", number: "+19999999999" }, ["+14155550123"]),
     [{ type: "call_result", re: "m1", ok: false, error: "not_allowed" }]);
-  assert.equal(dryRunCall({ type: "call", id: "m2", number: "555-1234" }, []).at(-1)!.error, "not_allowed");
+  assert.equal(dryRunCall({ type: "call", id: "m2", number: "555-1234" }, ["555-1234"]).at(-1)!.error, "not_allowed");
+  assert.equal(dryRunCall({ type: "call", id: "m3", number: "+14155550123" }, []).at(-1)!.error, "not_allowed", "empty allowlist allows nothing");
   assert.deepEqual(allowlist({ CALL_ALLOWLIST: " +1415555, +1416666 ," }), ["+1415555", "+1416666"]);
 });
 
@@ -71,7 +72,7 @@ test("startCaller connects as caller and answers a call over the hub", async () 
     ws.on("message", (d) => got.push(JSON.parse(String(d))));
     ws.send(JSON.stringify({ type: "call", to: "caller", id: "m9", number: "+14155550123", goal: "hi", context: "c" }));
   });
-  const c = startCallerWith({ hubUrl: "ws://127.0.0.1:8813", token: "t", log: () => {}, env: {}, WebSocketImpl: WS, stepMs: 10 });
+  const c = startCallerWith({ hubUrl: "ws://127.0.0.1:8813", token: "t", log: () => {}, env: { CALL_ALLOWLIST: "+14155550123" }, WebSocketImpl: WS, stepMs: 10 });
   await wait(200);
   assert.deepEqual(got.map((f) => f.type), ["call_status", "call_status", "call_status", "call_result"]);
   c.stop();
