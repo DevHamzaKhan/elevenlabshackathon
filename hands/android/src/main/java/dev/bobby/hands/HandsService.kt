@@ -92,7 +92,49 @@ class HandsService : AccessibilityService() {
 
   private fun reId(o: JSONObject): String? = if (o.has("id") && !o.isNull("id")) o.get("id").toString() else null
 
+  /**
+   * Odd state: the screen is off or on a non-secure lock screen (Swipe). Turns the screen on
+   * and swipes the lock away, so the Mind's action lands on the real screen.
+   */
+  @Suppress("DEPRECATION")
+  private fun ensureAwake() {
+    val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+    val km = getSystemService(KEYGUARD_SERVICE) as android.app.KeyguardManager
+    if (!pm.isInteractive) {
+      Hub.log("screen is off: waking it")
+      val wl = pm.newWakeLock(
+        android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
+        "bobby:wake",
+      )
+      wl.acquire(3000)
+      var until = SystemClock.uptimeMillis() + 600
+      while (!pm.isInteractive && SystemClock.uptimeMillis() < until) Thread.sleep(50)
+      if (!pm.isInteractive || (km.isKeyguardLocked && !km.isDeviceSecure)) startWake()
+      until = SystemClock.uptimeMillis() + 2000
+      while ((!pm.isInteractive || (km.isKeyguardLocked && !km.isDeviceSecure)) && SystemClock.uptimeMillis() < until) Thread.sleep(50)
+      Thread.sleep(300)
+    }
+    if (km.isKeyguardLocked && !km.isDeviceSecure) {
+      Hub.log("lock screen showing: swiping it away")
+      val (w, h) = screenSize()
+      for (i in 0 until 2) {
+        gesture(Path().apply { moveTo(w / 2f, h * 0.85f); lineTo(w / 2f, h * 0.25f) }, 250)
+        Thread.sleep(500)
+        if (!km.isKeyguardLocked) break
+      }
+      waitSettled()
+    }
+  }
+
+  private fun startWake() {
+    try {
+      startActivity(Intent(this, WakeActivity::class.java).addFlags(
+        Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS))
+    } catch (e: Exception) { Hub.log("wake activity failed: ${e.message}") }
+  }
+
   private fun handleScreen(o: JSONObject): JSONObject {
+    ensureAwake()
     val snap = snapshot()
     lastNodes = snap.nodes
     val res = Protocol.screenResult(reId(o), snap.app, snap.width, snap.height, snap.nodes)
@@ -152,6 +194,7 @@ class HandsService : AccessibilityService() {
       return Protocol.actResult(re, false, "bad_request", e.message)
     }
     return try {
+      if (act.what != "wait") ensureAwake()
       val err = perform(act)
       if (err == null) Protocol.actResult(re, true) else Protocol.actResult(re, false, err.first, err.second)
     } catch (e: Exception) {

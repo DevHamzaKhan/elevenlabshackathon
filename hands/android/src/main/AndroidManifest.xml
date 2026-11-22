@@ -6,6 +6,7 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <uses-permission android:name="android.permission.TURN_SCREEN_ON" />
 
   <!-- `launch` finds apps by label, so it needs to see launcher activities. -->
   <queries>
@@ -38,6 +39,18 @@
         <action android:name="android.service.notification.NotificationListenerService" />
       </intent-filter>
     </service>
+
+    <!-- Turns the screen on and dismisses a Swipe lock screen before an action. -->
+    <activity
+      android:name="dev.bobby.hands.WakeActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:noHistory="true"
+      android:taskAffinity="dev.bobby.hands.wake"
+      android:launchMode="singleInstance"
+      android:showWhenLocked="true"
+      android:turnScreenOn="true"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
     <!-- Keeps the app's JavaScript alive while other apps are on screen (startKeepAlive). -->
     <service

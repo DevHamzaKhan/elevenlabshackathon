@@ -88,6 +88,7 @@ mic_res="$(grant android.permission.RECORD_AUDIO)"
 sh_ cmd deviceidle whitelist "+$APP" >/dev/null || true
 sh_ cmd appops set "$APP" RUN_ANY_IN_BACKGROUND allow >/dev/null || true
 sh_ cmd appops set "$APP" ACCESS_RESTRICTED_SETTINGS allow >/dev/null || true
+sh_ cmd appops set "$APP" TURN_SCREEN_ON allow >/dev/null || true
 
 sleep 1
 

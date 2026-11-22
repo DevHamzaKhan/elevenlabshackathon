@@ -6,7 +6,7 @@
 - 94 JVM unit tests (protocol, contract examples, node filter, target matching, hub routing) pass.
 - On the phone: `screen`, `tap`, `long`, `point`, `swipe`, `type` (incl. Gmail's web-view reply body), `key`, `launch` all work; cursor glides before each action (seen in screenshots); notifications from `adb shell cmd notification post` arrive at the Mind; `hub-test.mjs` passes 11/11 against the real phone hub.
 - `demo` passed from a cold start (2026-11-22 12:28): home → swipe to page 2 → Gmail → newest email from "Hamza Khan" → Reply → typed → Send. Gmail showed "Sent" and the reply in the thread. **Job 1 "Done when" met.**
-- Extras: `screen` with `"image":true` adds a base64 JPEG (720 px wide) as `image`; a tap target hidden under the keyboard makes Hands hide the keyboard first; hints checked (`HINTS-CHECK.md`).
+- Extras: `screen` with `"image":true` adds a base64 JPEG (720 px wide) as `image`; a tap target hidden under the keyboard makes Hands hide the keyboard first; screen off / Swipe lock screen: any `screen` or `act` wakes the phone and clears the lock first (checked: dozing + locked → home screen); hints checked (`HINTS-CHECK.md`).
 - Laptop tools: `drive.mjs`, `fakehub.mjs`, `hub-test.mjs`, `grant.sh`, `check.sh`, README, MERGE.
 
 ## Doing now
@@ -31,6 +31,7 @@
 - `type` replaces the field's text (ACTION_SET_TEXT) rather than appending.
 - Unknown role or no configured token: the hub closes with 4003.
 - WebSocket server: `org.java-websocket` 1.6.0.
+- Waking: `TURN_SCREEN_ON` (appop granted by `grant.sh`) plus an invisible `WakeActivity` that calls `requestDismissKeyguard`, because Android 15 ignores `ACQUIRE_CAUSES_WAKEUP` without that permission.
 
 ## Contract questions
 - None yet.
