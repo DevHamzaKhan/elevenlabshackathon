@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bobby Cursor Preview</title>
+<style>
+  :root {
+    --bg: #f4f3fa; --fg: #1b1640; --muted: #6b6790; --card: #ffffff; --line: #e3e0f2;
+    --accent: #7c5cff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #121021; --fg: #ecebf7; --muted: #a29fc2; --card: #1c1a30; --line: #2d2a48; }
+  }
+  :root[data-theme="dark"] { --bg: #121021; --fg: #ecebf7; --muted: #a29fc2; --card: #1c1a30; --line: #2d2a48; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { max-width: 1240px; margin: 0 auto; padding: 24px 16px 8px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  header p { margin: 0; color: var(--muted); max-width: 70ch; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .controls button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+  .controls button[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  main { max-width: 1240px; margin: 0 auto; padding: 16px; display: flex; flex-wrap: wrap; gap: 28px; justify-content: center; }
+  figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  figcaption { text-align: center; }
+  figcaption b { display: block; font-size: 16px; }
+  figcaption span { color: var(--muted); font-size: 13px; }
+  .rec { color: var(--accent); font-weight: 600; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+
+  /* Fake phone: 360 x 760 CSS px = 360 x 760 dp, so the 48 px cursor is true size. */
+  .phone { width: 360px; max-width: calc(100vw - 32px); height: 760px; border-radius: 36px; padding: 10px; background: #0b0a12; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+  .screen { position: relative; width: 100%; height: 100%; border-radius: 28px; overflow: hidden; font-family: Roboto, system-ui, sans-serif; }
+  .screen.light { background: #fff; color: #1f1f1f; --s-line: #eceaf2; --s-chip: #f1effa; --s-bar: #f6f4fb; }
+  .screen.dark  { background: #131314; color: #e3e3e3; --s-line: #2a2a2e; --s-chip: #26252d; --s-bar: #1d1c22; }
+  .status { height: 28px; display: flex; justify-content: space-between; padding: 6px 22px; font-size: 12px; opacity: .8; }
+  .search { margin: 6px 14px 10px; height: 46px; border-radius: 23px; background: var(--s-bar); display: flex; align-items: center; padding: 0 16px; font-size: 14px; opacity: .9; }
+  .row { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--s-line); }
+  .av { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 600; }
+  .row .t { flex: 1; min-width: 0; font-size: 13px; }
+  .row .t b { display: block; font-size: 14px; }
+  .row .t span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .7; }
+  .actions { position: absolute; left: 0; right: 0; bottom: 96px; display: flex; gap: 10px; padding: 0 16px; }
+  .chip { flex: 1; height: 42px; border-radius: 21px; border: 1px solid var(--s-line); background: var(--s-chip); display: grid; place-items: center; font-size: 14px; font-weight: 500; }
+  .fab { position: absolute; right: 16px; bottom: 26px; height: 54px; padding: 0 20px; border-radius: 16px; background: #c2e7ff; color: #001d35; display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .dark .fab { background: #004a77; color: #c2e7ff; }
+  .split { position: absolute; left: 0; right: 0; top: 50%; height: 50%; }
+
+  .cursor { position: absolute; left: 0; top: 0; width: 48px; height: 48px; margin: -24px 0 0 -24px; pointer-events: none; z-index: 5; transition: opacity .3s; will-change: transform; }
+  .hot { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 6; pointer-events: none; display: none; }
+  .hot::before, .hot::after { content: ""; position: absolute; background: #ff2d55; }
+  .hot::before { left: -9px; top: -.5px; width: 18px; height: 1px; }
+  .hot::after { top: -9px; left: -.5px; height: 18px; width: 1px; }
+  .show-hot .hot { display: block; }
+  .ripple { position: absolute; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; background: rgba(124,92,255,.35); border: 2px solid rgba(255,255,255,.8); z-index: 4; pointer-events: none; animation: ripple .45s ease-out forwards; }
+  @keyframes ripple { from { transform: scale(.2); opacity: 1; } to { transform: scale(1); opacity: 0; } }
+  .legend { color: var(--muted); font-size: 13px; max-width: 1240px; margin: 0 auto; padding: 0 16px 32px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; background: linear-gradient(#ff2d55,#ff2d55) center/12px 1px no-repeat, linear-gradient(#ff2d55,#ff2d55) center/1px 12px no-repeat; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bobby cursor designs</h1>
+  <p>Each phone is 360 × 760 dp at true size, top half light, bottom half dark. The cursor glides between targets with ease-in-out (400–900 ms by distance) and taps with a ripple. Exec draws the ripple on the phone; the drawable is only the resting cursor.</p>
+  <div class="controls">
+    <button id="hot" aria-pressed="true">Show hotspot</button>
+    <button id="pause" aria-pressed="false">Pause</button>
+  </div>
+</header>
+<main id="phones"></main>
+<p class="legend"><i></i> marks the hotspot: the exact centre (24, 24) of the 48 × 48 drawable, where Exec touches. Sources: <code>ring.svg</code>, <code>glow.svg</code>, <code>bobby.svg</code> (and matching <code>cursor_*.xml</code>).</p>
+
+<template id="phone-tpl">
+  <figure>
+    <div class="phone"><div class="screen light">
+      <div class="status"><span>9:41</span><span>5G ▮▮▮</span></div>
+      <div class="search" data-t>Search in mail</div>
+      <div class="row" data-t><div class="av" style="background:#e8710a">S</div><div class="t"><b>Sarah Chen</b><span>Running late, can we push to 3?</span></div></div>
+      <div class="row" data-t><div class="av" style="background:#1a73e8">A</div><div class="t"><b>Amazon</b><span>Your order has shipped</span></div></div>
+      <div class="row" data-t><div class="av" style="background:#188038">J</div><div class="t"><b>James H</b><span>Stand-up moved to 10</span></div></div>
+      <div class="split screen dark" style="border-radius:0">
+        <div class="row" data-t><div class="av" style="background:#9334e6">M</div><div class="t"><b>Maps</b><span>Coffee near you</span></div></div>
+        <div class="row" data-t><div class="av" style="background:#d93025">H</div><div class="t"><b>Hamza</b><span>Cursor build is up</span></div></div>
+        <div class="actions"><div class="chip" data-t>Reply</div><div class="chip" data-t>Forward</div></div>
+        <div class="fab" data-t>✎ Compose</div>
+      </div>
+      <img class="cursor" alt="">
+      <div class="hot"></div>
+    </div></div>
+    <figcaption></figcaption>
+  </figure>
+</template>
+
+<script>
+const DESIGNS = [
+  { name: "ring",  title: "Ring",  note: "Open centre keeps the label readable", rec: true },
+  { name: "glow",  title: "Glow",  note: "Soft fingertip with a halo" },
+  { name: "bobby", title: "Bobby", note: "Friendly teardrop, tip on the target" },
+];
+const tpl = document.getElementById("phone-tpl");
+const host = document.getElementById("phones");
+let paused = false;
+
+const ease = t => t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2; // easeInOutCubic
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const dur = d => Math.round(400 + Math.min(1, d / 600) * 500); // 400–900 ms by distance
+
+function setup(design, i) {
+  const node = tpl.content.firstElementChild.cloneNode(true);
+  const screen = node.querySelector(".screen");
+  const cur = node.querySelector(".cursor");
+  const hot = node.querySelector(".hot");
+  cur.src = design.name + ".svg";
+  node.querySelector("figcaption").innerHTML =
+    (design.rec ? '<span class="rec">Recommended · cursor.xml</span>' : "") +
+    `<b>${design.title}</b><span>${design.note} · ${design.name}.svg</span>`;
+  host.appendChild(node);
+  let pos = { x: 180, y: 380 };
+  const place = p => {
+    const t = `translate(${p.x}px, ${p.y}px)`;
+    cur.style.transform = t; hot.style.transform = t;
+  };
+  place(pos);
+  const targets = () => [...screen.querySelectorAll("[data-t]")].map(el => {
+    const a = el.getBoundingClientRect(), s = screen.getBoundingClientRect();
+    return { x: a.left - s.left + Math.min(a.width / 2, 120), y: a.top - s.top + a.height / 2 };
+  });
+  async function glide(to) {
+    const from = { ...pos }, d = Math.hypot(to.x - from.x, to.y - from.y), ms = dur(d);
+    const t0 = performance.now();
+    await new Promise(done => {
+      const step = now => {
+        const k = Math.min(1, (now - t0) / ms), e = ease(k);
+        pos = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
+        place(pos);
+        k < 1 ? requestAnimationFrame(step) : done();
+      };
+      requestAnimationFrame(step);
+    });
+  }
+  function tap() {
+    const r = document.createElement("div");
+    r.className = "ripple"; r.style.left = pos.x + "px"; r.style.top = pos.y + "px";
+    screen.appendChild(r); setTimeout(() => r.remove(), 500);
+  }
+  (async () => {
+    await sleep(300 + i * 350);
+    let last = -1;
+    for (;;) {
+      if (paused) { await sleep(200); continue; }
+      const ts = targets();
+      let k; do { k = Math.floor(Math.random() * ts.length); } while (k === last);
+      last = k;
+      await glide(ts[k]);
+      await sleep(120); tap(); await sleep(900);
+    }
+  })();
+}
+DESIGNS.forEach(setup);
+
+const hotBtn = document.getElementById("hot"), pauseBtn = document.getElementById("pause");
+const applyHot = () => document.body.classList.toggle("show-hot", hotBtn.getAttribute("aria-pressed") === "true");
+hotBtn.onclick = () => { hotBtn.setAttribute("aria-pressed", hotBtn.getAttribute("aria-pressed") !== "true"); applyHot(); };
+pauseBtn.onclick = () => { paused = !paused; pauseBtn.setAttribute("aria-pressed", paused); pauseBtn.textContent = paused ? "Resume" : "Pause"; };
+applyHot();
+</script>
+</body>
+</html>
