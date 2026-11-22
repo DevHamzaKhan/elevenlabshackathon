@@ -275,6 +275,7 @@ function parseCommand(line) {
       const sender = words.replace(/(^|\s)--dry(\s|$)/, ' ').trim().replace(/^"(.*)"$/, '$1');
       return { kind: 'demo', dry, sender };
     }
+    case 'drawer-gmail': return { kind: 'drawer-gmail' };
     case 'help': case '?': return { kind: 'help' };
     case 'quit': case 'exit': case 'q': return { kind: 'quit' };
     default:
@@ -342,6 +343,14 @@ async function run(line) {
       const { reply, ms } = await request(c.obj);
       out(`${stamp()} raw reply (${ms} ms): ${JSON.stringify(reply).slice(0, 2000)}`);
       return reply.ok !== false && reply.type !== 'timeout';
+    }
+    case 'drawer-gmail': {
+      try {
+        const g = await findGmailInDrawer();
+        if (!g) { out(`${stamp()} Gmail not in the drawer`); return false; }
+        await mustAct({ do: 'point', on: { n: g.n } }, `point Gmail #${g.n}`);
+        return true;
+      } catch (e) { out(`${stamp()} STOPPED: ${e.message}`); return false; }
     }
     case 'demo': {
       try { await demo(c.sender, c.dry); return true; } catch (e) { out(`${stamp()} DEMO STOPPED: ${e.message}`); return false; }
@@ -425,7 +434,36 @@ async function findGmailOnHome() {
     step(`page ${page}: no Gmail; swiping left to the next page`);
     await mustAct({ do: 'swipe', dir: 'left' }, 'swipe left');
   }
-  throw new Error('Gmail not found on any home screen page or folder (try "launch Gmail" to check the app exists)');
+  const d = await findGmailInDrawer();
+  if (d) return d;
+  throw new Error('Gmail not found on any home screen page, folder or the app drawer (try "launch Gmail" to check the app exists)');
+}
+
+/** Second route: the app drawer (swipe up from home), its pages and folders. */
+async function findGmailInDrawer() {
+  step('not on the home screens: trying the app drawer');
+  await mustAct({ do: 'key', name: 'home' }, 'key home');
+  await mustAct({ do: 'swipe', dir: 'up' }, 'swipe up (open the app drawer)');
+  const seen = [];
+  for (let page = 1; page <= 6; page++) {
+    const r = await demoScreen(`drawer page ${page}`);
+    const s = sig(r);
+    if (seen.includes(s)) { step('no more drawer pages'); break; }
+    seen.push(s);
+    let g = r.nodes.find(isGmailIcon);
+    if (g) { step(`Gmail is in the drawer, page ${page} (#${g.n})`); return g; }
+    const folders = r.nodes.filter((n) => n.tap && /folder/i.test(label(n))).sort((a, b) => score(b) - score(a));
+    for (const f of folders) {
+      step(`drawer page ${page}: opening "${label(f)}" (#${f.n})`);
+      await mustAct({ do: 'tap', on: { n: f.n } }, `tap #${f.n} "${trunc(label(f), 30)}"`);
+      const inside = await demoScreen('inside drawer folder');
+      g = inside.nodes.find(isGmailIcon);
+      if (g) { step(`Gmail is inside drawer folder "${label(f)}" (#${g.n})`); return g; }
+      await mustAct({ do: 'key', name: 'back' }, 'key back (close folder)');
+    }
+    await mustAct({ do: 'swipe', dir: 'left' }, 'swipe left (next drawer page)');
+  }
+  return null;
 }
 function score(n) {
   const l = label(n);
