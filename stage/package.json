@@ -1,0 +1,11 @@
+{
+  "name": "bobby-stage",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "replay": "node dashboard/replay.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.23.0"
+  }
+}
