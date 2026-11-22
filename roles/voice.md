@@ -3,7 +3,7 @@
 You build Bobby's voice surface: the shortcut that starts a conversation, the ElevenLabs realtime agent session on the phone, the client tools that delegate work to the Orchestrator, and the speaking of the Orchestrator's progress updates in Bobby's voice, with interruptions that feel natural. You **don't** build task logic: the agent delegates, the Orchestrator decides. Read `CLAUDE.md` and `CONTRACT.md` first.
 
 - **Stack:** Kotlin module `:voice` inside the shared Android project (built on `:core`, see `android/core/API.md`), plus Python setup scripts in `voice-agent/`.
-- **Accounts:** ElevenLabs (paid plan). Picovoice only for the stretch wake word. The phone-call feature (`caller/`) belongs to Wajeeh, see `roles/chat.md`.
+- **Accounts:** ElevenLabs (paid plan). Voice runs entirely on ElevenLabs: no other speech, wake-word or voice vendor (no Picovoice). The phone-call feature (`caller/`) belongs to Wajeeh, see `roles/chat.md`.
 - **Device:** the S21 is busy with Exec. Use your own Android phone, or an emulator with the host microphone on. Ask the human which, once, in `STATUS.md`.
 - If `:core` isn't pushed yet when you start, write a minimal local stand-in behind the same API shape and delete it when the real one lands.
 
@@ -11,7 +11,6 @@ You build Bobby's voice surface: the shortcut that starts a conversation, the El
 
 1. **ElevenLabs, Bobby agent.** Create an agent using the realtime / lowest-latency conversational setup available. If a realtime speech-to-speech option is missing, say so in `STATUS.md` right away. Paste the prompt from `voice-agent/bobby-prompt.md`. Add the four client tools from `voice-agent/tools.json` (or let `voice-agent/setup.py` create them via the API, if the docs support that). Turn on interruptions. Copy the agent id into `android/local.properties` as `ELEVENLABS_AGENT_ID`.
 2. **Agent access.** Keep the agent public for development (agent id only, no key on the phone). Note under Decisions; on stitching day decide whether to switch to signed URLs, which would need a contract change.
-3. Optional, stretch: Picovoice "Hey Bobby" wake word.
 
 ## What to build
 
@@ -53,7 +52,6 @@ Pressing the Quick Settings tile starts a conversation through the earbuds; "rep
 
 - Latency: pre-warm the session on shortcut press; reuse connections; measure end-to-end from user's last word to first narrated audio.
 - Natural narration: let Bobby fold short consecutive steps into one sentence; keep the "why".
-- Wake word ("Hey Bobby") with Picovoice as an extra entry point, key and keyword file from `local.properties` and `private/`.
 
 ## Stitching day
 

@@ -280,7 +280,6 @@ Python parts read the root `.env`. Android values go in `android/local.propertie
 | `ELEVENLABS_AGENT_ID` | Voice (`local.properties`) | The Bobby agent. |
 | `ELEVENLABS_CALLER_AGENT_ID`, `ELEVENLABS_PHONE_NUMBER_ID` | Caller | Stretch. |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `OWNER_NUMBER`, `CALL_ALLOWLIST`, `CALLER_DRY_RUN` | Caller | Stretch. |
-| `PICOVOICE_ACCESS_KEY` | Voice (`local.properties`) | Stretch: wake word. |
 
 - A part needing a variable not listed here prefixes it with its own name (`MIND_`, `EXEC_`, `VOICE_`, `CHAT_`, `STAGE_`, `CALLER_`) and documents it in its README.
 - The APK stores the hub URL and token on the phone, set from the setup screen or by intent extras:
