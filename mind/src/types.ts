@@ -4,19 +4,25 @@
 export type Msg = { type: string; [k: string]: any };
 
 /** One model call: fixed instructions (cached), the changing part, and the JSON schema of the reply. */
+export type ModelRole = "router" | "exec" | "escalate" | "check";
+
 export type ModelRequest = {
-  /** Short label for logs, e.g. "decide" or "step". */
+  /** Short label for logs, e.g. "route", "exec", "escalate", "check". */
   purpose: string;
+  /** Which model and effort to use. Defaults from `purpose` ("decide"/"route" -> router, else exec). */
+  role?: ModelRole;
+  /** Base64 JPEG screenshots (or data: URLs), for the escalation model. */
+  images?: string[];
   /** Instructions that stay byte-for-byte the same between calls, so they cache. */
   system: string;
   /** The changing part: screen, history, what the user said. */
   user: string;
   /** JSON schema the reply must follow. */
   schema: Record<string, unknown>;
-  /** Optional effort override for cheap calls. */
-  effort?: "low" | "medium" | "high";
+  /** Optional reasoning-effort override ("none", "low", "medium", ...). */
+  effort?: string;
   maxTokens?: number;
-  /** Per-attempt timeout; a slow attempt is abandoned and retried (SDK retries up to 2 times). */
+  /** Per-attempt timeout; a slow attempt is abandoned and retried once. */
   timeoutMs?: number;
 };
 
@@ -26,6 +32,8 @@ export type ModelReply = {
   stopReason: string | null;
   ms: number;
   error?: string;
+  usage?: { input: number; cached: number; output: number };
+  model?: string;
 };
 
 /** The one door to the model. Tests pass a stub with the same shape. */
@@ -34,7 +42,8 @@ export type ModelFn = (req: ModelRequest) => Promise<ModelReply>;
 export type MindConfig = {
   hubUrl: string;
   token: string;
-  /** ANTHROPIC_API_KEY, MIND_MODEL, MIND_EFFORT, CONTACTS, plus optional MIND_* tuning knobs. */
+  /** OPENAI_API_KEY, MIND_ROUTER_MODEL, MIND_EXEC_MODEL, MIND_ESCALATE_MODEL, MIND_*_EFFORT,
+   *  MIND_CONFIRM, CONTACTS, plus optional MIND_* tuning knobs. */
   env: Record<string, string | undefined>;
   log: (line: string) => void;
   /** Per-app navigation notes. May be empty. */

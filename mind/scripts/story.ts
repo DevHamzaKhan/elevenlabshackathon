@@ -27,9 +27,9 @@ const hints = loadHints(env.HINTS_DIR);
 const { file, log } = openLog("story", (l) => /^(mind: (say|task|whisper|correct|sleep)|USER|BOBBY|phone: (EMAIL|tap|type|swipe|key|launch)|CALL|call )/.test(l));
 
 console.log(`story: log ${file}`);
-console.log(`story: key ${redact(env.ANTHROPIC_API_KEY)}, ${hints.length} hint files${flag("--flaky") ? ", flaky phone" : ""}`);
-if (!env.ANTHROPIC_API_KEY) {
-  console.log("story: FAIL (no ANTHROPIC_API_KEY in the root .env)");
+console.log(`story: key ${redact(env.OPENAI_API_KEY)}, ${hints.length} hint files${flag("--flaky") ? ", flaky phone" : ""}`);
+if (!env.OPENAI_API_KEY) {
+  console.log("story: FAIL (no OPENAI_API_KEY in the root .env)");
   process.exit(1);
 }
 

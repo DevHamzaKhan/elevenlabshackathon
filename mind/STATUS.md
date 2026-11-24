@@ -1,5 +1,9 @@
 # Mind: status (James C, 10x)
 
+## v2 rebuild on OpenAI (2026-11-24, worktree branch, not pushed)
+Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 grounded multi-action executor, M5 escalation, M6 voice front end (Mouth), M7 recipes, M8 caller, M9 voice comparison.
+- M1 done: `src/model.ts` is an OpenAI Responses API client over plain fetch (no SDK), strict JSON-schema outputs, developer-message prefix for implicit prompt caching (`prompt_cache_key` per role), per-role model + reasoning effort from env (`MIND_ROUTER_MODEL`/`MIND_EXEC_MODEL`/`MIND_ESCALATE_MODEL`, `MIND_*_EFFORT`), image input for escalation, one retry on 429/5xx/timeout. `@anthropic-ai/sdk` removed. `test/model.test.ts` (fake fetch).
+
 ## Done
 - (Hamza, at his request, 2026-11-22) One command per press, from the first real-phone run (every `heard`, room chatter included, started a decide that cancelled the running task, so nothing got past "press home"; narration queued up and played minutes late). Now: `wake` opens a listening window; `heard`s in it are collected and decided once, joined, after 1.5 s of quiet (`timing.commandMs`); the window then closes, and any `heard` until the next `wake` is logged as ignored and can't touch a running task. A window with nothing heard closes after 8 s (`listenMs`). Instant "stop" still works inside a window (it also drops a command still being collected). A new press can still replace or stop a task. Narration: at most one `say` outstanding; a step line that would queue behind an unfinished one is skipped, except the Send line and the final result line, which wait up to 4 s (`sayWaitMs`) for the previous line. A decide opening line over 8 words is dropped, and the prompt asks for only the first action ("Finding Gmail."). Sleep never fires during a listening window or while a decide is in flight. Fake Mouth: `hear()` is a press (always sends `wake`), `hearMore()` / `!more` sends `heard` with no press. New `test/press.test.ts` (6 tests). Also: the stale-screen re-read check is now `>=` staleMs, so a tap chosen in the same millisecond as the read is still re-checked when `staleMs` is 0 (the stale-tap test raced once steps stopped waiting for speech). 41/41 pass.
 - (Hamza, at his request, 2026-11-22) Friend tone and push-to-talk: prompts make Bobby narrate only the current step in a few casual words ("Finding Gmail." "Drafted it." "Sending.") and never the end goal early; small repeat actions say nothing; no follow-up questions (missing subject/wording is filled in); speech not meant for Bobby is a silent chat. Sleep: after a chat answer, a finished task or call, or a model error, the session ends 3 s later (`sleepSoon`); idle `sleepMs` 20 s -> 10 s. Stall line is "One sec." 35/35 tests pass.
@@ -23,6 +27,7 @@
 3. Optional Stage experiments not done: phone-shaped cursor panel, sound effects, hints for more apps.
 
 ## Needs the human
+- **Add `OPENAI_API_KEY` to the root `.env`** (the Mind now runs on OpenAI; `ANTHROPIC_API_KEY` is no longer read). Nothing real has been called yet: every v2 check runs against fakes.
 - Nothing blocking. Root `.env` has `ANTHROPIC_API_KEY`, `CONTACTS` (Hamza) and a generated `HUB_TOKEN`.
 - Your working copy of `env/mind.env` (a committed template) holds your real API key. It is not committed; please clear it there and keep the key only in the root `.env`, so nobody `git add`s it by accident.
 

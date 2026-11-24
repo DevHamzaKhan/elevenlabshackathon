@@ -3,11 +3,11 @@
 
 import { Brain, parseContacts } from "./brain";
 import { HubClient } from "./hub";
-import { DEFAULT_EFFORT, DEFAULT_MODEL, makeModel } from "./model";
+import { DEFAULT_MODELS, makeModel, modelOptionsFromEnv } from "./model";
 import { DEFAULT_TIMING, type MindConfig, type ModelFn } from "./types";
 
 export type { MindConfig, ModelFn, ModelRequest, ModelReply } from "./types";
-export { makeModel } from "./model";
+export { makeModel, modelOptionsFromEnv, DEFAULT_MODELS, DEFAULT_EFFORTS } from "./model";
 export { describeScreen } from "./screen";
 
 /** `ws://127.0.0.1:8765` + role and token, unless hubUrl already names the role. */
@@ -24,13 +24,9 @@ export function startMind(config: MindConfig): { stop(): void } {
   const timing = { ...DEFAULT_TIMING, ...(config.timing ?? {}) };
   const model: ModelFn =
     config.model ??
-    makeModel({
-      apiKey: env.ANTHROPIC_API_KEY ?? "",
-      model: env.MIND_MODEL || DEFAULT_MODEL,
-      effort: env.MIND_EFFORT || DEFAULT_EFFORT,
-      log,
-    });
-  if (!config.model && !env.ANTHROPIC_API_KEY) log("mind: ANTHROPIC_API_KEY is missing; model calls will fail");
+    makeModel({ ...modelOptionsFromEnv(env), log });
+  if (!config.model && !env.OPENAI_API_KEY) log("mind: OPENAI_API_KEY is missing; model calls will fail");
+  const mo = modelOptionsFromEnv(env).models ?? {};
 
   let brain: Brain | null = null;
   const hub = new HubClient(
@@ -52,7 +48,9 @@ export function startMind(config: MindConfig): { stop(): void } {
     timing,
   });
   hub.start();
-  log(`mind: started (model ${env.MIND_MODEL || DEFAULT_MODEL}, effort ${env.MIND_EFFORT || DEFAULT_EFFORT}, ${config.hints?.length ?? 0} hints)`);
+  log(
+    `mind: started (router ${mo.router || DEFAULT_MODELS.router}, exec ${mo.exec || DEFAULT_MODELS.exec}, escalate ${mo.escalate || DEFAULT_MODELS.escalate}, ${config.hints?.length ?? 0} hints)`,
+  );
   return {
     stop() {
       brain?.stop();
