@@ -122,7 +122,7 @@ class ProtocolTest {
   }
 
   @Test fun tablesMatchContract() {
-    assertEquals(setOf("tap", "long_press", "point", "type", "swipe", "key", "launch", "wait"), Protocol.DOS)
+    assertEquals(setOf("tap", "long_press", "point", "type", "swipe", "key", "launch", "wait", "open"), Protocol.DOS)
     assertEquals(setOf("left", "right", "up", "down"), Protocol.DIRS)
     assertEquals(setOf("home", "back", "recents", "notifications", "enter"), Protocol.KEYS)
     assertEquals(setOf("not_found", "not_editable", "no_permission", "timeout", "bad_request"), Protocol.ERRORS)

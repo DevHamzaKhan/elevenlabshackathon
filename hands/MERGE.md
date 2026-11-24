@@ -38,8 +38,14 @@ Run `npx expo prebuild --platform android --clean` after adding it.
 Merged automatically from the library's `AndroidManifest.xml`, nothing to add:
 
 - permissions `INTERNET`, `POST_NOTIFICATIONS`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`,
-  `FOREGROUND_SERVICE_DATA_SYNC`, `WAKE_LOCK`;
-- `<queries>` for launcher activities (so `launch` can find apps by label);
+  `FOREGROUND_SERVICE_DATA_SYNC`, `WAKE_LOCK`, `TURN_SCREEN_ON`, `VIBRATE`, and
+  `com.android.alarm.permission.SET_ALARM` (normal permission, granted at install; the clock app
+  requires it for `open` with SET_ALARM / SET_TIMER);
+- `<queries>` for launcher activities (so `launch` can find apps by label), HOME (`caps.launcher`),
+  and the intents `open` uses most: SENDTO mailto/sms/smsto, DIAL tel, VIEW https/http/geo/
+  google.navigation, SET_ALARM, SET_TIMER, SHOW_ALARMS, INSERT calendar events, WEB_SEARCH;
+- the accessibility service now subscribes only to window state/content/windows-changed events
+  (`res/xml/bobby_hands_accessibility.xml`); nothing for the app to change;
 - services `dev.bobby.hands.HandsService` (accessibility, holds the hub),
   `dev.bobby.hands.HandsNotificationListener`, `dev.bobby.hands.KeepAliveService`
   (`foregroundServiceType="microphone|dataSync"`).
