@@ -25,16 +25,23 @@ data class SettleTiming(val firstEventMs: Long = 400, val quietMs: Long = 150, v
     const val LAUNCH_FLOOR_MS = 250L
     /** launch/open keep waiting (up to this) until the expected app is in front. */
     const val LAUNCH_APP_MAX_MS = 3500L
+    /** launch/open: two reads this far apart must match (slide-in animations send no events). */
+    const val STABLE_GAP_MS = 100L
+    /** After an act that changed a window: at most this long waiting for the screen to stop moving. */
+    const val STABLE_MAX_MS = 600L
   }
 }
 
 class Settler(private val clock: () -> Long = { System.nanoTime() / 1_000_000 }) {
-  class Mark(val count: Long, val at: Long)
+  class Mark(val count: Long, val at: Long, val windows: Long = 0)
+  /** What a wait saw: ms waited, qualifying events, and how many were window-level (a window or activity changed). */
+  data class Settled(val ms: Long, val events: Long, val windowEvents: Long)
 
   private val lock = ReentrantLock()
   private val changed = lock.newCondition()
   private var count = 0L
   private var lastAt = 0L
+  private var windows = 0L
 
   companion object {
     // AccessibilityEvent constants, copied so this stays pure.
@@ -70,23 +77,24 @@ class Settler(private val clock: () -> Long = { System.nanoTime() / 1_000_000 })
     }
   }
 
-  fun onEvent() = lock.withLock {
+  fun onEvent(type: Int = TYPE_WINDOW_CONTENT_CHANGED) = lock.withLock {
     count++
+    if (type != TYPE_WINDOW_CONTENT_CHANGED) windows++
     lastAt = clock()
     changed.signalAll()
   }
 
-  fun mark(): Mark = lock.withLock { Mark(count, clock()) }
+  fun mark(): Mark = lock.withLock { Mark(count, clock(), windows) }
 
-  /** Blocks until settled. Returns (ms waited, events seen). */
-  fun await(mark: Mark = mark(), minMs: Long = 0, t: SettleTiming = SettleTiming.ACT): Pair<Long, Long> {
+  /** Blocks until settled. */
+  fun await(mark: Mark = mark(), minMs: Long = 0, t: SettleTiming = SettleTiming.ACT): Settled {
     lock.lock()
     try {
       val start = clock()
       while (true) {
         val events = count - mark.count
         val wait = next(clock(), start, events, lastAt, minMs, t)
-        if (wait <= 0) return clock() - start to events
+        if (wait <= 0) return Settled(clock() - start, events, windows - mark.windows)
         changed.await(wait, TimeUnit.MILLISECONDS)
       }
     } finally {

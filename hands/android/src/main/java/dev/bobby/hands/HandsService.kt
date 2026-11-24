@@ -79,7 +79,7 @@ class HandsService : AccessibilityService() {
 
   override fun onAccessibilityEvent(event: AccessibilityEvent?) {
     val e = event ?: return
-    if (Settler.counts(e.eventType, e.packageName?.toString(), packageName)) settler.onEvent()
+    if (Settler.counts(e.eventType, e.packageName?.toString(), packageName)) settler.onEvent(e.eventType)
   }
 
   override fun onInterrupt() {}
@@ -487,7 +487,7 @@ class HandsService : AccessibilityService() {
           Hub.log("gesture cancelled; trying the accessibility click instead")
           if (!clickFallback(t, long)) return "timeout" to "gesture was cancelled and the node refused the click"
         }
-        settler.await(mark)
+        settle(mark)
         return null
       }
       "swipe" -> {
@@ -507,7 +507,7 @@ class HandsService : AccessibilityService() {
         val ok = gesture(p, 280)
         glide(ex, ey, w, h)
         if (!ok) return "timeout" to "gesture was cancelled"
-        settler.await(mark)
+        settle(mark)
         return null
       }
       "type" -> return type(a.text!!, target, w, h)
@@ -662,7 +662,7 @@ class HandsService : AccessibilityService() {
       else -> return "bad_request" to "unknown key"
     }
     if (!ok) return "no_permission" to "Android refused the $name action"
-    settler.await(mark)
+    settle(mark)
     return null
   }
 
@@ -743,11 +743,45 @@ class HandsService : AccessibilityService() {
     val start = SystemClock.uptimeMillis()
     settler.await(mark, minMs = SettleTiming.LAUNCH_FLOOR_MS, t = SettleTiming.LAUNCH)
     var front = frontApp()
+    val more = SettleTiming(firstEventMs = 300, quietMs = 150, capMs = 1000)
     while (expected != null && front != expected && SystemClock.uptimeMillis() - start < SettleTiming.LAUNCH_APP_MAX_MS) {
-      settler.await(settler.mark(), t = SettleTiming(firstEventMs = 300, quietMs = 150, capMs = 1000))
+      settler.await(settler.mark(), t = more)
       front = frontApp()
     }
+    // A cold start goes quiet between the splash and the first real frame, and slide-in
+    // animations send no events: wait (same budget) for readable content that holds still.
+    if (front != null) waitStable(SettleTiming.LAUNCH_APP_MAX_MS - (SystemClock.uptimeMillis() - start), front)
+    front = frontApp() ?: front
     return front
+  }
+
+  /** Settles after an act; when a window or activity changed, also waits for the screen to stop moving. */
+  private fun settle(mark: Settler.Mark) {
+    val s = settler.await(mark)
+    if (s.windowEvents > 0) waitStable(SettleTiming.STABLE_MAX_MS, null)
+  }
+
+  /**
+   * Waits (event-driven, at most [budgetMs]) until two reads [SettleTiming.STABLE_GAP_MS] apart
+   * hash the same and, when [pkg] is given, that app shows readable content
+   * ([LaunchRanker.contentReady]). Slide-in animations and a cold start's splash send no events.
+   */
+  private fun waitStable(budgetMs: Long, pkg: String?) {
+    val start = SystemClock.uptimeMillis()
+    val glance = SettleTiming(firstEventMs = SettleTiming.STABLE_GAP_MS, quietMs = SettleTiming.STABLE_GAP_MS, capMs = 500)
+    val more = SettleTiming(firstEventMs = 300, quietMs = 150, capMs = 1000)
+    var prev: String? = null
+    while (SystemClock.uptimeMillis() - start < budgetMs) {
+      val snap = try { snapshotOnce().first } catch (e: Exception) { return }
+      if (pkg == null || LaunchRanker.contentReady(snap.nodes, pkg)) {
+        if (snap.hash == prev) return
+        prev = snap.hash
+        settler.await(settler.mark(), t = glance)
+      } else {
+        prev = null
+        settler.await(settler.mark(), t = more)
+      }
+    }
   }
 
   private fun gesture(path: Path, durationMs: Long): Boolean {

@@ -1,0 +1,32 @@
+# Emulator/phone check of targets, launch and settle (drive.mjs --script tools/v2-emu.txt).
+# Safe: opens Settings, Clock and Calendar, reads, taps Settings rows, goes home. Nothing is sent.
+home
+screen
+# A node from this home screen goes stale once Settings covers it.
+launch settings
+expect app=com.android.settings
+?tap #2
+expect why=stale
+# Label ranking: exact ("Clock"), prefix ("Calend" -> Calendar)
+launch Clock
+expect app~deskclock
+launch Calend
+expect app=com.google.android.calendar
+?launch no such app here
+expect error=not_found
+# launch + then_screen is read after the slide-in: a fresh read right after is the same screen.
+launch settings --then --compact
+expect screen.nodes
+screen since
+expect same=true
+# Tap a folded row by one of its parts, fast, and get the next screen back in the same reply.
+tap "Network & internet" --fast --then
+expect screen.app=com.android.settings
+screen since
+expect same=true
+back
+# id target (Settings' search bar) and key target (taken from the last screen by the script below)
+screen
+tap id:search_action_bar --then
+expect ok=true
+back

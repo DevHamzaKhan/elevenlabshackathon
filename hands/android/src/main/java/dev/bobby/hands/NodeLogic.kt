@@ -308,6 +308,10 @@ data class LaunchCandidate(val pkg: String, val label: String, val launcherVisib
 object LaunchRanker {
   private fun norm(s: String) = s.replace(Regex("\\s+"), " ").trim().lowercase()
 
+  /** After a launch: [pkg]'s window shows at least two nodes with a label or a tap target. */
+  fun contentReady(nodes: List<ScreenNode>, pkg: String): Boolean =
+    nodes.count { it.pkg == pkg && (it.text.isNotEmpty() || it.desc.isNotEmpty() || it.tap || it.edit) } >= 2
+
   /**
    * The app [query] means. A package name matches exactly. Otherwise, by label ignoring case:
    * exact beats prefix beats contains (a word prefix like "Maps" in "Google Maps" counts as a

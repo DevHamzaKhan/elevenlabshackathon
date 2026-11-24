@@ -168,6 +168,15 @@ class ActV2Test {
     assertNull(LaunchRanker.pick("  ", apps))
   }
 
+  @Test fun contentReadyNeedsTwoUsefulNodesFromTheApp() {
+    fun n(text: String, pkg: String, tap: Boolean = false, scroll: Boolean = false) =
+      ScreenNode(0, text, "", "View", intArrayOf(0, 0, 10, 10), tap, false, scroll, pkg = pkg)
+    assertFalse(LaunchRanker.contentReady(emptyList(), "a"))
+    assertFalse(LaunchRanker.contentReady(listOf(n("", "a", scroll = true)), "a")) // an empty list: still drawing
+    assertFalse(LaunchRanker.contentReady(listOf(n("Hi", "a"), n("Other app", "b")), "a"))
+    assertTrue(LaunchRanker.contentReady(listOf(n("Welcome", "a"), n("", "a", tap = true)), "a"))
+  }
+
   @Test fun prefixTieShorterLabelWins() {
     val apps = listOf(c("a", "Google Play Store"), c("b", "Google"), c("c", "Google Photos"))
     assertEquals("b", LaunchRanker.pick("goo", apps)?.pkg)
@@ -222,6 +231,19 @@ class ActV2Test {
     th.join()
     assertTrue("events $ev1", ev1 >= 5)
     assertTrue("$ms1", ms1 in 200..700)
+  }
+
+  @Test fun settlerCountsWindowLevelEventsSeparately() {
+    val fastT = SettleTiming(firstEventMs = 20, quietMs = 10, capMs = 200)
+    val s = Settler()
+    val m = s.mark()
+    s.onEvent(Settler.TYPE_WINDOW_CONTENT_CHANGED); s.onEvent(Settler.TYPE_WINDOW_CONTENT_CHANGED)
+    val a = s.await(m, t = fastT)
+    assertEquals(2L, a.events); assertEquals(0L, a.windowEvents)
+    val m2 = s.mark()
+    s.onEvent(Settler.TYPE_WINDOW_STATE_CHANGED); s.onEvent(Settler.TYPE_WINDOW_CONTENT_CHANGED)
+    val b = s.await(m2, t = fastT)
+    assertEquals(2L, b.events); assertEquals(1L, b.windowEvents)
   }
 
   // --- caps helpers ---
