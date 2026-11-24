@@ -8,12 +8,70 @@
   <uses-permission android:name="android.permission.WAKE_LOCK" />
   <uses-permission android:name="android.permission.TURN_SCREEN_ON" />
   <uses-permission android:name="android.permission.VIBRATE" />
+  <!-- `open` with SET_ALARM / SET_TIMER: the clock app only accepts them from holders (normal permission). -->
+  <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
-  <!-- `launch` finds apps by label, so it needs to see launcher activities. -->
+  <!--
+    `launch` finds apps by label, so it needs to see launcher activities. `caps` reads the
+    default launcher (HOME). The rest let `open` see which app will handle common intents
+    (startActivity works without them; they only make the reply's `app` exact sooner).
+  -->
   <queries>
     <intent>
       <action android:name="android.intent.action.MAIN" />
       <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.HOME" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SENDTO" />
+      <data android:scheme="mailto" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SENDTO" />
+      <data android:scheme="sms" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SENDTO" />
+      <data android:scheme="smsto" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.DIAL" />
+      <data android:scheme="tel" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="https" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="http" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="geo" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="google.navigation" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SET_ALARM" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SET_TIMER" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SHOW_ALARMS" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.INSERT" />
+      <data android:mimeType="vnd.android.cursor.dir/event" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.WEB_SEARCH" />
     </intent>
   </queries>
 
