@@ -547,9 +547,10 @@ class HandsService : AccessibilityService() {
     if (ok) {
       keyboardHiddenByUs = true
       settler.await(mark)
-      if (keyboardBounds() == null) return
+      if (keyboardBounds() == null) { Hub.log("keyboard hidden (soft-keyboard controller)"); return }
       restoreKeyboard()
     }
+    Hub.log("keyboard hidden (back)")
     val m2 = settler.mark()
     performGlobalAction(GLOBAL_ACTION_BACK)
     settler.await(m2)

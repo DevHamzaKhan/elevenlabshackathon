@@ -43,9 +43,51 @@ Hands.openedFromNotification();      // true when opened from Bobby's notificati
 Hands.clearOpenedFromNotification();
 ```
 
+## Protocol additions (beyond CONTRACT.md v1)
+
+All additive: a v1 Mind that ignores unknown fields works unchanged. `caps_result.features` lists
+them, so a Mind can check before relying on one.
+
+| Where | Addition | Meaning |
+|---|---|---|
+| request | `{"type":"caps","to":"hands","id":"m1"}` | Reply `caps_result`: `sdk`, `release`, `oem`, `brand`, `model`, `locale`, `size`, `density`, `orientation`, `launcher`, `ime`, `secureLock`, `locked`, `gestureNav`, `imeTyping`, `screenshot`, `displays`, `features`. Best effort: any may be `null`. |
+| `screen` | `since:"<hash>"` | Same hash now: `{"type":"screen_result","re","same":true,"hash","app","size"}`, no `nodes`. Otherwise a full result. |
+| `screen` | `compact:true` | Nodes drop `false` booleans and `""` strings (`tap`, `edit`, `scroll`, `text`, `desc`, `cls`). |
+| `screen` | `image:true` (existing) | Cursor overlay hidden during capture; one retry after 350 ms when Android rate-limits; `image_error`: `secure`, `rate_limited`, `no_permission`, ... |
+| `screen_result` | `hash` (always) | 16 hex chars over app + node labels/flags/bounds (8 px rounding). System UI in the status-bar strip is ignored and clock/battery numbers in system UI are masked. |
+| `screen_result` | `locked:true` | A secure lock (PIN/pattern/password) is showing: `nodes:[]`, `app:""`, `hash:"locked"`. |
+| node | `checked` | Only on checkable nodes (`true`/`false`, kept in compact). A row whose switch is a plain child gets the switch's state. |
+| node | `disabled`, `focused`, `selected`, `password` | Only when `true`. A password field's `text` is always `""`. |
+| node | `id` | Short resource id (`compose_button`), when the app sets one. |
+| node | `key` | Stable id: hash of package + resource id + class + label prefix + position bucket (screen in 8 x 16 cells); twins get `-2`, `-3`. Same element on an unchanged screen = same key; a scroll that moves it to another cell changes it. Editable fields key on hint/desc, not typed text. |
+| node | `scrollDirs` | On scrollable nodes: `up`/`down`/`left`/`right` from the node's scroll actions. |
+| nodes | folding | A plain text/desc child inside a tappable ancestor with no label of its own becomes part of that ancestor's `text`, joined with ` · ` (max 120 chars; overflow stays separate; ancestors over a third of the screen don't fold). `{text}` matches any one part exactly before falling back to contains. |
+| `act` target | `{"id":"compose_button"}` | By resource id: full `pkg:id/name` or short `name`. Tappable/editable match wins. |
+| `act` target | `{"key":"k1a2b3c4d"}` | By node `key` (on a fresh read). |
+| `act` `{n}` | freshness | The node is refreshed first; gone or hidden: `ok:false,"error":"not_found","why":"stale"`. Bounds re-read. |
+| `act` | `do:"open"` | `uri`, optional `action`, `pkg`, `extras` (string, number: int if integral else double, boolean, string array), `type_mime`. Default action: `mailto:`/`sms:`/`smsto:` SENDTO, `tel:` DIAL (CALL is always turned into DIAL), else VIEW. `uri` optional when `action` given. Nothing handles it: `not_found`, `why:"no app handles mailto:"`. |
+| `act_result` | `app` | After `launch`/`open`: the package in front once the screen settled. |
+| `act_result` | `why` | Same text as the v1 `detail` (both sent). |
+| `act` | `then_screen:true` (+ `compact`) | The `act_result` carries `screen`: a screen_result body (no `type`/`re`) read after settling; it also becomes the `{n}` reference. |
+| `act` | `fast:true` | Cursor glide 120-250 ms instead of 400-900 ms. |
+| `act` (secure lock) | | Any act except `wait`: `ok:false,"error":"no_permission","why":"locked"`. Swipe lock: woken and dismissed as before. |
+
+**Settling** (all acts): event-driven, not polled. Only `TYPE_WINDOW_STATE_CHANGED`,
+`TYPE_WINDOWS_CHANGED` and `TYPE_WINDOW_CONTENT_CHANGED` count, not from system UI or this app.
+Done 400 ms after the action if nothing happened, else after 150 ms of quiet, 2 s at most.
+When a window or activity changed, Hands also waits (up to 600 ms) until two reads 100 ms apart
+match, because slide-in animations send no events. `launch`/`open`: 250 ms floor, first-event
+window 1 s, then wait (up to 3.5 s in all) for the expected app to be in front with at least two
+readable nodes that hold still. Constants: `SettleTiming` in `Settle.kt`.
+
+Try them: `node tools/drive.mjs --script tools/v2.txt` (caps, hash/since, compact, open geo/https/
+mailto, not_found) and `tools/v2-emu.txt` (stale `{n}`, launch ranking, then_screen = next read,
+folded-label tap, `id:` target). At the prompt: `caps`, `screen since`, `screen compact`,
+`open mailto:a@b.c?subject=Hi`, `tap key:k1a2b3c4d --fast --then`, `expect same=true`.
+
 ## Build, install, grant, drive
 
-Laptop: Node 22, JDK 21, Android SDK (`export ANDROID_HOME=$HOME/Library/Android/sdk`).
+Laptop: Node 22, JDK 17 or 21 (`JAVA_HOME`; Homebrew `openjdk@17` works), Android SDK (`export ANDROID_HOME=$HOME/Library/Android/sdk`).
 Phone: USB debugging on, `adb devices` shows it.
 
 ```sh
@@ -67,7 +109,8 @@ else `dev`. For the test app use `HUB_TOKEN=dev` if your `.env` holds the final 
 | Command | Does |
 |---|---|
 | `node tools/drive.mjs` | Plays the Mind: `adb forward tcp:8765 tcp:8765`, connects, interactive prompt (`help` lists commands: `screen`, `tap`, `point`, `type`, `swipe`, `launch`, `home`, `demo`...) |
-| `node tools/drive.mjs --script tools/smoke.txt` | Runs commands from a file, exits 1 on the first failure |
+| `node tools/drive.mjs --script tools/smoke.txt` | Runs commands from a file, exits 1 on the first failure (a line `?cmd` may fail; check it with `expect`) |
+| `node tools/drive.mjs --script tools/v2.txt` | The protocol additions, scripted (also against fakehub) |
 | `node tools/drive.mjs -e screen -e "point Gmail"` | Commands from the command line |
 | `node tools/drive.mjs --screenshot shots/` | Saves an adb screencap after each action |
 | `node tools/drive.mjs demo --dry` (at the prompt: `demo --dry`) | Scenic route to Gmail, reply to the newest email from `HANDS_TEST_SENDER`; `--dry` discards instead of sending |
@@ -91,7 +134,7 @@ hands/check.sh --no-phone  # laptop only
 ```
 
 `check.sh` runs: `hub-test.mjs --fake`; in `example/` `npm install` and `expo prebuild` if needed;
-`./gradlew :bobby-hands:testDebugUnitTest assembleDebug` (94 JVM tests; log in
+`./gradlew :bobby-hands:testDebugUnitTest assembleDebug` (146 JVM tests; log in
 `logs/hands-check-build.log`); then, if `adb get-state` is `device`: `adb install -r`, `grant.sh
 dev.bobby.hands`, starts Metro if it isn't running and launches the app, waits for the hub, runs
 `drive.mjs --script tools/smoke.txt` (reads the home screen and points; taps nothing) and
