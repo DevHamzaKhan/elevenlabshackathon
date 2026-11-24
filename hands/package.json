@@ -19,13 +19,13 @@
     "hands",
     "BobbyHands"
   ],
-  "repository": "https://github.com/DevHamzaKhan/elevenlabshackathon",
+  "repository": "https://github.com/jamesjamcow/Tibby",
   "bugs": {
-    "url": "https://github.com/DevHamzaKhan/elevenlabshackathon/issues"
+    "url": "https://github.com/jamesjamcow/Tibby/issues"
   },
   "author": "Hamza Khan <noreply@example.com> (https://github.com/DevHamzaKhan)",
   "license": "MIT",
-  "homepage": "https://github.com/DevHamzaKhan/elevenlabshackathon#readme",
+  "homepage": "https://github.com/jamesjamcow/Tibby#readme",
   "dependencies": {},
   "devDependencies": {
     "@babel/core": "^7.26.0",
