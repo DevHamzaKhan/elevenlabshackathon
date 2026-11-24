@@ -31,6 +31,14 @@ if [[ $HUB_OK != 0 ]] || ! grep -q '"type":"call_result","re":"m1","ok":true' lo
 fi
 grep -o '"status":"[a-z]*"' logs/check-call-hub.log | tr '\n' ' '; echo "call_result ok"
 
+echo "== integration with the real Mind (v1 + v2 voice, fake hub/phone/OpenAI)"
+if [[ -d ../mind/node_modules ]]; then
+  (cd ../mind && npx tsx ../mouth/tools/integration-with-mind.mts) > logs/check-integration.log 2>&1 || { tail -30 logs/check-integration.log; exit 1; }
+  tail -1 logs/check-integration.log
+else
+  echo "skipped (run npm ci in ../mind)"
+fi
+
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   echo "== test app build (assembleDebug)"
   export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"

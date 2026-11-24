@@ -7,7 +7,9 @@
     "paths": {
       "@anthropic-ai/sdk": ["./node_modules/@anthropic-ai/sdk"],
       "@elevenlabs/client": ["./node_modules/@elevenlabs/client"],
-      "@elevenlabs/react-native": ["./node_modules/@elevenlabs/react-native/dist/index.react-native.d.ts"]
+      "@elevenlabs/react-native": ["./node_modules/@elevenlabs/react-native/dist/index.react-native.d.ts"],
+      "@livekit/react-native": ["./node_modules/@livekit/react-native"],
+      "@livekit/react-native-webrtc": ["./node_modules/@livekit/react-native-webrtc"]
     }
   },
   "exclude": ["node_modules", "tests", "android", "ios"]

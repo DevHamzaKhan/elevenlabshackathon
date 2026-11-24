@@ -1,5 +1,9 @@
 # Mouth: status (Wajeeh, 1x budget: Core only)
 
+## v2 rebuild on OpenAI (James C's AI, 2026-11-24, authorized by James C; worktree branch, not pushed)
+- M6 done (code + Node tests; nothing real called, no OPENAI_API_KEY here): the voice vendor sits behind one file. `src/openai.ts` (React Native only) runs **OpenAI Realtime over WebRTC** with `@livekit/react-native-webrtc` (already in the app) and routes audio Bluetooth-first with `@livekit/react-native`'s AudioSession; `src/realtime.ts` (plain TS, tested) builds the session (Bobby's instructions, five tools, semantic VAD, input transcription), mints the ephemeral client secret from `OPENAI_API_KEY` on the phone, exchanges SDP with `/v1/realtime/calls`, and translates server events. `MOUTH_VOICE_VENDOR=openai` (default) or `elevenlabs` (the old path, unchanged); `MOUTH_VOICE_MODEL` (default `gpt-realtime-2.1-mini`), `MOUTH_VOICE` (default `marin`), `MOUTH_TRANSCRIBE_MODEL` (default `gpt-live-transcribe`).
+- Protocol v2 in `src/mouth.ts` (see `mind/PROTOCOL-V2.md`): `voice_caps` before each `wake`; tool calls become `request`/`amend`/`cancel`/`confirm_reply`/`status` (with the raw transcript in `heard`); `progress` (silent/when_idle/interrupt), `confirm_request` (asked aloud, mic reopened), `task_update`, `status_result` from the Mind; `barge_in` when the user talks during a task. v1 `say`/`whisper`/`correct`/`hush`/`sleep` unchanged. `tests/v2.test.ts` (11 tests); `tools/integration-with-mind.mts` now runs the real Mind + real Mouth twice (v1 heard/say and v2 tools), 19/19, and is part of `check.sh`.
+
 ## Done
 - (Hamza, at his request, 2026-11-22, from the real phone's logcat) **No stale narration, [SAY] spoken verbatim, push-to-talk.**
   - `say`s piled up (started 70–139 s late). Now only the newest waits: a new `say` drops every queued, not-yet-sent `say` (`say_done spoken:false`), and any `say` not started within 4 s of arriving (`sayStaleMs`) is dropped the same way, including one already sent to the agent. A `say` on an idle Bobby still goes to the agent at once.
@@ -43,6 +47,7 @@ Extras (open to the backup, Hamza's AI, from the start; claim with `(claimed: <n
 7. ~~The remaining tests~~: done (Hamza).
 
 ## Needs the human
+- **v2:** add `OPENAI_API_KEY` to the root `.env` and push it to the phone (`npm run push-config` in `app/`). Then do the listen test below with `MOUTH_VOICE_VENDOR` unset (OpenAI). To go back to ElevenLabs, set `MOUTH_VOICE_VENDOR=elevenlabs`.
 1. For the Extras only: `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` (James C is sending them), a bought Twilio number, `OWNER_NUMBER` verified as a caller ID in Twilio, `CALL_ALLOWLIST` (a teammate who agreed to one test call), and 1–2 minutes of the owner talking in `mouth/private/`. Whoever builds the Extras (Hamza) needs these `.env` lines from Wajeeh: `ELEVENLABS_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `OWNER_NUMBER`, `CALL_ALLOWLIST`.
 2. The Bobby agent is called "Bobby" in the ElevenLabs workspace. One with that name already existed and was updated in place; if a teammate made it for something else, tell Wajeeh.
 3. Privacy: with the emulator's host mic on, Bobby hears the room around the Mac and sends it to ElevenLabs. Keep it off (`adb emu avd hostmicoff`) unless you are doing the listen test.

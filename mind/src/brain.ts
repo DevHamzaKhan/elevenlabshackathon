@@ -868,7 +868,7 @@ export class Brain {
     if (this.mouthV2) this.send({ type: "confirm_request", to: "mouth", id, task: task.id, summary, risk: "irreversible" });
     else {
       await this.quiet(this.o.timing.sayWaitMs);
-      void this.say(`${summary}. Should I go ahead?`);
+      void this.say(`${summary.replace(/[.!?\s]+$/, "")}. Should I go ahead?`);
     }
     const timer = sleep(this.o.timing.confirmMs).then(() => ({ ok: false, heard: "", timeout: true }) as any);
     const r: any = await Promise.race([reply, timer, task.cancelSignal.then(() => ({ ok: false, heard: "", cancelled: true }))]);

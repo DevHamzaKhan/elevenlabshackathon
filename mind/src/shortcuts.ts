@@ -184,6 +184,7 @@ const email: Shortcut = {
       goal: `Send ${r.name} an email: "${body}"`,
       subgoals,
       shortcut: "email.send",
+      doneSay: `Sent it to ${r.name}.`,
       slots: { to: r.name, subject, body },
       recipient: { name: r.name, known: !!r.contact },
     };
@@ -236,6 +237,7 @@ const sms: Shortcut = {
         },
       ],
       shortcut: "sms.send",
+      doneSay: `Texted ${r.name}.`,
       slots: { to: r.name, body },
       recipient: { name: r.name, known: !!r.contact },
     };
@@ -324,6 +326,7 @@ const dial: Shortcut = {
         },
       ],
       shortcut: "phone.dial",
+      doneSay: `It's ringing ${name}.`,
       slots: { to: name },
       recipient: { name, known: !!c },
     };
@@ -369,6 +372,7 @@ const alarm: Shortcut = {
         },
       ],
       shortcut: "alarm.set",
+      doneSay: `Alarm set for ${shown[0]}.`,
       slots: { time: s.time, label: s.label ?? "" },
     };
   },
@@ -403,6 +407,7 @@ const timer: Shortcut = {
         },
       ],
       shortcut: "timer.set",
+      doneSay: `Timer's running.`,
       slots: { seconds: String(sec) },
     };
   },
@@ -442,6 +447,7 @@ const calendar: Shortcut = {
         },
       ],
       shortcut: "calendar.add",
+      doneSay: "It's in your calendar.",
       slots: { title: s.title, start: s.start, minutes: String(mins) },
     };
   },
@@ -472,6 +478,7 @@ const navigate: Shortcut = {
         },
       ],
       shortcut: "maps.navigate",
+      doneSay: "Directions are up.",
       slots: { place: s.place },
     };
   },
@@ -502,6 +509,7 @@ const search: Shortcut = {
         },
       ],
       shortcut: "web.search",
+      doneSay: "Results are up.",
       slots: { query: s.query },
     };
   },
@@ -536,6 +544,7 @@ const openApp: Shortcut = {
         },
       ],
       shortcut: "app.open",
+      doneSay: `${label}'s open.`,
       slots: { app: label },
     };
   },
@@ -569,6 +578,7 @@ const settings: Shortcut = {
         },
       ],
       shortcut: "settings.open",
+      doneSay: `${p.label} settings are open.`,
       slots: { page: s.page },
     };
   },
