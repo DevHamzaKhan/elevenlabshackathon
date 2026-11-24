@@ -15,6 +15,6 @@ echo "ok"
 
 echo "== tests (model stubbed out)"
 # Make sure no key is used by the tests.
-ANTHROPIC_API_KEY= npx tsx --test test/*.test.ts > logs/test.log 2>&1 || { grep -E "^(✖|not ok)|Error" logs/test.log | head -30; tail -8 logs/test.log; echo "FAIL: tests"; exit 1; }
+OPENAI_API_KEY= npx tsx --test test/*.test.ts > logs/test.log 2>&1 || { grep -E "^(✖|not ok)|Error" logs/test.log | head -30; tail -8 logs/test.log; echo "FAIL: tests"; exit 1; }
 grep -E "^ℹ (tests|pass|fail)" logs/test.log
 echo "check.sh: all good"

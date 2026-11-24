@@ -15,12 +15,10 @@
     "caller": "tsx fakes/caller.ts",
     "mind": "tsx scripts/run.ts",
     "story": "tsx scripts/story.ts",
+    "story:sim": "tsx scripts/story.ts --sim",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "bash check.sh"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^1.12.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

@@ -21,7 +21,7 @@ export function loadEnv(file = path.join(ROOT_DIR, ".env")): Record<string, stri
       out[line.slice(0, i).trim()] = v;
     }
   }
-  for (const k of ["ANTHROPIC_API_KEY", "MIND_MODEL", "MIND_EFFORT", "CONTACTS", "HUB_TOKEN", "HINTS_DIR"]) {
+  for (const k of Object.keys(process.env).filter((k) => /^(OPENAI_API_KEY|CONTACTS|HUB_TOKEN|HINTS_DIR|MIND_[A-Z_]+)$/.test(k))) {
     if (process.env[k]) out[k] = process.env[k]!;
   }
   return out;

@@ -1,9 +1,17 @@
-// The brain: reacts to what the Mouth hears, plans tasks, drives Hands one step at a time,
-// places calls through the Caller, and keeps Bobby's story straight.
+// The brain (v2): turns what the user asked into a queue of tasks, each a list of sub-goals with
+// code-checked `done_when`s, and runs them one at a time: shortcut intents first, saved recipes
+// next, grounded multi-action batches from the exec model last, escalating to the vision model
+// when stuck. Irreversible steps wait for a confirmation. Also: notifications, calls through the
+// Caller, corrections, sleeping, and the v1 Mouth messages for compatibility.
 
-import type { ModelFn, Msg, PlanStep, ScreenNode, Timing } from "./types";
-import { DECIDE_SCHEMA, STEP_SCHEMA, decideSystem, stepSystem } from "./prompts";
-import { appLabel, describeScreen, screenKey } from "./screen";
+import type { HandsAct, ModelFn, Msg, SubgoalSpec, TaskPlan, Timing } from "./types";
+import { ROUTER_SCHEMA, checkSystem, escalateSystem, execSystem, routerSystem } from "./prompts";
+import { appLabel, checkScreen, fingerprint } from "./screen";
+import { Executor, subgoalFromModel, type ActResult, type SubgoalResult, type SubgoalRun } from "./exec";
+import { ShortcutIndex, packageFor } from "./shortcuts";
+import { findContact, parseContactBook, parseContacts as parseContactsV1, type Contact } from "./contacts";
+import { InMemoryStore, Memory, type KeyValueStore } from "./memory";
+import { RecipeBook } from "./recipes";
 
 export type HubLike = {
   send(m: Msg): boolean;
@@ -12,113 +20,175 @@ export type HubLike = {
   cancelWait(id: string): void;
 };
 
+export type ConfirmPolicy = "always" | "unknown_contacts" | "never";
+
 export type BrainOptions = {
   hub: HubLike;
   model: ModelFn;
   log: (line: string) => void;
   hints: string[];
-  contacts: Record<string, string>;
+  /** v1 shape (name -> number) or the full contact book. */
+  contacts: Record<string, string> | Contact[];
   timing: Timing;
+  confirm?: ConfirmPolicy;
+  storage?: KeyValueStore;
+  now?: () => Date;
 };
 
 type Notif = { app: string; title: string; text: string; at: number };
 
-type HistoryEntry = { action: string; result: string; say: string };
+type TaskStatus = "queued" | "running" | "waiting_confirm" | "paused" | "done" | "failed" | "cancelled";
 
 type Task = {
   id: string;
-  title: string;
-  goal: string;
-  plan: PlanStep[];
+  plan: TaskPlan;
+  status: TaskStatus;
+  idx: number;
   stepStatus: Record<number, "running" | "done" | "failed">;
-  history: HistoryEntry[];
+  scratch: string[];
+  history: string[];
   cancelled: boolean;
-  /** Cancelled to make way for a new task: no whisper. */
+  /** Cancelled without a spoken word (replaced). */
   quiet?: boolean;
-  /** Bobby already said "give me a second" in this task. */
-  stalled?: boolean;
+  /** The user said no to a confirmation. */
+  declined?: boolean;
+  paused: boolean;
+  resume: () => void;
+  resumed: Promise<void>;
+  amended?: TaskPlan;
+  escalationsUsed: number;
   correctedOnce: boolean;
   correctedName?: boolean;
-  /** Resolves the moment the task is cancelled, so waits can be abandoned at once. */
   cancelSignal: Promise<void>;
   fireCancel: () => void;
+  callId?: string;
 };
 
-type Call = { id: string; taskId: string; name: string; number: string; goal: string; correctedOnce: boolean; correctedName?: boolean };
-
-const MAX_STEPS = 25;
-const MAX_CONSECUTIVE_FAILS = 4;
 const CANCEL_RE = /\b(stop|cancel|never ?mind|abort|forget it|don'?t do (it|that))\b/i;
-/** Returned by a wait that was abandoned because the task was cancelled. */
+const YES_RE = /\b(yes|yeah|yep|yup|sure|ok(ay)?|go ahead|do it|send it|send|post it|call (him|her|them)|confirm(ed)?|correct|please do|go for it|absolutely|definitely|that'?s right|right)\b/i;
+const NO_RE = /\b(no|nope|nah|don'?t|do not|stop|cancel|wait|hold on|not yet|never ?mind|change)\b/i;
 const CANCELLED: unique symbol = Symbol("cancelled");
-/** First-person or plain claims that the job is finished ("all done", "I've sent it", "it's sent"). */
 const DONE_RE =
   /\b(all (done|set)|(it|that|this)('?s| is| has been) (done|sent|finished|on its way)|i('?m| am) (done|finished)|i('?ve| have)? (just |already )?(sent|finished|replied|completed)|(message|email|reply|text) (is|was|has been) sent)\b|^\W*(done|sent|finished)\W*$/i;
+const MAX_ESCALATIONS = 2;
+const SUBGOAL_BUDGET = 10;
 
-export function parseContacts(s: string | undefined): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const part of (s ?? "").split(",")) {
-    const i = part.indexOf("=");
-    if (i <= 0) continue;
-    const name = part.slice(0, i).trim();
-    const num = part.slice(i + 1).trim();
-    if (name && /^\+\d{6,15}$/.test(num)) out[name] = num;
-  }
-  return out;
-}
+/** v1 export, kept for callers: name -> E.164 number. */
+export const parseContacts = parseContactsV1;
 
 export function isCancel(text: string): boolean {
   return CANCEL_RE.test(text);
+}
+
+/** A raw transcript counts as yes only if it says yes and nothing that sounds like no. */
+export function isAffirmative(heard: string): boolean {
+  return YES_RE.test(heard) && !NO_RE.test(heard);
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class Brain {
   peers = { hands: false, mouth: false, caller: false };
+  /** The Mouth speaks protocol v2 (request/confirm/progress). Learned from `voice_caps` or a v2 message. */
+  mouthV2 = false;
   awake = false;
   notifications: Notif[] = [];
   private undigested = 0;
   private convo: { who: "user" | "bobby"; text: string }[] = [];
-  task: Task | null = null;
-  call: Call | null = null;
+  current: Task | null = null;
+  queue: Task[] = [];
   private taskSeq = 0;
   private lastActivity = Date.now();
   private sleepSent = false;
   private pendingSays = new Set<string>();
   private recentSays: { text: string; at: number }[] = [];
-  /** Recent whispers: things Bobby has been told, so they count as known when checking what he says. */
   private recentWhispers: string[] = [];
   private lastSayDoneAt = 0;
-  /** The user spoke and Bobby hasn't answered yet: his next unrecognised line is his own. */
   private answerPending = false;
-  /** Bumped by every "stop": a decision started before it must not start anything. */
   private epoch = 0;
   private decidesInFlight = 0;
-  /** Waits on Hands (screen, act), so they can be released the moment Hands drops. */
   private handsWaits = new Set<string>();
-  /** When set, send `sleep` at this time (lets Bobby finish his goodbye). */
   private sleepAt = 0;
-  /** Push-to-talk feel: once Bobby has answered a chat turn, go to sleep. */
   private sleepAfterReply = false;
-  /** Things the Mind knows are true, newest last, for corrections and for "what happened?". */
   facts: string[] = [];
   private ticker: ReturnType<typeof setInterval>;
-  private decideSys: string;
-  private stepSys: string;
+  private routerSys: string;
+  private systems: { exec: string; escalate: string; check: string };
   private stopped = false;
-  /** Resolves when the current task loop ends. Tests await it. */
+  /** Resolves when the queue has drained. Tests await it. */
   taskDone: Promise<void> = Promise.resolve();
-  /** Open from a `wake` until one command has been taken: only then does `heard` count. */
+  private drained: () => void = () => {};
   private listening = false;
-  /** `heard` texts of the command being collected (the user may pause mid-sentence). */
   private pendingHeard: string[] = [];
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private listenTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastScreen: Msg | null = null;
+  /** Hands' own hash of lastScreen, when it sends one (then `since` can be used). */
+  private handsHash = "";
+  caps: Msg | null = null;
+  private pendingConfirm: { id: string; task: Task; resolve: (r: { ok: boolean; heard: string }) => void } | null = null;
+  private lastHeardRaw = "";
+  private bargeTimer: ReturnType<typeof setTimeout> | null = null;
+  shortcuts = new ShortcutIndex();
+  memory: Memory;
+  recipes: RecipeBook;
+  private book: Contact[];
+  private exec: Executor;
+  /** Model calls by role, for the story's numbers. */
+  stats = { route: 0, exec: 0, escalate: 0, check: 0, local: 0, recipe: 0, acts: 0 };
 
   constructor(private o: BrainOptions) {
-    this.decideSys = decideSystem(o.hints);
-    this.stepSys = stepSystem(o.hints);
+    this.book = Array.isArray(o.contacts) ? o.contacts : Object.entries(o.contacts).map(([name, phone]) => ({ name, phone }));
+    this.routerSys = routerSystem(o.hints, this.shortcuts.catalogue());
+    this.systems = { exec: execSystem(o.hints), escalate: escalateSystem(o.hints), check: checkSystem() };
+    this.memory = new Memory(o.storage ?? new InMemoryStore(), o.log);
+    this.recipes = new RecipeBook(this.memory, o.log);
+    void this.memory.loaded.then(() => {
+      this.facts = [...this.memory.facts.slice(-10), ...this.facts].slice(-40);
+    });
     this.ticker = setInterval(() => this.tick(), 500);
+    this.exec = new Executor({
+      model: o.model,
+      log: o.log,
+      systems: this.systems,
+      readScreen: (opts) => this.readScreen(opts),
+      act: (a, opts) => this.act(a, opts),
+      narrate: (t) => this.narrate(t),
+      gate: () => (this.current ? this.gate(this.current) : Promise.resolve("go")),
+      confirm: (summary) => (this.current ? this.confirmGate(this.current, summary) : Promise.resolve(false)),
+      escalations: {
+        left: () => (this.current ? MAX_ESCALATIONS - this.current.escalationsUsed : 0),
+        take: () => {
+          if (this.current) this.current.escalationsUsed += 1;
+        },
+      },
+      counters: this.stats,
+      race: <T,>(p: Promise<T>) => {
+        const t = this.current;
+        if (!t) return p;
+        return Promise.race([p, t.cancelSignal.then(() => null)]);
+      },
+    });
+  }
+
+  /** A thing the Mind knows happened: kept for corrections and the router, persisted in memory. */
+  private addFact(f: string) {
+    this.facts.push(f);
+    if (this.facts.length > 40) this.facts.shift();
+    this.memory.addFact(f);
+  }
+
+  private get now(): Date {
+    return this.o.now ? this.o.now() : new Date();
+  }
+
+  private get policy(): ConfirmPolicy {
+    return this.o.confirm ?? "always";
+  }
+
+  private contactsCtx() {
+    const learned = this.memory.contacts.filter((c) => !this.book.some((b) => b.name === c.name));
+    return { contacts: [...this.book, ...learned], now: this.now };
   }
 
   stop() {
@@ -126,10 +196,13 @@ export class Brain {
     clearInterval(this.ticker);
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     if (this.listenTimer) clearTimeout(this.listenTimer);
-    if (this.task) {
-      this.task.cancelled = true;
-      this.task.fireCancel();
+    if (this.bargeTimer) clearTimeout(this.bargeTimer);
+    for (const t of [this.current, ...this.queue]) {
+      if (!t) continue;
+      t.cancelled = true;
+      t.fireCancel();
     }
+    this.queue = [];
   }
 
   // ---------- sending ----------
@@ -146,13 +219,13 @@ export class Brain {
     this.send({ type: "whisper", to: "mouth", text });
   }
 
-  /** Sends a `say` and returns a promise that resolves when it's done (or timed out / no Mouth). */
+  /** v1: a `say`, resolved when done (or timed out / no Mouth). */
   private say(text: string): Promise<void> {
     if (!text.trim()) return Promise.resolve();
     this.o.log(`mind: say: ${text}`);
     this.recentSays.push({ text, at: Date.now() });
     if (this.recentSays.length > 20) this.recentSays.shift();
-    this.convo.push({ who: "bobby", text });
+    this.pushConvo("bobby", text);
     if (!this.peers.mouth) return Promise.resolve();
     const id = this.o.hub.nextId();
     this.pendingSays.add(id);
@@ -165,10 +238,43 @@ export class Brain {
     return done;
   }
 
-  /** Resolves once no `say` is outstanding, or after `ms`. */
   private async quiet(ms: number): Promise<void> {
     const end = Date.now() + ms;
     while (this.pendingSays.size > 0 && Date.now() < end && !this.stopped) await sleep(30);
+  }
+
+  /** Narration of a step: never piles up, never waited for. */
+  private narrate(text: string) {
+    if (!text.trim()) return;
+    const task = this.current;
+    if (this.mouthV2) return this.progress(task, text, "when_idle");
+    if (this.pendingSays.size > 0) {
+      this.o.log(`mind: skipped say (previous line still playing): ${text}`);
+      return;
+    }
+    void this.say(text);
+  }
+
+  /** v2 `progress`, or its v1 equivalent. Outcome lines use priority when_idle and are awaited in v1. */
+  private async progress(task: Task | null, text: string, priority: "silent" | "when_idle" | "interrupt"): Promise<void> {
+    if (!text.trim()) return;
+    if (this.mouthV2) {
+      if (!this.peers.mouth) return;
+      this.o.log(`mind: progress (${priority}): ${text}`);
+      this.recentSays.push({ text, at: Date.now() });
+      this.pushConvo("bobby", text);
+      this.send({ type: "progress", to: "mouth", task: task?.id ?? "", text, priority });
+      return;
+    }
+    if (priority === "silent") return this.whisper(text);
+    if (priority === "interrupt") this.send({ type: "hush", to: "mouth" });
+    else await this.quiet(this.o.timing.sayWaitMs);
+    await this.say(text);
+  }
+
+  private taskUpdate(task: Task, status: TaskStatus, text = "") {
+    task.status = status;
+    if (this.mouthV2 && this.peers.mouth) this.send({ type: "task_update", to: "mouth", task: task.id, title: task.plan.title, status, ...(text ? { text } : {}) });
   }
 
   private watch(m: Msg) {
@@ -180,16 +286,24 @@ export class Brain {
   handle(m: Msg) {
     if (this.stopped) return;
     switch (m.type) {
-      case "peers":
+      case "peers": {
+        const handsWas = this.peers.hands;
         this.peers = { hands: !!m.hands, mouth: !!m.mouth, caller: !!m.caller };
         if (!m.mouth) {
           this.awake = false;
+          this.mouthV2 = false;
           this.endWindow();
-          // Nobody will send say_done now: don't make anything wait for it.
           for (const id of [...this.pendingSays]) this.o.hub.cancelWait(id);
+          if (this.pendingConfirm) this.pendingConfirm.resolve({ ok: false, heard: "" });
         }
         if (!m.hands) for (const id of [...this.handsWaits]) this.o.hub.cancelWait(id);
-        if (!m.caller && this.call) this.o.hub.cancelWait(this.call.id);
+        if (!handsWas && m.hands) void this.askCaps();
+        if (!m.caller && this.current?.callId) this.o.hub.cancelWait(this.current.callId);
+        break;
+      }
+      case "voice_caps":
+        this.mouthV2 = Number(m.v) >= 2;
+        this.peers.mouth = true;
         break;
       case "notification":
         this.onNotification(m);
@@ -202,29 +316,68 @@ export class Brain {
         this.endWindow();
         break;
       case "heard":
-        if (typeof m.text === "string") void this.onHeard(m.text);
+        if (typeof m.text === "string") {
+          this.lastHeardRaw = m.text;
+          if (this.mouthV2) {
+            // v2: the voice model's tool calls are the input; heard is the raw transcript only.
+            this.pushConvo("user", m.text);
+            this.lastActivity = Date.now();
+          } else this.onHeard(m.text);
+        }
+        break;
+      case "request":
+        this.mouthV2 = true;
+        if (typeof m.text === "string") void this.onRequest(m);
+        break;
+      case "amend":
+        this.mouthV2 = true;
+        if (typeof m.text === "string") void this.onAmend(m.text);
+        break;
+      case "cancel":
+        this.mouthV2 = true;
+        this.resumeIfPaused();
+        this.epoch += 1;
+        this.cancelTasks(m.scope === "current" ? "current" : "all");
+        break;
+      case "confirm_reply":
+        this.mouthV2 = true;
+        if (this.pendingConfirm && m.re === this.pendingConfirm.id) {
+          this.pendingConfirm.resolve({ ok: m.ok === true, heard: String(m.heard ?? "") });
+        }
+        break;
+      case "barge_in":
+        this.onBargeIn();
+        break;
+      case "status":
+        this.send({ type: "status_result", to: "mouth", re: m.id, text: this.statusLine(), tasks: this.taskList() });
         break;
       case "spoke":
         if (typeof m.text === "string") this.onSpoke(m.text);
         break;
       case "call_status":
-        if (this.call && m.re === this.call.id && typeof m.status === "string") {
-          this.whisper(`Call to ${this.call.name}: ${m.status}.`);
+        if (this.current?.callId && m.re === this.current.callId && typeof m.status === "string") {
+          const name = this.current.plan.call?.name ?? "them";
+          this.progress(this.current, `Call to ${name}: ${m.status}.`, "silent");
         }
         break;
       default:
-        // act_result, screen_result, say_started, say_done, call_result: handled by waiters.
         break;
     }
   }
 
+  private async askCaps() {
+    const id = this.o.hub.nextId();
+    const wait = this.o.hub.waitFor(id, 1500);
+    this.send({ type: "caps", to: "hands", id });
+    const r = await wait;
+    if (r && r.type === "caps_result") {
+      this.caps = r;
+      this.o.log(`mind: hands caps: sdk ${r.sdk ?? "?"}, ${r.oem ?? "?"} ${r.model ?? ""}, launcher ${r.launcher ?? "?"}, locked ${r.locked ?? "?"}`);
+    } else this.o.log("mind: hands sent no caps (older Hands); carrying on without");
+  }
+
   private onNotification(m: Msg) {
-    const n: Notif = {
-      app: String(m.app ?? ""),
-      title: String(m.title ?? ""),
-      text: String(m.text ?? ""),
-      at: Number(m.at) || Date.now(),
-    };
+    const n: Notif = { app: String(m.app ?? ""), title: String(m.title ?? ""), text: String(m.text ?? ""), at: Number(m.at) || Date.now() };
     this.notifications.push(n);
     if (this.notifications.length > 30) this.notifications.shift();
     this.undigested += 1;
@@ -239,30 +392,24 @@ export class Brain {
     this.sleepSent = false;
     this.sleepAt = 0;
     this.lastActivity = Date.now();
-    this.peers.mouth = true; // a wake can only come from a connected Mouth
-    // Note: slice(-0) would return everything, so zero is handled on its own.
+    this.peers.mouth = true;
     const count = Math.min(this.undigested, 8);
     const fresh = count > 0 ? this.notifications.slice(-count) : [];
     this.undigested = 0;
-    if (fresh.length === 0) {
-      this.whisper("No new notifications since you last spoke with the user.");
-    } else {
-      this.whisper(
-        `${fresh.length} new notification${fresh.length > 1 ? "s" : ""}, newest last: ${fresh.map(notifLine).join("; ")}.`,
-      );
-    }
-    if (this.task) this.whisper(`Still working on: ${this.task.title}.`);
-    if (this.call) this.whisper(`Still on the call to ${this.call.name}; no result yet.`);
+    if (fresh.length === 0) this.whisper("No new notifications since you last spoke with the user.");
+    else this.whisper(`${fresh.length} new notification${fresh.length > 1 ? "s" : ""}, newest last: ${fresh.map(notifLine).join("; ")}.`);
+    if (this.current) this.whisper(`Still working on: ${this.current.plan.title}.`);
+    if (this.queue.length) this.whisper(`Queued after it: ${this.queue.map((t) => t.plan.title).join(", ")}.`);
     this.openWindow();
   }
 
-  // ---------- listening windows: one command per press ----------
+  // ---------- v1 listening windows: one command per press ----------
 
   private openWindow() {
     this.listening = true;
     if (this.listenTimer) clearTimeout(this.listenTimer);
     this.listenTimer = null;
-    if (this.pendingHeard.length > 0) return; // still collecting: the debounce will take it
+    if (this.pendingHeard.length > 0) return;
     this.listenTimer = setTimeout(() => {
       this.listenTimer = null;
       if (this.listening && this.pendingHeard.length === 0) {
@@ -273,7 +420,6 @@ export class Brain {
     }, this.o.timing.listenMs);
   }
 
-  /** The Mouth went to sleep or away: take whatever was heard, then stop listening. */
   private endWindow() {
     if (this.pendingHeard.length > 0) this.flushCommand();
     this.listening = false;
@@ -290,17 +436,15 @@ export class Brain {
     this.listenTimer = null;
   }
 
-  /** The user went quiet: the collected `heard`s are one command, decided once. */
   private flushCommand() {
     const text = this.pendingHeard.join(" ").replace(/\s+/g, " ").trim();
     this.closeWindow();
     if (!text || this.stopped) return;
     this.o.log(`mind: command: ${text}`);
-    void this.decide(text);
+    void this.utter(text, text);
   }
 
   private onHeard(text: string) {
-    // Room chatter, the user talking to friends, Bobby's own echo: only a press opens the mic.
     if (!this.listening) {
       this.o.log(`mind: ignored heard (outside a listening window): ${text}`);
       return;
@@ -314,33 +458,38 @@ export class Brain {
     if (this.listenTimer) clearTimeout(this.listenTimer);
     this.listenTimer = null;
 
-    // Instant cancel, before any model call.
+    // A pending confirmation takes the next thing said (v1 has no confirm tool).
+    if (this.pendingConfirm) {
+      this.closeWindow();
+      this.pushConvo("user", text);
+      this.pendingConfirm.resolve({ ok: isAffirmative(text), heard: text });
+      return;
+    }
+
     if (isCancel(text) && text.split(/\s+/).length <= 8) {
       const hadPending = this.pendingHeard.length > 0;
       const deciding = this.decidesInFlight > 0 || hadPending;
-      if (this.task || this.call || deciding || /^\W*(stop|cancel|never ?mind)\W*$/i.test(text)) {
+      const busy = !!this.current || this.queue.length > 0;
+      if (busy || deciding || /^\W*(stop|cancel|never ?mind)\W*$/i.test(text)) {
         this.closeWindow();
         this.pushConvo("user", text);
       }
-      if (this.task || this.call || deciding) {
-        // Anything still being decided was asked for before this "stop": it must not start.
+      if (busy || deciding) {
         this.epoch += 1;
-        if (this.task || this.call) this.cancel();
+        if (busy) this.cancelTasks("all");
         else {
           this.send({ type: "hush", to: "mouth" });
           this.whisper("The user said stop before anything began. Nothing was started on the phone.");
-          this.facts.push("The user said stop before the last request began, so nothing was done.");
+          this.addFact("The user said stop before the last request began, so nothing was done.");
         }
         return;
       }
-      // Nothing running: just stop Bobby talking.
       if (/^\W*(stop|cancel|never ?mind)\W*$/i.test(text)) {
         this.send({ type: "hush", to: "mouth" });
         return;
       }
     }
 
-    // Collect until the user has been quiet for a moment, then decide once on the whole command.
     this.pendingHeard.push(text);
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.debounceTimer = setTimeout(() => {
@@ -349,489 +498,570 @@ export class Brain {
     }, this.o.timing.commandMs);
   }
 
+  // ---------- v2 input: tool calls from the voice model, no debounce ----------
+
+  private async onRequest(m: Msg) {
+    const text = String(m.text);
+    const raw = typeof m.heard === "string" && m.heard ? m.heard : this.lastHeardRaw || text;
+    this.lastActivity = Date.now();
+    this.sleepSent = false;
+    this.sleepAt = 0;
+    this.awake = true;
+    this.resumeIfPaused();
+    if (this.pendingConfirm && text.split(/\s+/).length <= 6 && (YES_RE.test(text) || NO_RE.test(text))) {
+      this.pendingConfirm.resolve({ ok: isAffirmative(text), heard: raw });
+      return;
+    }
+    if (isCancel(text) && text.split(/\s+/).length <= 8) {
+      this.epoch += 1;
+      this.pushConvo("user", text);
+      this.cancelTasks("all");
+      return;
+    }
+    await this.utter(text, raw);
+  }
+
+  private async onAmend(text: string) {
+    this.resumeIfPaused();
+    if (!this.current) return void this.utter(text, text);
+    await this.utter(`Change the running task: ${text}`, text, true);
+  }
+
+  private onBargeIn() {
+    const t = this.current;
+    if (!t || t.paused || t.status === "waiting_confirm") return;
+    t.paused = true;
+    this.o.log(`mind: barge-in: task ${t.id} pauses at the next step`);
+    this.taskUpdate(t, "paused");
+    if (this.bargeTimer) clearTimeout(this.bargeTimer);
+    this.bargeTimer = setTimeout(() => this.resumeIfPaused(), this.o.timing.bargeMs);
+  }
+
+  private resumeIfPaused() {
+    if (this.bargeTimer) clearTimeout(this.bargeTimer);
+    this.bargeTimer = null;
+    const t = this.current;
+    if (t?.paused) {
+      t.paused = false;
+      this.o.log(`mind: task ${t.id} resumes`);
+      this.taskUpdate(t, "running");
+      t.resume();
+    }
+  }
+
   private pushConvo(who: "user" | "bobby", text: string) {
     this.convo.push({ who, text });
     if (this.convo.length > 12) this.convo.splice(0, this.convo.length - 12);
   }
 
-  private async decide(text: string) {
+  // ---------- routing ----------
+
+  /** One command: instant local shortcut match, else one router call. */
+  private async utter(text: string, raw: string, amend = false) {
     this.answerPending = true;
-    this.pushConvo("user", text);
+    this.pushConvo("user", raw);
     const epoch = this.epoch;
+    if (!amend) {
+      const local = this.shortcuts.matchUtterance(text, this.contactsCtx());
+      if (local) {
+        this.stats.local += 1;
+        this.o.log(`mind: local shortcut match: ${local.matches.map((m) => `${m.id} ${JSON.stringify(m.slots)}`).join(" | ")}`);
+        for (const p of local.plans) this.enqueue(p);
+        return;
+      }
+    }
     this.decidesInFlight += 1;
-    const r = await this.o.model({
-      purpose: "decide",
-      system: this.decideSys,
-      user: this.decideInput(text),
-      schema: DECIDE_SCHEMA,
-      timeoutMs: 20_000,
-    }).finally(() => {
-      this.decidesInFlight -= 1;
-    });
+    this.stats.route += 1;
+    const r = await this.o
+      .model({ purpose: "route", role: "router", system: this.routerSys, user: this.routerInput(text), schema: ROUTER_SCHEMA, timeoutMs: 12_000, maxTokens: 2500 })
+      .finally(() => {
+        this.decidesInFlight -= 1;
+      });
     if (this.stopped) return;
     const d = r.json;
     if (epoch !== this.epoch) {
-      this.o.log(`mind: dropped a decision made before the user said stop (${d?.action ?? "none"})`);
+      this.o.log(`mind: dropped a decision made before the user said stop (${d?.route ?? "none"})`);
       return;
     }
     if (!d) {
-      await this.say("Hm, something broke on my end. Try again in a sec.");
+      await this.progress(null, "Hm, something broke on my end. Try again in a sec.", "interrupt");
       this.sleepSoon();
       return;
     }
-    switch (d.action) {
+    switch (d.route) {
       case "chat":
         this.whisper(String(d.whisper ?? ""));
-        // Bobby answers by himself; once he has (onSpoke), the session ends.
         if (this.answerPending) this.sleepAfterReply = true;
         else this.sleepSoon();
         break;
       case "sleep":
         this.whisper(String(d.whisper ?? ""));
-        // Give Bobby a moment to say goodbye before the session ends.
-        if (!this.task && !this.call) this.sleepAt = Date.now() + this.o.timing.goodbyeMs;
+        if (!this.current && !this.queue.length) this.sleepAt = Date.now() + this.o.timing.goodbyeMs;
         break;
       case "cancel":
         this.epoch += 1;
-        this.cancel();
+        this.cancelTasks(d.cancel_scope === "current" ? "current" : "all");
         break;
-      case "task": {
-        if (this.task) {
-          this.cancel(true);
-          await this.taskDone;
-        }
-        this.whisper(String(d.whisper ?? ""));
-        const steps: PlanStep[] = (Array.isArray(d.steps) ? d.steps : []).map((s: any, i: number) => ({
-          n: i + 1,
-          do: String(s.do ?? ""),
-          why: String(s.why ?? ""),
-        }));
-        this.startTask(String(d.title || "Task"), String(d.goal || text), steps, String(d.say ?? ""));
+      case "status":
+        await this.progress(this.current, this.statusLine(), "interrupt");
+        break;
+      case "amend": {
+        const t = Array.isArray(d.tasks) && d.tasks[0] ? this.planFromRouter(d.tasks[0]) : null;
+        if (!t) break;
+        if (this.current && !this.current.cancelled) {
+          this.o.log(`mind: amend task ${this.current.id}: ${t.goal}`);
+          this.current.amended = t;
+          this.addFact(`The user changed "${this.current.plan.title}": ${t.goal}`);
+          await this.progress(this.current, String(d.say || "Got it, changing that."), "when_idle");
+        } else this.enqueue(t);
         break;
       }
-      case "call":
-        void this.startCall(String(d.call_name ?? ""), String(d.call_goal || text), String(d.whisper ?? ""), String(d.say ?? ""));
-        break;
+      case "tasks":
+      default: {
+        const tasks = (Array.isArray(d.tasks) ? d.tasks : []).map((x: any) => this.planFromRouter(x)).filter(Boolean) as TaskPlan[];
+        if (!tasks.length) {
+          this.whisper(String(d.whisper ?? ""));
+          break;
+        }
+        if (d.say && this.mouthV2) this.progress(null, String(d.say), "silent");
+        for (const p of tasks) this.enqueue(p);
+      }
     }
   }
 
-  private decideInput(heard: string): string {
+  private planFromRouter(t: any): TaskPlan | null {
+    const slots: Record<string, string> = {};
+    for (const s of Array.isArray(t.slots) ? t.slots : []) if (s?.name) slots[String(s.name)] = String(s.value ?? "");
+    const id = String(t.shortcut_id ?? "").trim();
+    if (id && this.shortcuts.get(id)) {
+      const p = this.shortcuts.plan(id, slots, this.contactsCtx());
+      if (!("error" in p)) return { ...p, ...(t.done_say ? { doneSay: String(t.done_say) } : {}) } as TaskPlan;
+      this.o.log(`mind: shortcut ${id} rejected its slots (${p.error}); using the router's sub-goals`);
+      if (id === "call.ai" || id === "phone.dial" || id === "sms.send") {
+        // No number: say so instead of driving the screen.
+        const who = /^no number for (.+)$/.exec(p.error)?.[1];
+        return { kind: "phone", title: String(t.title || "Task"), goal: String(t.goal || ""), subgoals: [], failSay: who ? `I don't have a number for ${who}.` : cap(p.error) + "." } as TaskPlan;
+      }
+    }
+    const subgoals: SubgoalSpec[] = (Array.isArray(t.subgoals) ? t.subgoals : []).map(subgoalFromModel).filter((s: SubgoalSpec) => s.goal);
+    const app = String(t.app ?? "").trim();
+    if (app && !subgoals.some((s) => s.direct?.some((a) => a.do === "launch"))) {
+      subgoals.unshift({
+        goal: `Open ${app}`,
+        done_when: { app: packageFor(app) ?? app, describe: `${app} is on screen` },
+        risk: "safe",
+        direct: [{ do: "launch", app }],
+        say: `Opening ${app}.`,
+      });
+    }
+    if (!subgoals.length) subgoals.push({ goal: String(t.goal || t.title || ""), done_when: { describe: String(t.goal || "") }, risk: "safe" });
+    const goal = String(t.goal || t.title || "");
+    const who = this.contactsCtx().contacts.find((c) => new RegExp(`\\b${c.name.split(/\s+/)[0]}\\b`, "i").test(`${t.title} ${goal}`));
+    return {
+      kind: "phone",
+      title: String(t.title || "Task"),
+      goal,
+      subgoals,
+      slots,
+      ...(t.done_say ? { doneSay: String(t.done_say) } : {}),
+      recipient: who ? { name: who.name, known: true } : undefined,
+    } as TaskPlan;
+  }
+
+  private routerInput(heard: string): string {
     const lines: string[] = [];
+    const now = this.now;
     lines.push(`The user just said: "${heard}"`);
     lines.push("");
-    if (this.task) lines.push(`Running task: ${this.task.title} (goal: ${this.task.goal})`);
-    else lines.push("Running task: none");
-    lines.push(this.call ? `Call in progress: to ${this.call.name}` : "Call in progress: none");
-    lines.push(`Contacts Bobby may call: ${Object.keys(this.o.contacts).join(", ") || "none"}`);
+    lines.push(`Now: ${now.toDateString()} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")} (local time)`);
+    const t = this.current;
+    lines.push(t ? `Running task: ${t.plan.title} (goal: ${t.plan.goal}; at step ${t.idx + 1} of ${t.plan.subgoals.length})` : "Running task: none");
+    if (this.queue.length) lines.push(`Queued: ${this.queue.map((q) => q.plan.title).join("; ")}`);
+    if (this.lastScreen?.app) lines.push(`Phone shows: ${appLabel(this.lastScreen.app)}`);
+    const people = this.contactsCtx().contacts.map((c) => `${c.name}${c.phone ? " (phone)" : ""}${c.email ? " (email)" : ""}`);
+    lines.push(`Contacts: ${people.join(", ") || "none"}`);
     const notifs = this.notifications.slice(-8);
-    lines.push(
-      notifs.length
-        ? `Recent notifications, newest last:\n${notifs.map((n) => `- ${notifLine(n)} (${ago(n.at)})`).join("\n")}`
-        : "Recent notifications: none",
-    );
-    if (this.facts.length) lines.push(`What has happened so far:\n${this.facts.slice(-5).map((f) => `- ${f}`).join("\n")}`);
+    lines.push(notifs.length ? `Recent notifications, newest last:\n${notifs.map((n) => `- ${notifLine(n)} (${ago(n.at)})`).join("\n")}` : "Recent notifications: none");
+    const facts = [...this.memory.outcomes.slice(-3).map((o) => `${o.title}: ${o.status} (${o.line})`), ...this.facts.slice(-5)];
+    if (facts.length) lines.push(`What has happened so far:\n${facts.map((f) => `- ${f}`).join("\n")}`);
     const convo = this.convo.slice(-9, -1);
     if (convo.length) lines.push(`Recent conversation:\n${convo.map((c) => `${c.who === "user" ? "User" : "Bobby"}: ${c.text}`).join("\n")}`);
     return lines.join("\n");
   }
 
-  // ---------- tasks ----------
+  // ---------- the queue ----------
 
-  private startTask(title: string, goal: string, plan: PlanStep[], opening = "") {
-    if (!this.peers.hands) {
-      void this.say("The phone isn't ready yet, so I can't do that right now.");
-      this.facts.push(`Couldn't start "${title}": the phone wasn't ready.`);
-      return;
-    }
+  private enqueue(plan: TaskPlan): Task {
     this.taskSeq += 1;
     let fireCancel = () => {};
     const cancelSignal = new Promise<void>((resolve) => (fireCancel = resolve));
     const task: Task = {
       id: `t${this.taskSeq}`,
-      title,
-      goal,
       plan,
+      status: "queued",
+      idx: 0,
       stepStatus: {},
+      scratch: [],
       history: [],
       cancelled: false,
+      paused: false,
+      resume: () => {},
+      resumed: Promise.resolve(),
+      escalationsUsed: 0,
       correctedOnce: false,
       cancelSignal,
       fireCancel,
     };
-    this.task = task;
-    this.o.log(`mind: task ${task.id} "${title}": ${goal}`);
-    this.watch({ type: "task", task: task.id, title, status: "started" });
-    this.publishPlan(task);
-    this.whisper(`Task started: ${title}. You will be given lines to say as it goes.`);
-    // The opening line plays while the first step is being worked out. It names only the first
-    // action ("Finding Gmail."); a long plan overview is dropped.
-    if (opening.trim().split(/\s+/).length > 8) {
-      this.o.log(`mind: dropped a long opening line: ${opening}`);
-      opening = "";
-    }
-    void this.say(opening);
-    this.taskDone = this.runTask(task).catch((e) => {
-      this.o.log(`mind: task crashed: ${String(e?.stack ?? e)}`);
-      this.finishTask(task, "failed", "Sorry, something went wrong and I had to stop.");
-    });
+    this.queue.push(task);
+    this.o.log(`mind: queued ${task.id} "${plan.title}" (${plan.shortcut ?? "grounded"}): ${plan.subgoals.map((s) => s.goal).join(" | ")}`);
+    this.taskUpdate(task, "queued");
+    this.pump();
+    return task;
   }
 
+  private pump() {
+    if (this.current || this.stopped) return;
+    const next = this.queue.shift();
+    if (!next) {
+      this.drained();
+      return;
+    }
+    if (!this.taskDoneOpen) {
+      this.taskDoneOpen = true;
+      this.taskDone = new Promise<void>((r) => (this.drained = () => {
+        this.taskDoneOpen = false;
+        r();
+      }));
+    }
+    this.current = next;
+    void this.runTask(next)
+      .catch((e) => {
+        this.o.log(`mind: task crashed: ${String(e?.stack ?? e)}`);
+        return this.finishTask(next, "failed", "Sorry, something went wrong and I had to stop.");
+      })
+      .finally(() => {
+        if (this.current === next) this.current = null;
+        this.pump();
+      });
+  }
+  private taskDoneOpen = false;
+
   private publishPlan(task: Task) {
-    this.watch({ type: "plan", task: task.id, steps: task.plan.map((s) => ({ n: s.n, do: s.do, why: s.why })) });
+    this.watch({ type: "plan", task: task.id, steps: task.plan.subgoals.map((s, i) => ({ n: i + 1, do: s.goal, why: s.done_when.describe })) });
   }
 
   private setStep(task: Task, n: number, status: "running" | "done" | "failed") {
-    if (!task.plan.some((s) => s.n === n)) return;
     if (task.stepStatus[n] === status) return;
     task.stepStatus[n] = status;
     this.watch({ type: "step", task: task.id, n, status });
   }
 
-  /** Moves the dashboard to step n: earlier running steps are done, n is running. */
-  private advanceTo(task: Task, n: number) {
-    for (const s of task.plan) {
-      if (s.n < n && task.stepStatus[s.n] === "running") this.setStep(task, s.n, "done");
-    }
-    this.setStep(task, n, "running");
-  }
-
-  /** A wait on Hands that is released early if Hands drops off the hub. */
-  private waitHands(id: string): Promise<Msg | null> {
-    if (!this.peers.hands) return Promise.resolve(null); // already gone: nothing will answer
-    this.handsWaits.add(id);
-    return this.o.hub.waitFor(id, this.o.timing.actMs).finally(() => this.handsWaits.delete(id));
-  }
-
-  private async readScreen(): Promise<(Msg & { readAt: number }) | null> {
-    const id = this.o.hub.nextId();
-    const wait = this.waitHands(id);
-    this.send({ type: "screen", to: "hands", id });
-    const r = await wait;
-    return r && r.type === "screen_result" ? { ...r, readAt: Date.now() } : null;
-  }
-
-  /** Waits for `p`, or gives up at once (returning CANCELLED) if the task is cancelled first. */
-  private untilCancelled<T>(task: Task, p: Promise<T>): Promise<Awaited<T> | typeof CANCELLED> {
-    return Promise.race([p, task.cancelSignal.then((): typeof CANCELLED => CANCELLED)]);
-  }
-
   private async runTask(task: Task) {
-    let fails = 0;
-    let modelFails = 0;
-    let lastKey = "";
-    let lastActionSig = "";
-    let lastFailed = false;
-    let lastError = "";
-    let retriedTimeout = false;
-
-    for (let i = 0; i < MAX_STEPS; i++) {
+    const plan = task.plan;
+    if ((plan as any).failSay) return this.finishTask(task, "failed", (plan as any).failSay);
+    if (plan.kind === "call") return this.runCall(task);
+    if (!this.peers.hands) {
+      this.addFact(`Couldn't start "${plan.title}": the phone wasn't ready.`);
+      return this.finishTask(task, "failed", "The phone isn't ready yet, so I can't do that right now.", false);
+    }
+    this.o.log(`mind: task ${task.id} "${plan.title}": ${plan.goal}`);
+    this.watch({ type: "task", task: task.id, title: plan.title, status: "started" });
+    this.publishPlan(task);
+    this.taskUpdate(task, "running");
+    if (!this.mouthV2) this.whisper(`Task started: ${plan.title}. You will be given lines to say as it goes.`);
+    for (task.idx = 0; task.idx < task.plan.subgoals.length; task.idx++) {
       if (task.cancelled || this.stopped) return this.finishCancelled(task);
-      if (!this.peers.hands) {
-        return this.finishTask(task, "failed", "I've lost touch with the phone, so I had to stop.");
-      }
-
-      const screen = await this.untilCancelled(task, this.readScreen());
-      if (screen === CANCELLED || task.cancelled) return this.finishCancelled(task);
-      if (!screen) {
-        fails += 1;
-        task.history.push({ action: "read the screen", result: "failed: no answer from the phone", say: "" });
-        if (fails >= 3) return this.finishTask(task, "failed", "I can't see the phone's screen right now, so I've stopped.");
-        await sleep(500);
-        continue;
-      }
-      const key = screenKey(screen);
-      const unchanged = i > 0 && key === lastKey;
-      lastKey = key;
-
-      // If the model is slow and Bobby has gone quiet, fill the silence once per task.
-      const stall = setTimeout(() => {
-        if (!task.cancelled && !task.stalled && this.pendingSays.size === 0) {
-          task.stalled = true;
-          void this.say("One sec.");
-        }
-      }, this.o.timing.stallMs);
-      // A "stop" doesn't wait for a slow model call: the reply is simply ignored.
-      const r = await this.untilCancelled(
-        task,
-        this.o.model({
-          purpose: "step",
-          system: this.stepSys,
-          user: this.stepInput(task, screen, unchanged, lastFailed),
-          schema: STEP_SCHEMA,
-          timeoutMs: 15_000,
-        }),
-      );
-      clearTimeout(stall);
-      if (r === CANCELLED || task.cancelled) return this.finishCancelled(task);
-      const d = r.json;
-      if (!d) {
-        modelFails += 1;
-        if (modelFails >= 3) return this.finishTask(task, "failed", "I'm having trouble thinking this through, so I've stopped.");
-        continue;
-      }
-      modelFails = 0;
-
-      if (Array.isArray(d.plan) && d.plan.length > 0) {
-        task.plan = d.plan.map((s: any, k: number) => ({ n: k + 1, do: String(s.do ?? ""), why: String(s.why ?? "") }));
-        task.stepStatus = {};
-        this.publishPlan(task);
-      }
-      const stepN = Number.isInteger(d.step) && d.step > 0 ? d.step : 1;
-
-      if (d.status === "done") {
-        for (const s of task.plan) if (task.stepStatus[s.n] !== "done") this.setStep(task, s.n, "done");
-        return this.finishTask(task, "done", String(d.say || "All done."));
-      }
-      if (d.status === "failed") {
-        this.setStep(task, stepN, "failed");
-        return this.finishTask(task, "failed", String(d.say || "Sorry, I couldn't get that done."));
-      }
-
-      const built = buildAct(d, screen);
-      const desc = describeDecision(d, screen);
-      if ("error" in built) {
-        task.history.push({ action: desc, result: `not done: ${built.error}`, say: "" });
-        fails += 1;
-        lastFailed = true;
-        if (fails >= MAX_CONSECUTIVE_FAILS) return this.giveUp(task);
-        continue;
-      }
-      const sig = JSON.stringify(built.act) + "|" + key;
-      if (sig === lastActionSig && lastFailed && !(lastError === "timeout" && !retriedTimeout)) {
-        task.history.push({
-          action: desc,
-          result: "not done: this exact action just failed on this same screen; choose something different",
-          say: "",
-        });
-        fails += 1;
-        if (fails >= MAX_CONSECUTIVE_FAILS) return this.giveUp(task);
-        continue;
-      }
-      retriedTimeout = sig === lastActionSig && lastFailed;
-      lastActionSig = sig;
-
-      // Narration never piles up: at most one line outstanding. A line that would have to queue
-      // behind the previous one is skipped, except the Send line, which waits for it (briefly).
-      const sayText = String(d.say ?? "");
-      const isSend = isSendStep(d, screen, sayText);
-      if (sayText.trim() && isSend && this.pendingSays.size > 0) {
-        if ((await this.untilCancelled(task, this.quiet(this.o.timing.sayWaitMs))) === CANCELLED || task.cancelled) {
-          return this.finishCancelled(task);
-        }
-      }
-
-      // The screen was read before the model thought and Bobby spoke. Node numbers point at where
-      // things were then, so if time has passed, look again and find the same target afresh.
-      let act = built.act;
-      if (act.on && Date.now() - screen.readAt >= this.o.timing.staleMs) {
-        const fresh = await this.untilCancelled(task, this.readScreen());
-        if (fresh === CANCELLED || task.cancelled) return this.finishCancelled(task);
-        const now = fresh && screenKey(fresh) !== key ? findSameNode(screen, d.n, fresh) : d.n;
-        if (!fresh || now === null) {
-          task.history.push({
-            action: desc,
-            result: fresh ? "not done: the screen changed before the action and that target is no longer there" : "not done: the phone didn't answer",
-            say: "",
-          });
-          fails += 1;
-          lastFailed = true;
-          lastError = "stale";
-          if (fails >= MAX_CONSECUTIVE_FAILS) return this.giveUp(task);
+      if (!this.peers.hands) return this.finishTask(task, "failed", "I've lost touch with the phone, so I had to stop.");
+      if (this.applyAmend(task)) continue;
+      const n = task.idx + 1;
+      const sg = task.plan.subgoals[task.idx];
+      this.setStep(task, n, "running");
+      const r = await this.runSubgoal(task, sg);
+      if (task.cancelled || this.stopped || (!r.ok && r.cancelled)) return this.finishCancelled(task);
+      if (this.applyAmend(task)) continue;
+      if (!r.ok) {
+        if (r.replan?.length) {
+          task.plan.subgoals.splice(task.idx, 1, ...r.replan);
+          this.publishPlan(task);
+          task.idx -= 1;
           continue;
         }
-        if (now !== d.n) this.o.log(`mind: target moved from node ${d.n} to ${now} while Bobby was speaking`);
-        act = { ...act, on: { n: now } };
+        this.setStep(task, n, "failed");
+        if (!this.peers.hands) return this.finishTask(task, "failed", "I've lost touch with the phone, so I had to stop.");
+        return this.finishTask(task, "failed", r.say || "Sorry, I couldn't get that done.");
       }
-
-      // Speak and act at the same instant.
-      this.advanceTo(task, stepN);
-      const actId = this.o.hub.nextId();
-      const actWait = this.waitHands(actId);
-      let said = "";
-      if (sayText.trim()) {
-        if (this.pendingSays.size > 0 && !isSend) this.o.log(`mind: skipped say (previous line still playing): ${sayText}`);
-        else {
-          void this.say(sayText);
-          said = sayText;
-        }
-      }
-      this.send({ ...act, to: "hands", id: actId });
-      // A "stop" takes effect after the current action, so this wait is not abandoned.
-      const res = await actWait;
-      if (!res) {
-        task.history.push({ action: desc, result: "failed: timeout (no answer from the phone)", say: said });
-        fails += 1;
-        lastFailed = true;
-        lastError = "timeout";
-      } else if (res.ok) {
-        task.history.push({ action: desc, result: "ok", say: said });
-        fails = 0;
-        lastFailed = false;
-        lastError = "";
-      } else {
-        task.history.push({ action: desc, result: `failed: ${res.error ?? "unknown"}`, say: said });
-        fails += 1;
-        lastFailed = true;
-        lastError = String(res.error ?? "unknown");
-      }
-      if (fails >= MAX_CONSECUTIVE_FAILS) return this.giveUp(task);
+      this.setStep(task, n, "done");
     }
-    return this.finishTask(task, "failed", "This is taking too many steps, so I've stopped. Sorry about that.");
+    return this.finishTask(task, "done", plan.doneSay || `Done: ${plan.title}.`);
   }
 
-  private giveUp(task: Task) {
-    const n = Object.keys(task.stepStatus).map(Number).sort((a, b) => b - a)[0];
-    if (n) this.setStep(task, n, "failed");
-    return this.finishTask(task, "failed", "I keep hitting a wall on the phone, so I've stopped trying. Sorry.");
+  /** Swaps in an amended plan at a step boundary; the loop restarts at the first unfinished step. */
+  private applyAmend(task: Task): boolean {
+    if (!task.amended) return false;
+    task.plan = { ...task.amended, title: task.plan.title };
+    task.amended = undefined;
+    task.stepStatus = {};
+    this.publishPlan(task);
+    task.idx = -1;
+    return true;
   }
 
-  private stepInput(task: Task, screen: Msg, unchanged: boolean, lastFailed: boolean): string {
-    const lines: string[] = [];
-    lines.push(`Task: ${task.title}`);
-    lines.push(`Goal: ${task.goal}`);
-    lines.push("Plan:");
-    for (const s of task.plan) {
-      const st = task.stepStatus[s.n];
-      lines.push(`${s.n}. ${s.do} (why: ${s.why})${st ? ` [${st}]` : ""}`);
+  private async runSubgoal(task: Task, sg: SubgoalSpec): Promise<SubgoalResult> {
+    const run: SubgoalRun = { spec: sg, taskGoal: task.plan.goal, scratch: task.scratch, confirmed: false, budget: SUBGOAL_BUDGET };
+    const onlyLaunch = !sg.direct || sg.direct.every((a) => a.do === "launch");
+    if (sg.risk === "safe" && onlyLaunch) {
+      const s = await this.readScreen();
+      if (s && checkScreen(sg.done_when, s) === null) {
+        this.o.log(`mind: "${sg.goal}" already holds; skipping`);
+        return { ok: true, trace: [], how: "already" };
+      }
     }
-    const h = task.history;
-    if (h.length === 0) lines.push("So far: nothing yet. This is the first action.");
+    if (sg.risk === "irreversible") {
+      const ok = await this.confirmGate(task, sg.confirm ?? task.plan.goal);
+      if (!ok) return { ok: false, cancelled: true, reason: "declined", say: "" };
+      run.confirmed = true;
+    }
+    if (sg.direct?.length) {
+      const r = await this.exec.runDirect(run);
+      if (r.ok || !r.degrade || task.cancelled) return r;
+    }
+    const appBefore = this.lastScreen?.app ?? "";
+    const verBefore = String(this.lastScreen?.app_version ?? "");
+    const recipe = this.recipes.lookup(appBefore, sg, task.plan, verBefore);
+    if (recipe) {
+      const r = await this.recipes.replay(recipe, run, task.plan, { act: (a, o) => this.act(a, o), narrate: (t) => this.narrate(t), gate: () => this.gate(task), isDone: (dw, s) => this.exec.isDone(dw, s) });
+      if (r.ok) {
+        this.stats.recipe += 1;
+        return r;
+      }
+      if (r.cancelled) return r;
+    }
+    const r = await this.exec.runGrounded(run, task.history);
+    if (r.ok && r.trace.length) this.recipes.save(appBefore, sg, task.plan, r.trace, verBefore);
+    return r;
+  }
+
+  /** Waits while a barge-in has paused the task. */
+  private async gate(task: Task): Promise<"go" | "cancelled"> {
+    while (task.paused && !task.cancelled && !this.stopped) {
+      task.resumed = new Promise<void>((r) => (task.resume = r));
+      await Promise.race([task.resumed, task.cancelSignal]);
+    }
+    return task.cancelled || this.stopped ? "cancelled" : "go";
+  }
+
+  // ---------- confirmations ----------
+
+  private needsConfirm(task: Task): boolean {
+    if (this.policy === "never") return false;
+    if (this.policy === "unknown_contacts") return !task.plan.recipient?.known;
+    return true;
+  }
+
+  /**
+   * Pauses before an irreversible step. Goes ahead only if the voice model's confirm says yes AND
+   * the user's own transcript is affirmative (the voice model alone isn't trusted).
+   */
+  private async confirmGate(task: Task, summary: string): Promise<boolean> {
+    if (!this.needsConfirm(task)) return true;
+    if (!this.peers.mouth) {
+      this.o.log(`mind: can't confirm "${summary}" with no Mouth connected; not doing it`);
+      task.declined = true;
+      return false;
+    }
+    const id = this.o.hub.nextId();
+    this.taskUpdate(task, "waiting_confirm", summary);
+    let resolve!: (r: { ok: boolean; heard: string }) => void;
+    const reply = new Promise<{ ok: boolean; heard: string }>((r) => (resolve = r));
+    this.pendingConfirm = { id, task, resolve };
+    this.o.log(`mind: confirm ${id}: ${summary}`);
+    if (this.mouthV2) this.send({ type: "confirm_request", to: "mouth", id, task: task.id, summary, risk: "irreversible" });
     else {
-      lines.push("So far:");
-      const start = Math.max(0, h.length - 10);
-      if (start > 0) lines.push(`(${start} earlier actions not shown)`);
-      h.slice(start).forEach((e, k) => {
-        lines.push(`${start + k + 1}. ${e.action} -> ${e.result}${e.say ? `. Bobby said: "${e.say}"` : ""}`);
-      });
+      await this.quiet(this.o.timing.sayWaitMs);
+      void this.say(`${summary.replace(/[.!?\s]+$/, "")}. Should I go ahead?`);
     }
-    if (lastFailed) lines.push("Note: the last action failed. Look at the screen fresh and try something different.");
-    if (unchanged) lines.push("Note: the screen did not change after the last action.");
-    lines.push("");
-    lines.push("Current screen:");
-    lines.push(describeScreen(screen));
-    return lines.join("\n");
+    const timer = sleep(this.o.timing.confirmMs).then(() => ({ ok: false, heard: "", timeout: true }) as any);
+    const r: any = await Promise.race([reply, timer, task.cancelSignal.then(() => ({ ok: false, heard: "", cancelled: true }))]);
+    this.pendingConfirm = null;
+    if (r.cancelled) return false;
+    const go = r.ok === true && isAffirmative(r.heard);
+    this.o.log(`mind: confirm ${id}: ${go ? "yes" : "no"} (ok=${r.ok}, heard="${r.heard}"${r.timeout ? ", timed out" : ""})`);
+    if (!go) {
+      task.declined = true;
+      return false;
+    }
+    this.taskUpdate(task, "running");
+    return true;
   }
 
-  private async finishTask(task: Task, status: "done" | "failed", line: string) {
-    if (this.task !== task) return;
-    // The result line is never skipped: let the previous line finish first (up to a few seconds).
-    await this.quiet(this.o.timing.sayWaitMs);
-    if (this.task !== task) return;
+  // ---------- Hands ----------
+
+  private waitHands(id: string, ms = this.o.timing.actMs): Promise<Msg | null> {
+    if (!this.peers.hands) return Promise.resolve(null);
+    this.handsWaits.add(id);
+    return this.o.hub.waitFor(id, ms).finally(() => this.handsWaits.delete(id));
+  }
+
+  private remember(s: Msg) {
+    this.lastScreen = { ...s, readAt: Date.now() };
+    this.handsHash = typeof s.hash === "string" ? s.hash : "";
+  }
+
+  /** Reads the screen compactly; with Hands' hash, an unchanged screen costs no nodes. */
+  async readScreen(opts: { image?: boolean } = {}): Promise<Msg | null> {
+    const id = this.o.hub.nextId();
+    const wait = this.waitHands(id);
+    const req: Msg = { type: "screen", to: "hands", id, compact: true };
+    if (opts.image) req.image = true;
+    else if (this.handsHash) req.since = this.handsHash;
+    this.send(req);
+    const r = await wait;
+    if (!r || r.type !== "screen_result") return null;
+    if (r.same && this.lastScreen) {
+      this.lastScreen.readAt = Date.now();
+      return this.lastScreen;
+    }
+    this.remember(r);
+    return this.lastScreen;
+  }
+
+  /** One act, with the screen after it (from then_screen, or read separately for old Hands). */
+  async act(a: HandsAct, opts: { fast: boolean }): Promise<ActResult> {
+    if (!this.peers.hands) return { ok: false, error: "no_hands", screen: null };
+    const id = this.o.hub.nextId();
+    const wait = this.waitHands(id);
+    this.stats.acts += 1;
+    this.send({ type: "act", to: "hands", id, ...a, then_screen: true, compact: true, ...(opts.fast ? { fast: true } : {}) });
+    const r = await wait;
+    if (!r) return { ok: false, error: "timeout", screen: null };
+    let screen: Msg | null = null;
+    if (r.screen && typeof r.screen === "object") {
+      this.remember({ type: "screen_result", ...r.screen });
+      screen = this.lastScreen;
+    } else if (r.ok) screen = await this.readScreen();
+    else screen = this.lastScreen;
+    return { ok: !!r.ok, error: r.error, why: r.why, app: r.app ?? screen?.app, screen };
+  }
+
+  // ---------- finishing ----------
+
+  private async finishTask(task: Task, status: "done" | "failed", line: string, published = true) {
+    if (published && !task.stepStatus[1] && status === "failed" && task.plan.kind === "phone") {
+      // never started on screen: still publish so the dashboard shows it
+    }
     this.o.log(`mind: task ${task.id} ${status}: ${line}`);
-    this.task = null;
-    this.watch({ type: "task", task: task.id, title: task.title, status });
-    this.facts.push(`Task "${task.title}" ${status === "done" ? "finished" : "failed"}: ${line}`);
+    if (published) this.watch({ type: "task", task: task.id, title: task.plan.title, status });
+    this.taskUpdate(task, status, line);
+    this.addFact(`Task "${task.plan.title}" ${status === "done" ? "finished" : "failed"}: ${line}`);
+    this.memory.addOutcome({ task: task.id, title: task.plan.title, status, line, at: Date.now() });
     this.lastActivity = Date.now();
-    await this.say(line);
+    if (this.current === task) this.current = null;
+    await this.progress(task, line, "when_idle");
     this.sleepSoon();
   }
 
   private finishCancelled(task: Task) {
-    if (this.task !== task) return;
-    this.task = null;
+    if (this.current === task) this.current = null;
     this.send({ type: "cursor", to: "hands", show: false });
     const running = Object.entries(task.stepStatus).find(([, s]) => s === "running");
     if (running) this.setStep(task, Number(running[0]), "failed");
-    this.watch({ type: "task", task: task.id, title: task.title, status: "cancelled" });
+    this.watch({ type: "task", task: task.id, title: task.plan.title, status: "cancelled" });
+    this.taskUpdate(task, "cancelled");
     const last = task.history[task.history.length - 1];
-    const fact = `Task "${task.title}" was cancelled by the user${last ? ` after: ${last.action}` : " before any action"}. Nothing more will happen on the phone.`;
-    this.facts.push(fact);
-    this.o.log(`mind: task ${task.id} cancelled`);
-    if (!task.quiet) this.whisper(fact);
+    const fact = task.declined
+      ? `Task "${task.plan.title}" was not finished: the user didn't confirm the last step, so nothing was sent.`
+      : `Task "${task.plan.title}" was cancelled by the user${last ? ` after: ${last}` : " before any action"}. Nothing more will happen on the phone.`;
+    this.addFact(fact);
+    this.memory.addOutcome({ task: task.id, title: task.plan.title, status: "cancelled", line: fact, at: Date.now() });
+    this.o.log(`mind: task ${task.id} cancelled${task.declined ? " (not confirmed)" : ""}`);
+    if (task.declined) void this.progress(task, "Okay, I won't. Nothing was sent.", "when_idle");
+    else if (!task.quiet) {
+      if (this.mouthV2) this.progress(task, fact, "silent");
+      else this.whisper(fact);
+    }
     this.lastActivity = Date.now();
+    this.sleepSoon();
   }
 
-  /** Stop the running task (after its current action) and/or tell Bobby about the call. */
-  private cancel(quiet = false) {
-    if (this.task) {
-      this.task.cancelled = true;
-      this.task.quiet = quiet;
-      if (!quiet) this.send({ type: "hush", to: "mouth" });
-      this.task.fireCancel();
-    } else if (this.call) {
-      this.whisper(`The call to ${this.call.name} can't be stopped from here; it will end on its own.`);
+  /** Stops the running task after its current action; "all" also empties the queue. */
+  private cancelTasks(scope: "current" | "all", quiet = false) {
+    if (scope === "all") {
+      for (const q of this.queue.splice(0)) {
+        q.cancelled = true;
+        this.taskUpdate(q, "cancelled");
+        this.o.log(`mind: dropped queued task ${q.id} "${q.plan.title}"`);
+      }
     }
+    const t = this.current;
+    if (t) {
+      t.cancelled = true;
+      t.quiet = quiet;
+      if (t.callId) {
+        this.o.log(`mind: hanging up ${t.callId}`);
+        this.send({ type: "hangup", to: "caller", re: t.callId });
+      }
+      if (!quiet && !this.mouthV2) this.send({ type: "hush", to: "mouth" });
+      if (this.pendingConfirm?.task === t) this.pendingConfirm.resolve({ ok: false, heard: "" });
+      t.fireCancel();
+    } else if (!quiet && !this.mouthV2) this.send({ type: "hush", to: "mouth" });
+  }
+
+  private statusLine(): string {
+    const t = this.current;
+    if (!t) return this.queue.length ? `Nothing running; ${this.queue.length} queued.` : "Nothing running right now.";
+    const step = t.plan.subgoals[t.idx];
+    const state = t.status === "waiting_confirm" ? "waiting for your OK" : t.status === "paused" ? "paused" : `on step ${t.idx + 1} of ${t.plan.subgoals.length}${step ? `: ${step.goal}` : ""}`;
+    return `${t.plan.title}: ${state}.${this.queue.length ? ` Then ${this.queue.map((q) => q.plan.title).join(", ")}.` : ""}`;
+  }
+
+  private taskList() {
+    return [this.current, ...this.queue].filter(Boolean).map((t) => ({ task: t!.id, title: t!.plan.title, status: t!.status }));
   }
 
   // ---------- calls ----------
 
-  private lookup(name: string): [string, string] | null {
-    const q = name.trim().toLowerCase();
-    if (!q) return null;
-    const entries = Object.entries(this.o.contacts);
-    const exact = entries.find(([n]) => n.toLowerCase() === q);
-    if (exact) return exact;
-    const first = entries.find(([n]) => n.toLowerCase().split(/\s+/)[0] === q.split(/\s+/)[0]);
-    return first ?? null;
-  }
-
-  private async startCall(name: string, goal: string, whisper: string, startLine = "") {
-    const found = this.lookup(name);
-    if (!found) {
-      this.facts.push(`No number for ${name}, so no call was made.`);
-      await this.say(`I don't have a number for ${name || "them"}.`);
-      return;
-    }
-    const [who, number] = found;
+  private async runCall(task: Task) {
+    const c = task.plan.call!;
     if (!this.peers.caller) {
-      this.facts.push(`Couldn't call ${who}: the calling part wasn't connected.`);
-      await this.say(`I can't make calls right now, so I couldn't ring ${who}.`);
-      return;
+      this.addFact(`Couldn't call ${c.name}: the calling part wasn't connected.`);
+      return this.finishTask(task, "failed", `I can't make calls right now, so I couldn't ring ${c.name}.`, false);
     }
-    if (this.call) {
-      await this.say(`I'm already on a call with ${this.call.name}.`);
-      return;
-    }
-    this.whisper(whisper);
-    this.taskSeq += 1;
+    this.watch({ type: "task", task: task.id, title: task.plan.title, status: "started" });
+    this.publishPlan(task);
+    this.taskUpdate(task, "running");
+    this.setStep(task, 1, "running");
+    const ok = await this.confirmGate(task, task.plan.subgoals[0]?.confirm ?? `Call ${c.name}`);
+    if (!ok || task.cancelled) return this.finishCancelled(task);
     const id = this.o.hub.nextId();
-    const call: Call = { id, taskId: `t${this.taskSeq}`, name: who, number, goal, correctedOnce: false };
-    this.call = call;
-    const title = `Call ${who}`;
-    this.watch({ type: "task", task: call.taskId, title, status: "started" });
-    this.watch({ type: "plan", task: call.taskId, steps: [{ n: 1, do: `Call ${who}`, why: goal }] });
-    this.watch({ type: "step", task: call.taskId, n: 1, status: "running" });
+    task.callId = id;
     const result = this.o.hub.waitFor(id, this.o.timing.callMs);
-    this.send({
-      type: "call",
-      to: "caller",
-      id,
-      number,
-      goal,
-      context: `You are speaking as the phone's owner. ${who} is someone they know and expects this call.`,
-    });
-    this.o.log(`mind: calling ${who} (${number}): ${goal}`);
-    void this.say(startLine && startLine.toLowerCase().includes(who.toLowerCase().split(/\s+/)[0]) ? startLine : `I'm calling ${who} now.`);
-    const r = await result;
-    if (this.call !== call) return;
-    this.call = null;
-    this.lastActivity = Date.now();
+    this.send({ type: "call", to: "caller", id, number: c.number, goal: c.goal, context: `You are calling on behalf of the phone's owner. ${c.name} is someone they know.` });
+    this.o.log(`mind: calling ${c.name} (${c.number}): ${c.goal}`);
+    this.narrate(`I'm calling ${c.name} now.`);
+    const r = await Promise.race([result, task.cancelSignal.then(() => CANCELLED)]);
+    if (r === CANCELLED || task.cancelled) {
+      this.o.hub.cancelWait(id);
+      return this.finishCancelled(task);
+    }
+    const res = r as Msg | null;
     let line: string;
-    let ok = false;
-    if (!r) line = `The call to ${who} didn't finish in time, so I don't know how it went.`;
-    else if (r.ok) {
-      ok = true;
-      const summary = String(r.summary ?? "").trim();
-      const first = who.split(/\s+/)[0].toLowerCase();
-      line = !summary ? `I spoke to ${who} and the call went fine.` : summary.toLowerCase().includes(first) ? summary : `I spoke to ${who}: ${summary}`;
-    } else line = `I couldn't get through to ${who}: ${callError(String(r.error ?? "failed"))}.`;
-    this.watch({ type: "step", task: call.taskId, n: 1, status: ok ? "done" : "failed" });
-    this.watch({ type: "task", task: call.taskId, title, status: ok ? "done" : "failed" });
-    this.facts.push(`Call to ${who}: ${line}`);
-    await this.quiet(this.o.timing.sayWaitMs);
-    await this.say(line);
-    this.sleepSoon();
+    let good = false;
+    if (!res) line = `The call to ${c.name} didn't finish in time, so I don't know how it went.`;
+    else if (res.ok) {
+      good = true;
+      const summary = String(res.summary ?? "").trim();
+      const first = c.name.split(/\s+/)[0].toLowerCase();
+      line = !summary ? `I spoke to ${c.name} and the call went fine.` : summary.toLowerCase().includes(first) ? summary : `I spoke to ${c.name}: ${summary}`;
+    } else line = `I couldn't get through to ${c.name}: ${callError(String(res.error ?? "failed"))}.`;
+    this.setStep(task, 1, good ? "done" : "failed");
+    return this.finishTask(task, good ? "done" : "failed", line);
   }
 
-  // ---------- corrections ----------
+  // ---------- corrections (cheap, rule-based) ----------
 
   private onSpoke(text: string) {
     const now = Date.now();
     this.lastActivity = now;
-    // Is this a line the Mind gave Bobby, or something he said by himself? Lines he was given
-    // are not claims to check. He may rephrase them, so word overlap alone isn't enough: a line
-    // that arrives while one of ours is being spoken is ours too, unless the user has just
-    // spoken and Bobby hasn't answered them yet (then this is his answer).
     const likeOurs = this.recentSays.some((s) => now - s.at < 60_000 && similar(s.text, text));
     const duringOurs = this.pendingSays.size > 0 || now - this.lastSayDoneAt < 1500;
     if (likeOurs || (duringOurs && !this.answerPending)) return;
@@ -840,35 +1070,28 @@ export class Brain {
       this.sleepAfterReply = false;
       this.sleepSoon();
     }
-    this.convo.push({ who: "bobby", text });
-    if (this.convo.length > 12) this.convo.splice(0, this.convo.length - 12);
-
-    // 1. Claiming the job is finished while it is still running.
-    if (this.task && !this.task.correctedOnce && DONE_RE.test(text) && !/\b(not|n't|almost|until|once|when|soon)\b/i.test(text)) {
-      this.task.correctedOnce = true;
-      this.correct(`That isn't finished yet; I'm still working on: ${this.task.title}.`);
+    this.pushConvo("bobby", text);
+    const t = this.current;
+    if (t && !t.correctedOnce && t.plan.kind === "phone" && DONE_RE.test(text) && !/\b(not|n't|almost|until|once|when|soon)\b/i.test(text)) {
+      t.correctedOnce = true;
+      this.correct(`That isn't finished yet; I'm still working on: ${t.plan.title}.`);
       return;
     }
-    // 2. Reporting what someone said on a call that hasn't ended.
-    if (this.call && !this.call.correctedOnce && /\b(said|says|told me|agreed|picked up|answered)\b/i.test(text)) {
-      this.call.correctedOnce = true;
-      this.correct(`The call to ${this.call.name} is still going; I don't know what they said yet.`);
+    if (t?.plan.kind === "call" && !t.correctedOnce && /\b(said|says|told me|agreed|picked up|answered)\b/i.test(text)) {
+      t.correctedOnce = true;
+      this.correct(`The call to ${t.plan.call!.name} is still going; I don't know what they said yet.`);
       return;
     }
-    // 3. The wrong person: Bobby names someone else as the one being called or written to.
     const wrong = this.wrongName(text);
     if (wrong) {
       this.correct(`It's ${wrong.right}, not ${wrong.said}.`);
       return;
     }
-    // 4. A wrong time: one that appears nowhere in what the Mind knows or has told Bobby, while
-    //    what is being talked about right now holds exactly one time.
     const spoken = times(text);
     if (spoken.length === 0) return;
     const userTurns = this.convo.filter((c) => c.who === "user").map((c) => c.text);
     const everything = [
-      this.task?.goal ?? "",
-      this.call?.goal ?? "",
+      t?.plan.goal ?? "",
       ...this.facts,
       ...userTurns,
       ...this.notifications.map((n) => `${n.title} ${n.text}`),
@@ -876,23 +1099,18 @@ export class Brain {
       ...this.recentSays.map((s) => s.text),
     ].join(" . ");
     const known = new Set(times(everything));
-    const unknown = spoken.filter((t) => !known.has(t));
+    const unknown = spoken.filter((x) => !known.has(x));
     if (unknown.length === 0) return;
-    const focus = [...new Set(times([this.task?.goal ?? "", ...this.facts.slice(-2), ...userTurns.slice(-2)].join(" . ")))];
+    const focus = [...new Set(times([t?.plan.goal ?? "", ...this.facts.slice(-2), ...userTurns.slice(-2)].join(" . ")))];
     if (focus.length === 1) this.correct(`The time is ${focus[0]}, not ${unknown[0]}.`);
   }
 
-  /**
-   * If a task or call is about one known person and Bobby says he is calling or writing to a
-   * different known person, returns both names. Known people: contacts and notification senders.
-   */
   private wrongName(text: string): { right: string; said: string } | null {
-    const about = this.call ? `${this.call.name}` : this.task ? `${this.task.title} ${this.task.goal}` : "";
-    if (!about) return null;
-    const flag = this.call ?? this.task!;
-    if (flag.correctedName) return null;
+    const t = this.current;
+    if (!t || t.correctedName) return null;
+    const about = t.plan.kind === "call" ? t.plan.call!.name : `${t.plan.title} ${t.plan.goal}`;
     const people = new Set<string>();
-    for (const n of Object.keys(this.o.contacts)) people.add(n.split(/\s+/)[0]);
+    for (const c of this.contactsCtx().contacts) people.add(c.name.split(/\s+/)[0]);
     for (const n of this.notifications) {
       const first = n.title.split(/\s+/)[0];
       if (/^[A-Z][a-z]+$/.test(first)) people.add(first);
@@ -904,7 +1122,7 @@ export class Brain {
       if (other === subjects[0]) continue;
       const re = new RegExp(`\\b(call(?:ing|ed)?|ring(?:ing)?|phon(?:e|ing|ed)|repl(?:y|ying|ied) to|email(?:ing|ed)?|text(?:ing|ed)?|messag(?:e|ing|ed)|writ(?:e|ing) to|tell(?:ing)?|told|answer(?:ing)?)\\s+${other}\\b`, "i");
       if (re.test(text)) {
-        flag.correctedName = true;
+        t.correctedName = true;
         return { right: subjects[0], said: other };
       }
     }
@@ -919,9 +1137,8 @@ export class Brain {
 
   // ---------- sleeping ----------
 
-  /** A request has been handled: Bobby only listens again after the side button. */
   private sleepSoon() {
-    if (this.task || this.call) return;
+    if (this.current || this.queue.length) return;
     this.sleepAt = Date.now() + this.o.timing.goodbyeMs;
   }
 
@@ -934,7 +1151,7 @@ export class Brain {
   }
 
   private tick() {
-    if (!this.awake || this.task || this.call || this.listening || this.decidesInFlight > 0 || this.pendingSays.size > 0) return;
+    if (!this.awake || this.current || this.queue.length || this.pendingConfirm || this.listening || this.decidesInFlight > 0 || this.pendingSays.size > 0) return;
     const now = Date.now();
     if (this.sleepAt && now >= this.sleepAt) {
       this.sleepAt = 0;
@@ -945,15 +1162,7 @@ export class Brain {
 
 // ---------- helpers ----------
 
-/** The step that sends the message: a tap on a Send button, or a line that says so. */
-function isSendStep(d: any, screen: Msg, say: string): boolean {
-  if (d.do === "tap" && Number.isInteger(d.n)) {
-    const nodes: ScreenNode[] = Array.isArray(screen.nodes) ? screen.nodes : [];
-    const node = nodes.find((x) => x.n === d.n);
-    if (node && /\bsend\b/i.test(`${node.text ?? ""} ${node.desc ?? ""}`)) return true;
-  }
-  return /^\W*send(ing)?\b/i.test(say);
-}
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 function notifLine(n: Notif): string {
   return `${appLabel(n.app)} from ${n.title}: "${n.text}"`;
@@ -983,7 +1192,6 @@ function words(s: string): string[] {
   return s.toLowerCase().replace(/[^a-z0-9' ]/g, " ").split(/\s+/).filter((w) => w.length > 2);
 }
 
-/** True when two lines share most of their words (Bobby may rephrase lightly). */
 function similar(a: string, b: string): boolean {
   const wa = new Set(words(a));
   const wb = words(b);
@@ -992,7 +1200,6 @@ function similar(a: string, b: string): boolean {
   return shared / Math.max(wa.size, wb.length) >= 0.5;
 }
 
-/** Clock times mentioned in text, normalised to "3", "3:20". */
 function times(s: string): string[] {
   const out: string[] = [];
   const re = /\b(?:at|to|by|push(?:ed)? to|until|around)\s+(\d{1,2})(?::(\d{2}))?\s*(?:am|pm|o'clock)?\b|\b(\d{1,2})(?::(\d{2}))?\s*(?:am|pm)\b/gi;
@@ -1005,89 +1212,4 @@ function times(s: string): string[] {
   return out;
 }
 
-/**
- * Finds node `n` of an earlier screen in a newer one: same label, class and flags, nearest in
- * position. Returns its new number, or null when it is gone.
- */
-export function findSameNode(old: Msg, n: number, fresh: Msg): number | null {
-  const before: ScreenNode[] = Array.isArray(old.nodes) ? old.nodes : [];
-  const after: ScreenNode[] = Array.isArray(fresh.nodes) ? fresh.nodes : [];
-  const a = before.find((x) => x.n === n);
-  if (!a) return null;
-  const str = (v: unknown) => String(v ?? "");
-  const same = (b: ScreenNode) =>
-    str(a.text) === str(b.text) &&
-    str(a.desc) === str(b.desc) &&
-    str(a.hint) === str(b.hint) &&
-    str(a.cls) === str(b.cls) &&
-    !!a.tap === !!b.tap &&
-    !!a.edit === !!b.edit;
-  const centre = (x: ScreenNode) => (x.bounds ? [(x.bounds[0] + x.bounds[2]) / 2, (x.bounds[1] + x.bounds[3]) / 2] : [0, 0]);
-  const [ax, ay] = centre(a);
-  const dist = (b: ScreenNode) => Math.hypot(centre(b)[0] - ax, centre(b)[1] - ay);
-  const found = after.filter(same).sort((p, q) => dist(p) - dist(q))[0];
-  if (!found) return null;
-  // A node with no label at all is only "the same" if it has barely moved.
-  if (!a.text && !a.desc && !a.hint && dist(found) > 60) return null;
-  return found.n;
-}
-
-type BuiltAct = { act: { type: "act"; do: string; on?: { n: number }; [k: string]: unknown } } | { error: string };
-
-/** Turns the model's step reply into a contract `act` (without type/to/id). */
-export function buildAct(d: any, screen: Msg): BuiltAct {
-  const nodes: ScreenNode[] = Array.isArray(screen.nodes) ? screen.nodes : [];
-  const n = Number.isInteger(d.n) ? d.n : -1;
-  const node = n >= 0 ? nodes.find((x) => x.n === n) : undefined;
-  if (n >= 0 && !node) return { error: `there is no node ${n} on this screen` };
-  const on = node ? { n } : undefined;
-  switch (d.do) {
-    case "tap":
-    case "long_press":
-      if (!on) return { error: `${d.do} needs a node` };
-      return { act: { type: "act", do: d.do, on } };
-    case "type":
-      if (typeof d.text !== "string" || !d.text) return { error: "type needs text" };
-      return { act: { type: "act", do: "type", text: d.text, ...(on ? { on } : {}) } };
-    case "swipe":
-      if (!["left", "right", "up", "down"].includes(d.dir)) return { error: "swipe needs a direction" };
-      return { act: { type: "act", do: "swipe", dir: d.dir, ...(on ? { on } : {}) } };
-    case "key":
-      if (!["home", "back", "recents", "notifications", "enter"].includes(d.key)) return { error: "key needs a name" };
-      return { act: { type: "act", do: "key", name: d.key } };
-    case "launch":
-      if (!d.app) return { error: "launch needs an app" };
-      return { act: { type: "act", do: "launch", app: d.app } };
-    case "wait": {
-      const ms = Math.max(100, Math.min(5000, Number(d.ms) || 1000));
-      return { act: { type: "act", do: "wait", ms } };
-    }
-    default:
-      return { error: `unknown action "${d.do}"` };
-  }
-}
-
-/** A short description of an action for the history, e.g. tap [7] "Gmail". */
-function describeDecision(d: any, screen: Msg): string {
-  const nodes: ScreenNode[] = Array.isArray(screen.nodes) ? screen.nodes : [];
-  const node = Number.isInteger(d.n) && d.n >= 0 ? nodes.find((x) => x.n === d.n) : undefined;
-  const label = node ? ` "${(node.text || node.desc || node.hint || "").slice(0, 60)}"` : "";
-  const where = `on ${appLabel(screen.app)}`;
-  switch (d.do) {
-    case "tap":
-    case "long_press":
-      return `${d.do}${label} ${where}`;
-    case "type":
-      return `type "${d.text}"${label ? ` into${label}` : ""} ${where}`;
-    case "swipe":
-      return `swipe ${d.dir} ${where}`;
-    case "key":
-      return `press ${d.key} ${where}`;
-    case "launch":
-      return `launch ${d.app}`;
-    case "wait":
-      return `wait ${d.ms} ms`;
-    default:
-      return String(d.do);
-  }
-}
+export { parseContactBook, findContact, fingerprint };

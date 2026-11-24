@@ -1,5 +1,28 @@
 # Mind: status (James C, 10x)
 
+## v2 rebuild on OpenAI (2026-11-24, worktree branch, not pushed)
+Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 grounded multi-action executor, M5 escalation, M6 voice front end (Mouth), M7 recipes, M8 caller, M9 voice comparison.
+- M1 done: `src/model.ts` is an OpenAI Responses API client over plain fetch (no SDK), strict JSON-schema outputs, developer-message prefix for implicit prompt caching (`prompt_cache_key` per role), per-role model + reasoning effort from env (`MIND_ROUTER_MODEL`/`MIND_EXEC_MODEL`/`MIND_ESCALATE_MODEL`, `MIND_*_EFFORT`), image input for escalation, one retry on 429/5xx/timeout. `@anthropic-ai/sdk` removed. `test/model.test.ts` (fake fetch).
+- M2 done: `src/shortcuts.ts` (in-memory index: email via mailto, SMS via smsto, AI call via the Caller, dialer via tel, alarm/timer intents, calendar INSERT, Maps navigation, web search, settings pages, open app by launch), each with slots, keywords, a local regex pre-match, and a plan of sub-goals with direct `open`/`tap` acts, code-checkable `done_when` and irreversible final steps with a confirm summary. Chains ("X, then Y") are split and matched part by part. `src/contacts.ts`: CONTACTS values may be a number, an email or both (`Name=+1...|a@b.c`). `test/shortcuts.test.ts`.
+- M3 done: `src/brain.ts` rewritten as an orchestrator with a task queue (chained commands become queued tasks), each task a list of sub-goals with `done_when` checks in code (`checkScreen`: app, text present/absent, field value) and a cheap model check when code can't tell; scratchpad of facts carried between sub-goals; `amend` (swap the plan at a step boundary), `cancel` current/all, instant regex stop; memory (facts, outcomes, recipes) through an injected `KeyValueStore` (`src/memory.ts`). Router (`MIND_ROUTER_MODEL`) returns `{route, tasks:[{shortcut_id, slots, app, subgoals:[{goal, done_when, risk}]}]}`; a confident local shortcut match skips the router entirely.
+- M4 done: `src/exec.ts` grounded executor: compact screen without pixel coords (`describeCompact`), `since`/hash so an unchanged screen costs no nodes, up to 4 actions per call each with an `expect`, sent one at a time with `then_screen:true`, later actions use stable selectors (key/id/unique label, never a stale `n`), `fast:true` for non-narrated steps, stop at the first mismatch and re-ground with the mismatch in the history; "done" only counts after the `done_when` check.
+- M5 done: escalation to `MIND_ESCALATE_MODEL` with `image:true` screenshot + tree + history after 2 consecutive mismatches or on an unreadable tree (web view); it may act (pixel taps allowed), re-plan the sub-goal, or give up with a spoken reason; at most 2 per task.
+- Confirm gate (part of M6, Mind side, done): irreversible sub-goals (send, call, pay, delete, post) pause with `confirm_request` and go ahead only on `confirm_reply` ok AND an affirmative raw transcript; `MIND_CONFIRM=always|unknown_contacts|never`. With a v1 Mouth the question is a `say` and the next press is the answer. No Mouth: never done. `barge_in` pauses at the next step boundary.
+- Fakes: `fakes/phone.ts` implements the Hands v2 additions (open intents incl. mailto/smsto/tel/alarm/timer/calendar/search/settings/navigation, hash/since/same, compact, image, then_screen, fast, key/id targets, stale `n`, locked, caps) and a `legacy` v1 mode; `fakes/openai.ts` is a scripted Responses API answered at the fetch level; `fakes/mouth.ts` speaks v2 (`voice_caps`, request/amend/cancel/confirm_reply/barge_in/status). Tests: `test/v2.test.ts` (17), the v1 suites ported; 70 pass.
+- `npm run story -- --sim` (or `npm run story:sim`): the demo against the fakes at real phone speed with the scripted fake OpenAI and simulated latencies; `npm run story` uses the real models (needs `OPENAI_API_KEY`). Before/after (same fake phone, real-speed glides; before = pre-v2 Mind at commit 2c937b0 with its stub model delayed to the measured Claude Opus latencies, decide 2.9 s / step 1.9 s; after = assumed router 700 ms, exec 900 ms, check 500 ms, escalate 3 s, the user says "yes" 0.8 s after a confirmation; v2 Mouth):
+
+  | Scenario | Before: total / first line / first act / model calls | After: total (minus the user's "yes") / first line / first act / model calls |
+  |---|---|---|
+  | Reply to Sarah (grounded Gmail) | 25.8 s / 4.4 s / 6.3 s / 9 (1 decide + 8 step), 7 acts | 7.7 s (6.9 s) / 0.7 s / 0.7 s / 4 (1 route + 3 exec), 5 acts |
+  | Same again | same | 3.4 s (2.6 s) / 0.7 s / 0.7 s / 1 (route only; recipes) |
+  | "Send an email to Hamza saying I'm running late" | (scenic route + ~9 step calls) | 1.8 s (1.0 s) / 3 ms / 3 ms / 0 (local shortcut) |
+  | "Open Spotify, then text Alex I'm late, then call Mom" | not possible (one task slot) | 4.4 s, 3 tasks in order / 3 ms / 0 calls |
+  | Call Alex (AI caller) | 8.9 s / 4.4 s / - / 1 | 5.4 s (4.6 s) / 3 ms / - / 0 |
+  | Stop | 0.3 s | 0.15 s |
+
+  With the v1 Mouth (`--v1`) the first line is 1.5-2.2 s (the v1 debounce is kept for heard-driven input) and everything else is the same.
+- M7 done: `src/recipes.ts`. A grounded success of a sub-goal is saved as a recipe keyed by (app package, app version when Hands sends one, normalized intent with slot values as `{{slot}}`), steps as stable selectors (key/id/label, never `n`) with their expects; lookup order shortcut -> recipe -> grounded. Replay is deterministic with every expect checked; a mismatch falls back to grounded and marks it stale, a second failure deletes it; persisted via the store. `test/recipes.test.ts`: second run of the Sarah reply uses 0 exec calls; a fresh Mind with the same store replays with a new slot value.
+
 ## Done
 - (Hamza, at his request, 2026-11-22) One command per press, from the first real-phone run (every `heard`, room chatter included, started a decide that cancelled the running task, so nothing got past "press home"; narration queued up and played minutes late). Now: `wake` opens a listening window; `heard`s in it are collected and decided once, joined, after 1.5 s of quiet (`timing.commandMs`); the window then closes, and any `heard` until the next `wake` is logged as ignored and can't touch a running task. A window with nothing heard closes after 8 s (`listenMs`). Instant "stop" still works inside a window (it also drops a command still being collected). A new press can still replace or stop a task. Narration: at most one `say` outstanding; a step line that would queue behind an unfinished one is skipped, except the Send line and the final result line, which wait up to 4 s (`sayWaitMs`) for the previous line. A decide opening line over 8 words is dropped, and the prompt asks for only the first action ("Finding Gmail."). Sleep never fires during a listening window or while a decide is in flight. Fake Mouth: `hear()` is a press (always sends `wake`), `hearMore()` / `!more` sends `heard` with no press. New `test/press.test.ts` (6 tests). Also: the stale-screen re-read check is now `>=` staleMs, so a tap chosen in the same millisecond as the read is still re-checked when `staleMs` is 0 (the stale-tap test raced once steps stopped waiting for speech). 41/41 pass.
 - (Hamza, at his request, 2026-11-22) Friend tone and push-to-talk: prompts make Bobby narrate only the current step in a few casual words ("Finding Gmail." "Drafted it." "Sending.") and never the end goal early; small repeat actions say nothing; no follow-up questions (missing subject/wording is filled in); speech not meant for Bobby is a silent chat. Sleep: after a chat answer, a finished task or call, or a model error, the session ends 3 s later (`sleepSoon`); idle `sleepMs` 20 s -> 10 s. Stall line is "One sec." 35/35 tests pass.
@@ -15,19 +38,21 @@
 - Backing up Stage: extras 1 (hints for six apps), 2 (app icon), 3 (README draft + architecture diagram), 5 (cursor preview) and two experiments (voice-cursor timing strip, record button) done. Details in `stage/STATUS.md`.
 
 ## Doing now
-- Nothing. Review fixes are pushed; `check.sh` and `npm run story` (8/8) pass.
+- v2 rebuild (M1-M9) is committed on the worktree branch, not pushed; `check.sh` (74 tests) and `npm run story:sim` (7/7) pass. Waiting on an `OPENAI_API_KEY` for real runs.
 
 ## Open
+0. v2 with real models: run `npm run story` (real OpenAI) and tune the router/executor prompts on its logs; then on the phone with the v2 Hands (open intents, then_screen, keys). Check the contract questions in `PROTOCOL-V2.md`.
 1. Tune against Hamza's real Hands hub once the phone build is up (real screens have many more nodes and real labels). Needs the phone, so it waits for stitching day.
 2. Stage extra 4: fix hints from `hands/HINTS-CHECK.md` once Hands writes it (it doesn't exist yet).
 3. Optional Stage experiments not done: phone-shaped cursor panel, sound effects, hints for more apps.
 
 ## Needs the human
-- Nothing blocking. Root `.env` has `ANTHROPIC_API_KEY`, `CONTACTS` (Hamza) and a generated `HUB_TOKEN`.
+- **Add `OPENAI_API_KEY` to the root `.env`** (the Mind now runs on OpenAI; `ANTHROPIC_API_KEY` is no longer read). Nothing real has been called yet: every v2 check runs against fakes.
+- Root `.env` has `ANTHROPIC_API_KEY` (now unused), `CONTACTS` and `HUB_TOKEN`. For the email shortcut to fill the To field, give contacts an email: `Hamza=+1...|hamza@example.com`.
 - Your working copy of `env/mind.env` (a committed template) holds your real API key. It is not committed; please clear it there and keep the key only in the root `.env`, so nobody `git add`s it by accident.
 
 ## Try it yourself
-- `cd mind && npm install && npm run story` (about 70 s, uses the real model, prints PASS/FAIL and the log path).
+- `cd mind && npm ci && npm run story:sim` (about 35 s, no key: simulated latencies, prints the timing table). With a key: `npm run story`.
 - `npm run story -- --flaky --flaky-rate 0.35 --only email` to watch it recover from failed taps and pop-ups.
 - By hand: `npm run hub`, `npm run mind`, `npm run caller`, `npm run mouth` in four terminals, then type to the mouth.
 
@@ -51,6 +76,18 @@
 8. **Small things.** "Bye" gives Bobby 2.5 s to answer before `sleep`. Request ids carry a random session part, so a late reply to an old Mind can't match a new request. The system prompt uses the 1-hour cache life.
 
 ## Decisions
+- v2 models (developers.openai.com/api/docs/models, 2026-11-24): router and executor `gpt-6-luna` ("our most efficient model", $0.10/$0.50 per 1M, cached input $0.01, image input, structured outputs, prompt caching, effort `none`..`max`; the latency guide names it for routing-type tasks). Router at effort `none` (classification + slot filling), executor at `low` (grounded on a text tree, a few actions). Escalation `gpt-6.1-terra` ("visual reasoning, precise computer use", $1/$5) at `medium`. `gpt-6.2-sol` is the alternative for escalation via `MIND_ESCALATE_MODEL` if Terra struggles. All ids in env.
+- Responses API over plain fetch, not the SDK: nothing to shim in React Native, one small file. Non-streaming: React Native's fetch doesn't stream bodies, and first-action latency is attacked instead by the local shortcut match (0 calls), batching (4 actions per call) and recipes (0 exec calls).
+- Prompt caching: the static instructions go first as a developer message (the implicit breakpoint lands after them), one `prompt_cache_key` per role, effort fixed per role so the prefix never changes.
+- Strict JSON schemas everywhere (no tool calling in the Mind): every call wants exactly one structured answer.
+- A confident local shortcut match skips the router entirely rather than racing it: simpler, and the router can't contradict a task already under way. Low-confidence or unknown parts send the whole utterance to the router.
+- Screens: no pixel coordinates for the executor; Hands' `since`/hash so unchanged screens cost no nodes; no diffs to the model (each call is stateless, so a diff would refer to a screen the model never saw; numbering would be ambiguous).
+- Node numbers only for the first action of a batch; later actions and recipes use key, resource id or a unique label. A batch stops at the first failed expect.
+- Confirm in the Mind, not the voice model: `confirm_reply.ok` AND an affirmative raw transcript; no Mouth means no irreversible step. v1 Mouths get the question as a `say` and the next press as the answer.
+- Recipes key on the app in front when the sub-goal starts, plus app version when Hands sends one; slot values become `{{slot}}`.
+- Storage: injected `KeyValueStore`; the app uses SecureStore (already installed) instead of adding AsyncStorage (a new native module and rebuild).
+- The v1 `heard` debounce stays for v1 Mouths only; a v2 Mouth's `heard` is logged and kept as the raw transcript, never routed.
+- Calls are tasks in the queue (`call.ai` shortcut) and are confirmed like sends; `stop` during a call sends the new `hangup`.
 - Structured outputs (`output_config.format`) instead of tools: each call needs exactly one JSON answer, and forced `tool_choice` isn't allowed on this model.
 - Each step call is stateless (cached system prompt + one user turn with task, plan, last 10 actions and the screen), rather than a growing conversation: keeps requests small and latency flat.
 - The plan is written in the same call that decides to start a task, saving one model call per task.
@@ -68,4 +105,5 @@
 
 ## Contract questions
 - Hands sends an extra `hint` field on nodes (an empty field's placeholder). The Mind now reads it. Worth adding to the contract's `screen_result` so the other parts know.
-- There is no Mind → Caller message to hang up a call in progress. "Stop" during a call can only tell Bobby. Suggest `{"type":"hangup","to":"caller","re":"m9"}`.
+- Hang-up: now sent as `{"type":"hangup","to":"caller","re":"m9"}` and handled by the v2 Caller. Please add it to the contract.
+- v2 messages (Mouth and Caller) and the Hands additions the Mind relies on are in `mind/PROTOCOL-V2.md`, with four open questions at the end.

@@ -23,7 +23,14 @@ export interface MouthDeps {
 }
 
 type State = "asleep" | "starting" | "live";
-type Item = { kind: "say"; id: string; text: string; queuedAt: number } | { kind: "correct"; text: string };
+type Item =
+  | { kind: "say"; id: string; text: string; queuedAt: number }
+  | { kind: "correct"; text: string }
+  /** v2 `progress` / `confirm_request` lines: spoken in order, no say_started/say_done. */
+  | { kind: "line"; text: string };
+
+/** Bobby's tools (protocol v2), announced in `voice_caps`. */
+export const V2_TOOLS = ["request", "amend", "cancel", "confirm", "status"];
 
 export class Mouth {
   private state: State = "asleep";
@@ -45,6 +52,15 @@ export class Mouth {
   private answeredWarned = false; // the current say's reply was already checked against the line
   /** Delay from a say arriving to Bobby starting to speak it, in ms (latest first). */
   readonly sayLatencies: number[] = [];
+  // ---- protocol v2 (the voice model's tools are the input) ----
+  /** The last raw user transcript (speech-to-text), sent with request/confirm_reply. */
+  private lastHeard = "";
+  /** Tasks the Mind reports as running/paused/waiting: speech then counts as a barge-in. */
+  private activeTasks = new Set<string>();
+  private pendingConfirm: { id: string; summary: string } | null = null;
+  private statusCalls = new Map<string, { callId: string; timer: ReturnType<typeof setTimeout> }>();
+  private statusSeq = 0;
+  private lastBargeAt = 0;
   private readonly now: () => number;
 
   constructor(private readonly d: MouthDeps) {
@@ -61,6 +77,7 @@ export class Mouth {
     if (this.state === "live") {
       this.openMic();
       // A new press: the Mind opens a listening window on every wake.
+      this.sendCaps();
       this.d.send({ type: "wake" });
       this.armBackstop();
       return;
@@ -76,6 +93,8 @@ export class Mouth {
         onAgentResponse: (t) => this.onAgentResponse(t),
         onModeChange: (m) => this.onModeChange(m),
         onError: (m) => this.d.log(`voice error: ${m}`),
+        onToolCall: (name, args, callId) => this.onToolCall(name, args, callId),
+        onSpeechStarted: () => this.onSpeechStarted(),
       });
       if (this.state !== "starting") {
         await s.end(); // slept while starting
@@ -84,6 +103,7 @@ export class Mouth {
       this.session = s;
       this.state = "live";
       this.openMic();
+      this.sendCaps();
       this.d.send({ type: "wake" });
       this.armBackstop();
       const held = this.held;
@@ -137,13 +157,109 @@ export class Mouth {
       case "test_user_turn": // test only: a typed user turn, since nobody can speak to the emulator
         if (text) {
           this.typedTurns.push({ text, at: this.now() });
+          this.lastHeard = text;
           this.d.send({ type: "heard", text });
           this.session!.sendUserMessage(text);
         }
         return;
+      // ---- protocol v2 (mind/PROTOCOL-V2.md) ----
+      case "progress": {
+        if (!text) return;
+        const p = String(msg.priority ?? "when_idle");
+        if (p === "silent") this.session!.sendContextualUpdate(`UPDATE: ${text}`);
+        else {
+          if (p === "interrupt") this.hush();
+          this.queue.push({ kind: "line", text });
+          this.pump();
+        }
+        return;
+      }
+      case "confirm_request": {
+        if (typeof msg.id !== "string") return;
+        const summary = String(msg.summary ?? "");
+        this.pendingConfirm = { id: msg.id, summary };
+        this.session!.sendContextualUpdate(`CONFIRM id=${msg.id}: ${summary}. Ask the user if you should go ahead, then call confirm with id "${msg.id}" and their answer.`);
+        this.queue.unshift({ kind: "line", text: `${summary.replace(/[.!?\s]+$/, "")}. Should I go ahead?` });
+        this.openMic(); // the user has to be able to answer
+        this.pump();
+        return;
+      }
+      case "task_update": {
+        const id = String(msg.task ?? "");
+        const st = String(msg.status ?? "");
+        if (["running", "paused", "waiting_confirm"].includes(st)) this.activeTasks.add(id);
+        else this.activeTasks.delete(id);
+        if (st === "cancelled" && this.pendingConfirm) this.pendingConfirm = null;
+        return;
+      }
+      case "status_result": {
+        const w = this.statusCalls.get(String(msg.re ?? ""));
+        if (!w) return;
+        clearTimeout(w.timer);
+        this.statusCalls.delete(String(msg.re));
+        this.session!.toolResult?.(w.callId, JSON.stringify({ status: text || "Nothing running." }), true);
+        return;
+      }
       default:
         return; // unknown: ignore
     }
+  }
+
+  // ---------- v2: the voice model's tools ----------
+
+  private sendCaps(): void {
+    if (this.session?.tools) this.d.send({ type: "voice_caps", v: 2, tools: V2_TOOLS });
+  }
+
+  private onToolCall(name: string, args: Record<string, unknown>, callId: string): void {
+    if (this.state !== "live" || !this.session) return;
+    this.armBackstop();
+    const s = this.session;
+    const reply = (o: object, respond: boolean) => s.toolResult?.(callId, JSON.stringify(o), respond);
+    const text = typeof args.text === "string" ? args.text.trim() : "";
+    this.d.log(`tool ${name}(${JSON.stringify(args)})`);
+    switch (name) {
+      case "request":
+        if (!text) return reply({ error: "empty request" }, false);
+        this.d.send({ type: "request", text, heard: this.lastHeard });
+        return reply({ accepted: true, note: "Acknowledge in two or three words. The outcome comes later as an UPDATE; don't claim it." }, true);
+      case "amend":
+        if (!text) return reply({ error: "empty amend" }, false);
+        this.d.send({ type: "amend", text, heard: this.lastHeard });
+        return reply({ accepted: true }, true);
+      case "cancel":
+        this.d.send({ type: "cancel", scope: args.scope === "current" ? "current" : "all" });
+        return reply({ accepted: true, note: "Say it's stopping. Don't say what happened until an UPDATE." }, true);
+      case "confirm": {
+        const id = typeof args.id === "string" && args.id ? args.id : this.pendingConfirm?.id;
+        if (!id) return reply({ error: "nothing to confirm" }, false);
+        // The Mind checks the raw transcript too: the voice model's yes alone isn't enough.
+        this.d.send({ type: "confirm_reply", re: id, ok: args.answer === "yes", heard: this.lastHeard });
+        this.pendingConfirm = null;
+        return reply({ recorded: true, note: "Wait for the UPDATE before saying anything happened." }, false);
+      }
+      case "status": {
+        const id = `st${++this.statusSeq}`;
+        const timer = setTimeout(() => {
+          this.statusCalls.delete(id);
+          reply({ status: "unknown right now" }, true);
+        }, 2000);
+        this.statusCalls.set(id, { callId, timer });
+        this.d.send({ type: "status", id });
+        return;
+      }
+      default:
+        return reply({ error: `unknown tool ${name}` }, false);
+    }
+  }
+
+  /** The user started talking while a task runs: the Mind pauses it at the next step. */
+  private onSpeechStarted(): void {
+    if (this.state !== "live" || this.activeTasks.size === 0 || this.pendingConfirm) return;
+    const now = this.now();
+    if (now - this.lastBargeAt < 2000) return;
+    this.lastBargeAt = now;
+    this.d.send({ type: "barge_in" });
   }
 
   /** Stop audio now and drop queued lines; every say still gets its say_done. */
@@ -163,6 +279,9 @@ export class Mouth {
     this.settle = null;
     this.clearMicTimer();
     this.listening = false;
+    for (const w of this.statusCalls.values()) clearTimeout(w.timer);
+    this.statusCalls.clear();
+    this.pendingConfirm = null;
     this.finishCurrent(true);
     this.dropQueue();
     this.flushHeld();
@@ -188,6 +307,7 @@ export class Mouth {
     const t = text.trim();
     if (!/[\p{L}\p{N}]/u.test(t)) return; // "..." and other noise-only transcripts
     if (t.startsWith(SAY_TAG) || t.startsWith(CORRECT_TAG)) return; // our own instructions
+    this.lastHeard = t;
     // A typed test turn may be echoed back as a transcript: it was already sent as heard.
     const i = this.typedTurns.findIndex((x) => x.text === t && this.now() - x.at < 10_000);
     if (i >= 0) {
@@ -284,8 +404,9 @@ export class Mouth {
     if (!next) return;
     this.current = { ...next, started: false, dispatchedAt: this.now() };
     this.answeredWarned = false;
-    const tag = next.kind === "say" ? SAY_TAG : CORRECT_TAG;
-    this.session!.sendUserMessage(`${tag} ${next.text}`);
+    const s = this.session!;
+    if (s.speak) s.speak(next.kind === "correct" ? `Quick correction: ${next.text}` : next.text);
+    else s.sendUserMessage(`${next.kind === "correct" ? CORRECT_TAG : SAY_TAG} ${next.text}`);
     // A say must start within sayStaleMs of arriving, or it is dropped as stale.
     let ms = this.d.sayStartTimeoutMs ?? 8_000;
     if (next.kind === "say") ms = Math.min(ms, Math.max(0, next.queuedAt + this.staleMs() - this.now()));

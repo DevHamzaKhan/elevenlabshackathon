@@ -1,5 +1,14 @@
 # Merging bobby-mouth into the final app
 
+## 0. v2: OpenAI Realtime voice (default) and the OpenAI caller
+
+- **No new React Native library.** `src/openai.ts` uses `@livekit/react-native-webrtc` (RTCPeerConnection, microphone, data channel) and `@livekit/react-native` (AudioSession: Bluetooth, then headset, then speaker), both already installed for ElevenLabs. Same permissions, plugins and foreground service as below.
+- **App tsconfig:** bare imports from `../mouth/src` resolve through `paths`; `app/tsconfig.json` now maps `@livekit/react-native` and `@livekit/react-native-webrtc` to `app/node_modules` (done).
+- **Env** (all through `config.env`): `OPENAI_API_KEY` (the Mouth mints a short-lived Realtime client secret from it on the phone, for now; the key never leaves the phone except to api.openai.com), optional `MOUTH_VOICE_VENDOR` (`openai` default, `elevenlabs` for the old agent), `MOUTH_VOICE_MODEL` (default `gpt-realtime-2.1-mini`), `MOUTH_VOICE` (default `marin`), `MOUTH_TRANSCRIBE_MODEL` (default `gpt-live-transcribe`). Caller: `CALLER_VENDOR` (`openai` default, `elevenlabs`), `CALLER_MODEL`, `CALLER_VOICE`, `CALLER_SIP_URL`, `CALLER_SIP_USERNAME`, `CALLER_SIP_PASSWORD`, `CALLER_SUMMARY_MODEL`, plus the v1 `OWNER_NUMBER`, `CALL_ALLOWLIST`, `CALLER_DRY_RUN` (default 1).
+- **Network:** HTTPS and WebRTC (UDP) to api.openai.com; WSS to api.openai.com for the caller's sideband.
+- The ElevenLabs packages stay installed while `MOUTH_VOICE_VENDOR=elevenlabs` / `CALLER_VENDOR=elevenlabs` are still possible. Once the OpenAI path is proven on the phone they can be removed with `@livekit/react-native-expo-plugin` kept (it configures WebRTC).
+- **Check on the phone:** Bobby plays through the earbuds; `say`/`progress` start within ~1 s; the mic closes after a command and reopens for a confirmation question.
+
 Everything the final Bobby app (built by Hands) needs to include this package. The test app in `example/` is a working reference: copy from its `package.json`, `app.json` and `metro.config.js`.
 
 ## 1. Install

@@ -4,19 +4,25 @@
 export type Msg = { type: string; [k: string]: any };
 
 /** One model call: fixed instructions (cached), the changing part, and the JSON schema of the reply. */
+export type ModelRole = "router" | "exec" | "escalate" | "check";
+
 export type ModelRequest = {
-  /** Short label for logs, e.g. "decide" or "step". */
+  /** Short label for logs, e.g. "route", "exec", "escalate", "check". */
   purpose: string;
+  /** Which model and effort to use. Defaults from `purpose` ("decide"/"route" -> router, else exec). */
+  role?: ModelRole;
+  /** Base64 JPEG screenshots (or data: URLs), for the escalation model. */
+  images?: string[];
   /** Instructions that stay byte-for-byte the same between calls, so they cache. */
   system: string;
   /** The changing part: screen, history, what the user said. */
   user: string;
   /** JSON schema the reply must follow. */
   schema: Record<string, unknown>;
-  /** Optional effort override for cheap calls. */
-  effort?: "low" | "medium" | "high";
+  /** Optional reasoning-effort override ("none", "low", "medium", ...). */
+  effort?: string;
   maxTokens?: number;
-  /** Per-attempt timeout; a slow attempt is abandoned and retried (SDK retries up to 2 times). */
+  /** Per-attempt timeout; a slow attempt is abandoned and retried once. */
   timeoutMs?: number;
 };
 
@@ -26,6 +32,8 @@ export type ModelReply = {
   stopReason: string | null;
   ms: number;
   error?: string;
+  usage?: { input: number; cached: number; output: number };
+  model?: string;
 };
 
 /** The one door to the model. Tests pass a stub with the same shape. */
@@ -34,13 +42,16 @@ export type ModelFn = (req: ModelRequest) => Promise<ModelReply>;
 export type MindConfig = {
   hubUrl: string;
   token: string;
-  /** ANTHROPIC_API_KEY, MIND_MODEL, MIND_EFFORT, CONTACTS, plus optional MIND_* tuning knobs. */
+  /** OPENAI_API_KEY, MIND_ROUTER_MODEL, MIND_EXEC_MODEL, MIND_ESCALATE_MODEL, MIND_*_EFFORT,
+   *  MIND_CONFIRM, CONTACTS, plus optional MIND_* tuning knobs. */
   env: Record<string, string | undefined>;
   log: (line: string) => void;
   /** Per-app navigation notes. May be empty. */
   hints?: string[];
   /** Not in the contract: lets tests and the laptop runner replace the model door. */
   model?: ModelFn;
+  /** Persistent key-value store for memory and recipes (AsyncStorage-shaped). In memory if absent. */
+  storage?: import("./memory").KeyValueStore;
   /** Not in the contract: test-only speedups (timeouts in ms). */
   timing?: Partial<Timing>;
 };
@@ -63,6 +74,10 @@ export type Timing = {
   listenMs: number;
   /** The final result line or the Send line waits this long at most for the previous line to finish. */
   sayWaitMs: number;
+  /** How long a confirmation waits for the user before it counts as "no". */
+  confirmMs: number;
+  /** A barge-in with nothing after it resumes the task after this long. */
+  bargeMs: number;
 };
 
 export const DEFAULT_TIMING: Timing = {
@@ -76,6 +91,8 @@ export const DEFAULT_TIMING: Timing = {
   commandMs: 1_500,
   listenMs: 14_000,
   sayWaitMs: 4_000,
+  confirmMs: 30_000,
+  bargeMs: 4_000,
 };
 
 export type PlanStep = { n: number; do: string; why: string };
@@ -91,4 +108,79 @@ export type ScreenNode = {
   tap?: boolean;
   edit?: boolean;
   scroll?: boolean;
+  /** v2 Hands extras (any may be missing). */
+  id?: string;
+  key?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  focused?: boolean;
+  selected?: boolean;
+  password?: boolean;
+  scrollDirs?: string[];
+};
+
+// ---------- v2: plans, checks and acts ----------
+
+/** Where Hands should act. `n` is valid only for the screen it came from; the rest are stable. */
+export type Target = { n?: number; id?: string; key?: string; text?: string; x?: number; y?: number };
+
+/** One Hands `act` body (without type/to/id). See mind/PROTOCOL-V2.md for `open`. */
+export type HandsAct = {
+  do: string;
+  on?: Target;
+  text?: string;
+  dir?: string;
+  name?: string;
+  app?: string;
+  ms?: number;
+  uri?: string;
+  action?: string;
+  pkg?: string;
+  extras?: Record<string, string | number | boolean | string[]>;
+  type_mime?: string;
+};
+
+/** A condition checked in code against a screen. Every given field must hold. */
+export type Check = {
+  /** Package or app label in front (substring, case-insensitive). */
+  app?: string;
+  /** At least one of these is visible (text, description or hint contains it, ignoring case). */
+  text_present?: string[];
+  /** None of these is visible. */
+  text_absent?: string[];
+  /** A field (found by key, id or label) holds this value. */
+  field?: { key?: string; id?: string; text?: string; value: string };
+};
+
+/** `done_when`: a code check plus words for the cheap model check when code can't tell. */
+export type DoneWhen = Check & { describe: string };
+
+export type Risk = "safe" | "irreversible";
+
+export type SubgoalSpec = {
+  goal: string;
+  done_when: DoneWhen;
+  risk: Risk;
+  /** Deterministic acts to try first (from a shortcut). On failure the grounded executor takes over. */
+  direct?: HandsAct[];
+  /** For irreversible sub-goals: the one-line summary the user confirms ("Email to Sam: 'I'm late'"). */
+  confirm?: string;
+  /** Bobby's line when this sub-goal starts. */
+  say?: string;
+};
+
+export type TaskPlan = {
+  kind: "phone" | "call";
+  title: string;
+  goal: string;
+  subgoals: SubgoalSpec[];
+  shortcut?: string;
+  slots?: Record<string, string>;
+  /** Who the task talks to, for the unknown_contacts confirm policy. */
+  recipient?: { name: string; known: boolean };
+  call?: { name: string; number: string; goal: string };
+  /** What Bobby says when it is done ("Sent it to Sam."). */
+  doneSay?: string;
+  /** Set when the task can't run at all (e.g. no number): Bobby says this instead. */
+  failSay?: string;
 };
