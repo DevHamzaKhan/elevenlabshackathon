@@ -31,6 +31,10 @@ if [[ $HUB_OK != 0 ]] || ! grep -q '"type":"call_result","re":"m1","ok":true' lo
 fi
 grep -o '"status":"[a-z]*"' logs/check-call-hub.log | tr '\n' ' '; echo "call_result ok"
 
+echo "== voice bench plumbing (dry run, local fake server)"
+node tools/voice-bench.mjs --dry-run --runs 1 > logs/check-bench.log 2>&1 || { tail -20 logs/check-bench.log; exit 1; }
+echo "ok"
+
 echo "== integration with the real Mind (v1 + v2 voice, fake hub/phone/OpenAI)"
 if [[ -d ../mind/node_modules ]]; then
   (cd ../mind && npx tsx ../mouth/tools/integration-with-mind.mts) > logs/check-integration.log 2>&1 || { tail -30 logs/check-integration.log; exit 1; }
