@@ -9,6 +9,18 @@ Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 
 - M5 done: escalation to `MIND_ESCALATE_MODEL` with `image:true` screenshot + tree + history after 2 consecutive mismatches or on an unreadable tree (web view); it may act (pixel taps allowed), re-plan the sub-goal, or give up with a spoken reason; at most 2 per task.
 - Confirm gate (part of M6, Mind side, done): irreversible sub-goals (send, call, pay, delete, post) pause with `confirm_request` and go ahead only on `confirm_reply` ok AND an affirmative raw transcript; `MIND_CONFIRM=always|unknown_contacts|never`. With a v1 Mouth the question is a `say` and the next press is the answer. No Mouth: never done. `barge_in` pauses at the next step boundary.
 - Fakes: `fakes/phone.ts` implements the Hands v2 additions (open intents incl. mailto/smsto/tel/alarm/timer/calendar/search/settings/navigation, hash/since/same, compact, image, then_screen, fast, key/id targets, stale `n`, locked, caps) and a `legacy` v1 mode; `fakes/openai.ts` is a scripted Responses API answered at the fetch level; `fakes/mouth.ts` speaks v2 (`voice_caps`, request/amend/cancel/confirm_reply/barge_in/status). Tests: `test/v2.test.ts` (17), the v1 suites ported; 70 pass.
+- `npm run story -- --sim` (or `npm run story:sim`): the demo against the fakes at real phone speed with the scripted fake OpenAI and simulated latencies; `npm run story` uses the real models (needs `OPENAI_API_KEY`). Before/after (same fake phone, real-speed glides; before = pre-v2 Mind at commit 2c937b0 with its stub model delayed to the measured Claude Opus latencies, decide 2.9 s / step 1.9 s; after = assumed router 700 ms, exec 900 ms, check 500 ms, escalate 3 s, the user says "yes" 0.8 s after a confirmation; v2 Mouth):
+
+  | Scenario | Before: total / first line / first act / model calls | After: total (minus the user's "yes") / first line / first act / model calls |
+  |---|---|---|
+  | Reply to Sarah (grounded Gmail) | 25.8 s / 4.4 s / 6.3 s / 9 (1 decide + 8 step), 7 acts | 7.7 s (6.9 s) / 0.7 s / 0.7 s / 4 (1 route + 3 exec), 5 acts |
+  | Same again | same | 3.4 s (2.6 s) / 0.7 s / 0.7 s / 1 (route only; recipes) |
+  | "Send an email to Hamza saying I'm running late" | (scenic route + ~9 step calls) | 1.8 s (1.0 s) / 3 ms / 3 ms / 0 (local shortcut) |
+  | "Open Spotify, then text Alex I'm late, then call Mom" | not possible (one task slot) | 4.4 s, 3 tasks in order / 3 ms / 0 calls |
+  | Call Alex (AI caller) | 8.9 s / 4.4 s / - / 1 | 5.4 s (4.6 s) / 3 ms / - / 0 |
+  | Stop | 0.3 s | 0.15 s |
+
+  With the v1 Mouth (`--v1`) the first line is 1.5-2.2 s (the v1 debounce is kept for heard-driven input) and everything else is the same.
 - M7 done: `src/recipes.ts`. A grounded success of a sub-goal is saved as a recipe keyed by (app package, app version when Hands sends one, normalized intent with slot values as `{{slot}}`), steps as stable selectors (key/id/label, never `n`) with their expects; lookup order shortcut -> recipe -> grounded. Replay is deterministic with every expect checked; a mismatch falls back to grounded and marks it stale, a second failure deletes it; persisted via the store. `test/recipes.test.ts`: second run of the Sarah reply uses 0 exec calls; a fresh Mind with the same store replays with a new slot value.
 
 ## Done

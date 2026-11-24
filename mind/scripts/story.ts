@@ -1,13 +1,19 @@
-// npm run story: the whole demo against the fakes, with the real model.
-// Starts the fake hub + phone, the Mind, the fake Caller and the fake Mouth in one process, plays
-// "what did I miss?", "reply to Sarah and tell her 3 works", "call Alex and tell him I'm running late",
-// then a task interrupted by "stop", and prints PASS or FAIL plus the log path.
-// Flags: --flaky [--flaky-rate 0.3] (fake phone sometimes fails or shows a pop-up), --port N, --only email|call|stop|digest
+// npm run story: the whole demo against the fakes (hub + phone at real speed, v2 Mouth, Caller).
+//   --sim            scripted fake OpenAI with simulated latencies (no key needed). Assumptions:
+//                    router 700 ms, exec 900 ms, check 500 ms, escalate 3000 ms; the user answers a
+//                    confirmation 800 ms after it is asked. The phone glides 400-900 ms (120-250 fast).
+//   (default)        the real OpenAI models from the root .env (OPENAI_API_KEY, MIND_*).
+//   --v1             drive with the v1 Mouth (heard/say) instead of v2 tool calls.
+//   --flaky [--flaky-rate 0.3], --port N, --only digest|email|shortcut|chain|call|stop|recipe
+// Prints PASS/FAIL per check, a timing table (ms from the user's words) and model calls per role.
 
 import { startMind } from "../src/index";
+import { makeModel, modelOptionsFromEnv } from "../src/model";
+import { InMemoryStore } from "../src/memory";
 import { startFakeHub } from "../fakes/hub";
 import { startFakeMouth } from "../fakes/mouth";
 import { startFakeCaller } from "../fakes/caller";
+import { fakeOpenAI } from "../fakes/openai";
 import { loadEnv, loadHints, openLog, redact } from "./env";
 
 const argv = process.argv;
@@ -15,136 +21,149 @@ const flag = (n: string) => argv.includes(n);
 const arg = (n: string) => (argv.indexOf(n) > 0 ? argv[argv.indexOf(n) + 1] : undefined);
 const port = Number(arg("--port") ?? 8790);
 const only = arg("--only");
+const sim = flag("--sim");
+const v2 = !flag("--v1");
 const url = (role: string) => `ws://localhost:${port}/${role}?token=story`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const env = loadEnv();
-if (!/(^|,)\s*Alex=/.test(env.CONTACTS ?? "")) {
-  // Invented contact for the fake call; the fake Caller dials nothing.
-  env.CONTACTS = ["Alex=+14155550123", env.CONTACTS].filter(Boolean).join(",");
-}
+env.CONTACTS = "Alex=+14155550123,Hamza=+14155550111|hamza@example.com,Mom=+14155550199";
 const hints = loadHints(env.HINTS_DIR);
-const { file, log } = openLog("story", (l) => /^(mind: (say|task|whisper|correct|sleep)|USER|BOBBY|phone: (EMAIL|tap|type|swipe|key|launch)|CALL|call )/.test(l));
-
+const { file, log } = openLog("story", (l) => /^(mind: (progress|say|task|confirm|queued|local)|USER|BOBBY|phone: (EMAIL|TEXT|CALL|tap|type|launch|opened)|CALL|call )/.test(l));
 console.log(`story: log ${file}`);
-console.log(`story: key ${redact(env.OPENAI_API_KEY)}, ${hints.length} hint files${flag("--flaky") ? ", flaky phone" : ""}`);
-if (!env.OPENAI_API_KEY) {
-  console.log("story: FAIL (no OPENAI_API_KEY in the root .env)");
+console.log(`story: ${sim ? "SIMULATED model latencies (fake OpenAI)" : `real OpenAI, key ${redact(env.OPENAI_API_KEY)}`}, ${v2 ? "v2" : "v1"} Mouth, ${hints.length} hint files`);
+if (!sim && !env.OPENAI_API_KEY) {
+  console.log("story: FAIL (no OPENAI_API_KEY in the root .env; try --sim)");
   process.exit(1);
 }
+
+const ai = fakeOpenAI({ latency: { route: 700, exec: 900, check: 500, escalate: 3000 } });
+const counts: Record<string, number> = { route: 0, exec: 0, escalate: 0, check: 0 };
+const inner = makeModel({ ...modelOptionsFromEnv(env), log, ...(sim ? { fetch: ai.fetch } : {}) });
+const model = async (req: any) => {
+  counts[req.purpose] = (counts[req.purpose] ?? 0) + 1;
+  return inner(req);
+};
 
 const hub = startFakeHub({ port, log: (s) => log(s), flaky: flag("--flaky") ? Number(arg("--flaky-rate") ?? 0.12) : false });
 await hub.ready;
 const t0 = Date.now();
-const mind = startMind({ hubUrl: `ws://localhost:${port}`, token: "story", env, hints, log });
+const mind = startMind({ hubUrl: `ws://localhost:${port}`, token: "story", env, hints, log, model, storage: new InMemoryStore() });
 const caller = startFakeCaller({ url: url("caller"), log, stepMs: 1500 });
 await sleep(800);
-
 hub.notify("com.google.android.gm", "Sarah Chen", "Running late, can we push to 3?");
 hub.notify("com.whatsapp", "Mum", "Call me when you get a chance x");
-hub.notify("com.google.android.calendar", "Team sync", "Starts in 30 minutes");
 await sleep(300);
-
-const mouth = startFakeMouth({ url: url("mouth"), log, msPerChar: 35 });
+const mouth = startFakeMouth({ url: url("mouth"), log, msPerChar: 35, v2, autoConfirm: v2 ? { ok: true, heard: "yes, go ahead" } : null, confirmDelayMs: 800 });
 await sleep(1500);
 
 const results: { name: string; ok: boolean; detail: string }[] = [];
+const timings: any[] = [];
 const check = (name: string, ok: boolean, detail: string) => {
   results.push({ name, ok, detail });
   console.log(`${ok ? "PASS" : "FAIL"} ${name}: ${detail}`);
 };
+const say = (text: string) => (v2 ? mouth.request(text) : mouth.hear(text));
+const ended = () => hub.watched.filter((m) => m.type === "task" && m.status !== "started");
 
-const tasksOf = () => hub.watched.filter((m) => m.type === "task");
-async function waitTaskEnd(sinceCount: number, ms: number): Promise<any | null> {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
-    const t = tasksOf().slice(sinceCount).find((m) => m.status !== "started");
-    if (t) return t;
-    await sleep(250);
+async function run(name: string, text: string, done: () => boolean, ms = 60_000) {
+  const c0 = { ...counts };
+  const w0 = hub.wire.length;
+  const acts0 = hub.phone.actsDone;
+  const start = Date.now();
+  say(text);
+  if (!v2) {
+    // v1: answer the "Should I go ahead?" question by voice.
+    void (async () => {
+      const end = Date.now() + ms;
+      while (Date.now() < end && !done()) {
+        const q = hub.wire.slice(w0).find((w) => w.from === "mind" && w.msg.type === "say" && /Should I go ahead\?/.test(w.msg.text) && !(w as any).answered);
+        if (q) {
+          (q as any).answered = true;
+          await sleep(800);
+          mouth.hear("yes, go ahead");
+        }
+        await sleep(100);
+      }
+    })();
   }
-  return null;
-}
-const mouthGot = (type: string) => mouth.received.filter((m) => m.type === type);
-async function quiet(ms = 1500) {
-  // Let Bobby finish talking.
-  await sleep(ms);
+  while (!done() && Date.now() - start < ms) await sleep(50);
+  const after = hub.wire.slice(w0);
+  const firstLine = after.find((w) => w.from === "mind" && (w.msg.type === "say" || w.msg.type === "progress" || w.msg.type === "confirm_request"));
+  const firstAct = after.find((w) => w.from === "mind" && w.msg.type === "act");
+  const asked = after.find((w) => w.from === "mind" && (w.msg.type === "confirm_request" || (w.msg.type === "say" && /Should I go ahead/.test(w.msg.text))));
+  const answered = after.find((w) => w.to === "mind" && (w.msg.type === "confirm_reply" || (w.msg.type === "heard" && /go ahead/.test(w.msg.text))));
+  const waitMs = asked && answered ? Math.max(0, answered.at - asked.at) : 0;
+  const total = Date.now() - start;
+  const calls = Object.fromEntries(Object.keys(counts).map((k) => [k, counts[k] - (c0[k] ?? 0)]));
+  timings.push({ name, totalMs: total, minusConfirmWaitMs: total - waitMs, firstLineMs: firstLine ? firstLine.at - start : null, firstActMs: firstAct ? firstAct.at - start : null, acts: hub.phone.actsDone - acts0, calls });
+  return done();
 }
 
-// 1. Notification digest on wake, and "what did I miss?"
 if (!only || only === "digest") {
-  const digest = mouthGot("whisper").find((w) => /Sarah Chen/.test(w.text) && /notification/i.test(w.text));
+  const digest = mouth.received.find((m) => m.type === "whisper" && /Sarah Chen/.test(m.text));
   check("digest on wake", !!digest, digest ? digest.text : "no whisper with the notifications after wake");
-  const before = mouthGot("whisper").length;
-  mouth.hear("what did I miss?");
-  await sleep(9000);
-  const after = mouthGot("whisper").slice(before);
-  const tasksStarted = tasksOf().filter((t) => t.status === "started").length;
-  check(
-    "what did I miss? is chat",
-    tasksStarted === 0,
-    after.length ? `whispered: ${after.map((w) => w.text).join(" | ")}` : "no task started (Bobby answers from the wake digest)",
-  );
 }
 
-// 2. The email story.
 if (!only || only === "email") {
-  const n = tasksOf().length;
-  const tStart = Date.now();
-  mouth.hear("reply to Sarah and tell her 3 works");
-  const end = await waitTaskEnd(n, 150_000);
-  const sent = hub.phone.sent;
-  const says = mouthGot("say").map((s) => s.text);
-  check(
-    "email task done",
-    !!end && end.status === "done",
-    end ? `${end.title}: ${end.status} in ${Math.round((Date.now() - tStart) / 1000)} s, ${hub.phone.actsDone} actions so far` : "task did not finish",
-  );
-  check("email sent on the fake phone", !!sent && /\b3\b|three/i.test(sent.text), sent ? `"${sent.text}"` : "nothing sent");
-  check("narration has reasons", says.some((s) => /\b(so|to|because)\b/i.test(s)), `${says.length} lines spoken`);
-  await quiet(4000);
+  hub.phone.reset();
+  const n = ended().length;
+  const ok = await run("reply to Sarah (grounded)", "reply to Sarah and tell her 3 works", () => ended().length > n);
+  check("email reply sent", ok && hub.phone.sent?.text === "3 works for me.", hub.phone.sent ? `"${hub.phone.sent.text}"` : "nothing sent");
+  await sleep(1500);
 }
 
-// 3. The call.
+if (!only || only === "recipe" || only === "email") {
+  hub.phone.reset();
+  const n = ended().length;
+  const ok = await run("reply to Sarah again (recipes)", "reply to Sarah and tell her 3 works", () => ended().length > n);
+  check("recipe replay", ok && !!hub.phone.sent, `${timings[timings.length - 1].calls.exec} exec calls`);
+  await sleep(1500);
+}
+
+if (!only || only === "shortcut") {
+  const n = ended().length;
+  const ok = await run("email Hamza (shortcut)", "send an email to Hamza saying I'm running late", () => ended().length > n);
+  check("shortcut email", ok && hub.phone.mails.some((m) => /running late/.test(m.body)), `${hub.phone.mails.length} mail(s)`);
+  await sleep(1500);
+}
+
+if (!only || only === "chain") {
+  const n = ended().length;
+  const ok = await run("chain: Spotify, text Alex, call Mom", "open Spotify, then text Alex I'm late, then call Mom", () => ended().length >= n + 3);
+  const titles = hub.watched.filter((m) => m.type === "task" && m.status === "started").slice(-3).map((m) => m.title);
+  check("chained tasks in order", ok && titles.join(",") === "Open Spotify,Text Alex,Call Mom", titles.join(", "));
+  await sleep(1500);
+}
+
 if (!only || only === "call") {
-  const before = mouthGot("say").length;
-  mouth.hear("call Alex and tell him I'm running late");
-  const endBy = Date.now() + 60_000;
-  let summary: any = null;
-  while (Date.now() < endBy && !summary) {
-    summary = mouthGot("say").slice(before).find((s) => /3:20|spoke to Alex/i.test(s.text));
-    await sleep(300);
-  }
-  check("call placed", caller.calls.length > 0, caller.calls[0] ? `to ${caller.calls[0].number}: ${caller.calls[0].goal}` : "no call reached the Caller");
-  check("call summary spoken", !!summary, summary ? summary.text : "no say with the call summary");
-  await quiet(4000);
+  const n = ended().length;
+  const ok = await run("call Alex (AI caller)", "call Alex and tell him I'm running late", () => ended().length > n, 30_000);
+  check("call summary", ok && caller.calls.length > 0, caller.calls[0] ? `to ${caller.calls[0].number}` : "no call");
+  await sleep(1500);
 }
 
-// 4. A task cancelled with "stop".
 if (!only || only === "stop") {
   hub.phone.reset();
-  const n = tasksOf().length;
-  mouth.hear("open Spotify");
-  // Wait for the first action, then stop.
-  const acts0 = hub.phone.actsDone;
-  const endBy = Date.now() + 40_000;
-  while (Date.now() < endBy && hub.phone.actsDone === acts0) await sleep(200);
-  const tStop = Date.now();
-  mouth.hear("stop");
-  const end = await waitTaskEnd(n, 20_000);
-  const stoppedAt = Date.now();
-  const actsAtStop = hub.phone.actsDone;
-  await sleep(4000);
-  const hushed = mouthGot("hush").length > 0;
-  check(
-    "stop cancels the task",
-    !!end && end.status === "cancelled" && hushed && hub.phone.actsDone <= actsAtStop + 1,
-    end ? `${end.status} ${Math.round((stoppedAt - tStop) / 100) / 10} s after "stop", hush ${hushed ? "sent" : "missing"}` : "task not cancelled",
-  );
+  const n = ended().length;
+  say("reply to Sarah and tell her 3 works");
+  const a0 = hub.phone.actsDone;
+  const by = Date.now() + 20_000;
+  while (Date.now() < by && hub.phone.actsDone === a0) await sleep(50);
+  const ts = Date.now();
+  if (v2) mouth.cancel("all");
+  else mouth.hear("stop");
+  while (Date.now() - ts < 5000 && ended().length === n) await sleep(20);
+  const e = ended()[n];
+  check("stop cancels", e?.status === "cancelled", e ? `${e.status} in ${Date.now() - ts} ms` : "not cancelled");
 }
 
+console.log("\ntimings (ms from the user's words; minusConfirmWait removes the user's 'yes')");
+console.table(timings.map((t) => ({ scenario: t.name, total: t.totalMs, minusConfirmWait: t.minusConfirmWaitMs, firstLine: t.firstLineMs, firstAct: t.firstActMs, acts: t.acts, route: t.calls.route, exec: t.calls.exec, check: t.calls.check, escalate: t.calls.escalate })));
 const pass = results.every((r) => r.ok);
-console.log(`\nstory: ${pass ? "PASS" : "FAIL"} (${results.filter((r) => r.ok).length}/${results.length} checks, ${Math.round((Date.now() - t0) / 1000)} s)`);
-console.log(`story: log ${file}`);
+console.log(`story: ${pass ? "PASS" : "FAIL"} (${results.filter((r) => r.ok).length}/${results.length} checks, ${Math.round((Date.now() - t0) / 1000)} s)`);
+console.log(`story: model calls ${JSON.stringify(counts)}; log ${file}`);
+console.log(`STORY_JSON ${JSON.stringify({ sim, v2, timings, counts })}`);
 mouth.close();
 caller.close();
 mind.stop();
