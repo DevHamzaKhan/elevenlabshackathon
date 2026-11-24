@@ -100,4 +100,75 @@ export type ScreenNode = {
   tap?: boolean;
   edit?: boolean;
   scroll?: boolean;
+  /** v2 Hands extras (any may be missing). */
+  id?: string;
+  key?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  focused?: boolean;
+  selected?: boolean;
+  password?: boolean;
+  scrollDirs?: string[];
+};
+
+// ---------- v2: plans, checks and acts ----------
+
+/** Where Hands should act. `n` is valid only for the screen it came from; the rest are stable. */
+export type Target = { n?: number; id?: string; key?: string; text?: string; x?: number; y?: number };
+
+/** One Hands `act` body (without type/to/id). See mind/PROTOCOL-V2.md for `open`. */
+export type HandsAct = {
+  do: string;
+  on?: Target;
+  text?: string;
+  dir?: string;
+  name?: string;
+  app?: string;
+  ms?: number;
+  uri?: string;
+  action?: string;
+  pkg?: string;
+  extras?: Record<string, string | number | boolean | string[]>;
+  type_mime?: string;
+};
+
+/** A condition checked in code against a screen. Every given field must hold. */
+export type Check = {
+  /** Package or app label in front (substring, case-insensitive). */
+  app?: string;
+  /** At least one of these is visible (text, description or hint contains it, ignoring case). */
+  text_present?: string[];
+  /** None of these is visible. */
+  text_absent?: string[];
+  /** A field (found by key, id or label) holds this value. */
+  field?: { key?: string; id?: string; text?: string; value: string };
+};
+
+/** `done_when`: a code check plus words for the cheap model check when code can't tell. */
+export type DoneWhen = Check & { describe: string };
+
+export type Risk = "safe" | "irreversible";
+
+export type SubgoalSpec = {
+  goal: string;
+  done_when: DoneWhen;
+  risk: Risk;
+  /** Deterministic acts to try first (from a shortcut). On failure the grounded executor takes over. */
+  direct?: HandsAct[];
+  /** For irreversible sub-goals: the one-line summary the user confirms ("Email to Sam: 'I'm late'"). */
+  confirm?: string;
+  /** Bobby's line when this sub-goal starts. */
+  say?: string;
+};
+
+export type TaskPlan = {
+  kind: "phone" | "call";
+  title: string;
+  goal: string;
+  subgoals: SubgoalSpec[];
+  shortcut?: string;
+  slots?: Record<string, string>;
+  /** Who the task talks to, for the unknown_contacts confirm policy. */
+  recipient?: { name: string; known: boolean };
+  call?: { name: string; number: string; goal: string };
 };
