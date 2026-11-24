@@ -10,6 +10,8 @@
 // Progress comes from polling Twilio's call resource; the transcript and summary come from the
 // ElevenLabs conversation once the call has ended. Every call ends in exactly one call_result.
 import { connectHub, type Frame, type Hub, type HubOptions } from "./hub";
+import { liveCall, type LiveCallDeps } from "./caller-live";
+import { callerChoice } from "./vendors";
 
 export const E164 = /^\+[1-9]\d{6,14}$/;
 export const ELEVENLABS_API = "https://api.elevenlabs.io";
@@ -45,7 +47,7 @@ export function dryRunCall(msg: Frame, allowed: string[]): Frame[] {
     {
       type: "call_result", re, ok: true,
       summary: "Dry run: no call was placed. They said that works for them.",
-      transcript: [{ who: "me", text: goal || "Hi, it's me." }, { who: "them", text: "Sure, that works." }],
+      transcript: [{ who: "me", text: `Hi, this is Bobby, an AI assistant calling for my owner. ${goal || "Just saying hello."}` }, { who: "them", text: "Sure, that works." }],
     },
   ];
 }
@@ -287,29 +289,69 @@ async function findConversation(
 
 // ---------------------------------------------------------------- entry point
 
+/**
+ * Connects as `caller`. On `call`: dry run (CALLER_DRY_RUN, default 1), else CALLER_VENDOR
+ * "openai" (default: GPT-Live over SIP, caller-live.ts) or "elevenlabs" (the cloned-voice caller
+ * above). On `hangup` {re}: that call is ended and still gets exactly one call_result.
+ */
 export function startCallerWith(
   o: Omit<HubOptions, "role" | "onMessage"> & {
     env: Record<string, string | undefined>;
     stepMs?: number;
     callDeps?: Partial<Omit<CallDeps, "env" | "send" | "log" | "cancelled">>;
+    liveDeps?: Partial<Omit<LiveCallDeps, "env" | "send" | "log" | "cancelled">>;
   },
 ): { stop(): void; hub: Hub } {
-  const timers = new Set<ReturnType<typeof setTimeout>>();
+  const timers = new Map<string, Set<ReturnType<typeof setTimeout>>>();
+  const hungUp = new Set<string>();
   let stopped = false;
   const hub: Hub = connectHub({
     ...o,
     role: "caller",
     onMessage: (msg) => {
+      if (msg.type === "hangup") {
+        const re = String(msg.re ?? "");
+        hungUp.add(re);
+        const pending = timers.get(re);
+        if (pending?.size) {
+          // A dry-run call still in progress: stop it and end it once.
+          pending.forEach(clearTimeout);
+          timers.delete(re);
+          hub.send({ type: "call_status", re, status: "ended" });
+          hub.send({ type: "call_result", re, ok: false, error: "cancelled" });
+        }
+        o.log(`caller: hangup for ${re}`);
+        return;
+      }
       if (msg.type !== "call") return;
+      const re = String(msg.id ?? "");
       if (isDryRun(o.env)) {
-        dryRunCall(msg, allowlist(o.env)).forEach((f, i) => {
-          const t = setTimeout(() => { timers.delete(t); hub.send(f); }, i * (o.stepMs ?? 700));
-          timers.add(t);
+        const set = new Set<ReturnType<typeof setTimeout>>();
+        timers.set(re, set);
+        const frames = dryRunCall(msg, allowlist(o.env));
+        frames.forEach((f, i) => {
+          const t = setTimeout(() => {
+            set.delete(t);
+            if (i === frames.length - 1) timers.delete(re);
+            hub.send(f);
+          }, i * (o.stepMs ?? 700));
+          set.add(t);
         });
         return;
       }
-      void realCall(msg, { ...o.callDeps, env: o.env, send: (f) => hub.send(f), log: o.log, cancelled: () => stopped });
+      const cancelled = () => stopped || hungUp.has(re);
+      const send = (f: Frame) => hub.send(f);
+      if (callerChoice(o.env) === "elevenlabs") void realCall(msg, { ...o.callDeps, env: o.env, send, log: o.log, cancelled });
+      else void liveCall(msg, { ...o.liveDeps, env: o.env, send, log: o.log, cancelled });
     },
   });
-  return { hub, stop: () => { stopped = true; timers.forEach(clearTimeout); hub.stop(); } };
+  return {
+    hub,
+    stop: () => {
+      stopped = true;
+      for (const s of timers.values()) s.forEach(clearTimeout);
+      timers.clear();
+      hub.stop();
+    },
+  };
 }

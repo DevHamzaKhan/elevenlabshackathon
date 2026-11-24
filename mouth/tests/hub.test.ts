@@ -78,3 +78,21 @@ test("startCaller connects as caller and answers a call over the hub", async () 
   c.stop();
   wss.close();
 });
+
+test("hangup {re} ends a dry-run call in progress with exactly one call_result (cancelled)", async () => {
+  const got: Frame[] = [];
+  const wss = server(8814, (ws) => {
+    ws.send(JSON.stringify({ type: "welcome", v: 1 }));
+    ws.on("message", (d) => got.push(JSON.parse(String(d))));
+    ws.send(JSON.stringify({ type: "call", to: "caller", id: "m9", number: "+14155550123", goal: "hi", context: "c" }));
+    setTimeout(() => ws.send(JSON.stringify({ type: "hangup", to: "caller", re: "m9" })), 60);
+  });
+  const c = startCallerWith({ hubUrl: "ws://127.0.0.1:8814", token: "t", log: () => {}, env: { CALL_ALLOWLIST: "+14155550123" }, WebSocketImpl: WS, stepMs: 100 });
+  await wait(500);
+  const results = got.filter((f) => f.type === "call_result");
+  assert.equal(results.length, 1);
+  assert.deepEqual([results[0].ok, results[0].error], [false, "cancelled"]);
+  assert.ok(got.some((f) => f.type === "call_status" && f.status === "ended"));
+  c.stop();
+  wss.close();
+});
