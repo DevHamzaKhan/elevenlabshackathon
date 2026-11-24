@@ -1,5 +1,16 @@
 # Merging bobby-mind into the final app
 
+## v2 (OpenAI), 2026-11-24: what changed for the app
+
+- **No runtime dependency at all.** `@anthropic-ai/sdk` is gone; `src/model.ts` calls the OpenAI Responses API with the global `fetch`. The React Refresh shim in `app/index.ts` and the `@anthropic-ai/sdk` entries in `app/package.json` / `app/tsconfig.json` are no longer needed (harmless; remove when convenient).
+- **Env** (through `config.env`): `OPENAI_API_KEY` replaces `ANTHROPIC_API_KEY`. Optional: `MIND_ROUTER_MODEL`, `MIND_EXEC_MODEL`, `MIND_ESCALATE_MODEL`, `MIND_ROUTER_EFFORT`, `MIND_EXEC_EFFORT`, `MIND_ESCALATE_EFFORT`, `MIND_CHECK_EFFORT`, `MIND_CONFIRM` (`always` default), `MIND_OPENAI_BASE_URL`. `CONTACTS` values may now carry an email: `Hamza=+14155550111|hamza@example.com`.
+- **`config.storage`** (optional, AsyncStorage-shaped `getItem`/`setItem`) persists memory and recipes. The app passes a SecureStore-backed store (`mindStorage` in `app/src/settings.ts`; done). AsyncStorage would also work if it is ever added.
+- **Network:** HTTPS to `api.openai.com` (was `api.anthropic.com`).
+- **Hands:** the Mind now sends v2 fields (`open`, `since`, `compact`, `image`, `then_screen`, `fast`, `caps`, `key`/`id` targets) and falls back when Hands doesn't support them (`PROTOCOL-V2.md`).
+- **Mouth:** a v2 Mouth (OpenAI Realtime) talks to the Mind with `request`/`confirm_reply`/...; a v1 Mouth keeps working.
+
+The v1 notes below still apply except where they mention the Anthropic SDK.
+
 **Ready to swap in.** The two bobby-mind items in `app/MERGE-ISSUES.md` (checked before the Mind landed) are resolved:
 
 1. `src/index.ts` exists and exports `startMind(config: {hubUrl, token, env, log, hints}): {stop()}`. In `app/src/packages.ts`, replace the stand-in with `export { startMind } from 'bobby-mind';`.

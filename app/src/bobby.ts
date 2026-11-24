@@ -8,6 +8,7 @@ import {
   ensureToken,
   loadEnv,
   loadSwitches,
+  mindStorage,
   parseEnv,
   saveEnv,
   saveSwitch,
@@ -50,7 +51,7 @@ function partConfig(part: Part) {
 function startPart(part: Part) {
   if (handles[part]) return;
   try {
-    if (part === 'mind') handles.mind = startMind({ ...partConfig('mind'), hints });
+    if (part === 'mind') handles.mind = startMind({ ...partConfig('mind'), hints, storage: mindStorage });
     if (part === 'mouth') handles.mouth = startMouth(partConfig('mouth'));
     if (part === 'caller') handles.caller = startCaller(partConfig('caller'));
   } catch (e) {

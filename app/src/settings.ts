@@ -94,3 +94,11 @@ export function decodeBase64Url(data: string): string {
   }
   return out;
 }
+
+/** The Mind's memory and recipes (bobby-mind KeyValueStore), in secure storage. SecureStore keys
+ *  allow only letters, digits, ".", "-" and "_". Values are small (facts, outcomes, <= 60 recipes). */
+const mindKey = (k: string) => `mind_${k.replace(/[^A-Za-z0-9._-]/g, '_')}`;
+export const mindStorage = {
+  getItem: (k: string) => SecureStore.getItemAsync(mindKey(k)),
+  setItem: (k: string, v: string) => SecureStore.setItemAsync(mindKey(k), v),
+};

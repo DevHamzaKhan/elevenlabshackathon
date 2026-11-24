@@ -38,20 +38,21 @@ Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 
 - Backing up Stage: extras 1 (hints for six apps), 2 (app icon), 3 (README draft + architecture diagram), 5 (cursor preview) and two experiments (voice-cursor timing strip, record button) done. Details in `stage/STATUS.md`.
 
 ## Doing now
-- Nothing. Review fixes are pushed; `check.sh` and `npm run story` (8/8) pass.
+- v2 rebuild (M1-M9) is committed on the worktree branch, not pushed; `check.sh` (74 tests) and `npm run story:sim` (7/7) pass. Waiting on an `OPENAI_API_KEY` for real runs.
 
 ## Open
+0. v2 with real models: run `npm run story` (real OpenAI) and tune the router/executor prompts on its logs; then on the phone with the v2 Hands (open intents, then_screen, keys). Check the contract questions in `PROTOCOL-V2.md`.
 1. Tune against Hamza's real Hands hub once the phone build is up (real screens have many more nodes and real labels). Needs the phone, so it waits for stitching day.
 2. Stage extra 4: fix hints from `hands/HINTS-CHECK.md` once Hands writes it (it doesn't exist yet).
 3. Optional Stage experiments not done: phone-shaped cursor panel, sound effects, hints for more apps.
 
 ## Needs the human
 - **Add `OPENAI_API_KEY` to the root `.env`** (the Mind now runs on OpenAI; `ANTHROPIC_API_KEY` is no longer read). Nothing real has been called yet: every v2 check runs against fakes.
-- Nothing blocking. Root `.env` has `ANTHROPIC_API_KEY`, `CONTACTS` (Hamza) and a generated `HUB_TOKEN`.
+- Root `.env` has `ANTHROPIC_API_KEY` (now unused), `CONTACTS` and `HUB_TOKEN`. For the email shortcut to fill the To field, give contacts an email: `Hamza=+1...|hamza@example.com`.
 - Your working copy of `env/mind.env` (a committed template) holds your real API key. It is not committed; please clear it there and keep the key only in the root `.env`, so nobody `git add`s it by accident.
 
 ## Try it yourself
-- `cd mind && npm install && npm run story` (about 70 s, uses the real model, prints PASS/FAIL and the log path).
+- `cd mind && npm ci && npm run story:sim` (about 35 s, no key: simulated latencies, prints the timing table). With a key: `npm run story`.
 - `npm run story -- --flaky --flaky-rate 0.35 --only email` to watch it recover from failed taps and pop-ups.
 - By hand: `npm run hub`, `npm run mind`, `npm run caller`, `npm run mouth` in four terminals, then type to the mouth.
 
@@ -75,6 +76,18 @@ Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 
 8. **Small things.** "Bye" gives Bobby 2.5 s to answer before `sleep`. Request ids carry a random session part, so a late reply to an old Mind can't match a new request. The system prompt uses the 1-hour cache life.
 
 ## Decisions
+- v2 models (developers.openai.com/api/docs/models, 2026-11-24): router and executor `gpt-6-luna` ("our most efficient model", $0.10/$0.50 per 1M, cached input $0.01, image input, structured outputs, prompt caching, effort `none`..`max`; the latency guide names it for routing-type tasks). Router at effort `none` (classification + slot filling), executor at `low` (grounded on a text tree, a few actions). Escalation `gpt-6.1-terra` ("visual reasoning, precise computer use", $1/$5) at `medium`. `gpt-6.2-sol` is the alternative for escalation via `MIND_ESCALATE_MODEL` if Terra struggles. All ids in env.
+- Responses API over plain fetch, not the SDK: nothing to shim in React Native, one small file. Non-streaming: React Native's fetch doesn't stream bodies, and first-action latency is attacked instead by the local shortcut match (0 calls), batching (4 actions per call) and recipes (0 exec calls).
+- Prompt caching: the static instructions go first as a developer message (the implicit breakpoint lands after them), one `prompt_cache_key` per role, effort fixed per role so the prefix never changes.
+- Strict JSON schemas everywhere (no tool calling in the Mind): every call wants exactly one structured answer.
+- A confident local shortcut match skips the router entirely rather than racing it: simpler, and the router can't contradict a task already under way. Low-confidence or unknown parts send the whole utterance to the router.
+- Screens: no pixel coordinates for the executor; Hands' `since`/hash so unchanged screens cost no nodes; no diffs to the model (each call is stateless, so a diff would refer to a screen the model never saw; numbering would be ambiguous).
+- Node numbers only for the first action of a batch; later actions and recipes use key, resource id or a unique label. A batch stops at the first failed expect.
+- Confirm in the Mind, not the voice model: `confirm_reply.ok` AND an affirmative raw transcript; no Mouth means no irreversible step. v1 Mouths get the question as a `say` and the next press as the answer.
+- Recipes key on the app in front when the sub-goal starts, plus app version when Hands sends one; slot values become `{{slot}}`.
+- Storage: injected `KeyValueStore`; the app uses SecureStore (already installed) instead of adding AsyncStorage (a new native module and rebuild).
+- The v1 `heard` debounce stays for v1 Mouths only; a v2 Mouth's `heard` is logged and kept as the raw transcript, never routed.
+- Calls are tasks in the queue (`call.ai` shortcut) and are confirmed like sends; `stop` during a call sends the new `hangup`.
 - Structured outputs (`output_config.format`) instead of tools: each call needs exactly one JSON answer, and forced `tool_choice` isn't allowed on this model.
 - Each step call is stateless (cached system prompt + one user turn with task, plan, last 10 actions and the screen), rather than a growing conversation: keeps requests small and latency flat.
 - The plan is written in the same call that decides to start a task, saving one model call per task.
@@ -92,4 +105,5 @@ Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 
 
 ## Contract questions
 - Hands sends an extra `hint` field on nodes (an empty field's placeholder). The Mind now reads it. Worth adding to the contract's `screen_result` so the other parts know.
-- There is no Mind → Caller message to hang up a call in progress. "Stop" during a call can only tell Bobby. Suggest `{"type":"hangup","to":"caller","re":"m9"}`.
+- Hang-up: now sent as `{"type":"hangup","to":"caller","re":"m9"}` and handled by the v2 Caller. Please add it to the contract.
+- v2 messages (Mouth and Caller) and the Hands additions the Mind relies on are in `mind/PROTOCOL-V2.md`, with four open questions at the end.
