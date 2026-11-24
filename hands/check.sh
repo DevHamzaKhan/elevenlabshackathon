@@ -44,7 +44,7 @@ step "hub routing test against fakehub"
 if [[ ! -d "$TOOLS/node_modules" ]]; then (cd "$TOOLS" && npm install --silent) || fail "npm install in tools/"; fi
 node "$TOOLS/hub-test.mjs" --fake >"$LOGS/hands-check-hubtest-fake.log" 2>&1 \
   || { tail -30 "$LOGS/hands-check-hubtest-fake.log"; fail "hub-test.mjs --fake"; }
-grep -E '^# (pass|fail)' "$LOGS/hands-check-hubtest-fake.log" | tr '\n' ' '; echo
+grep -E '^(#|ℹ) (pass|fail)' "$LOGS/hands-check-hubtest-fake.log" | tr '\n' ' '; echo
 
 step "example app: install and prebuild"
 cd "$EX" || fail "no $EX"
@@ -120,6 +120,6 @@ grep -E '^app |: ok|ERROR' "$LOGS/hands-check-drive.log" | head -8
 step "hub routing test against the phone"
 node "$TOOLS/hub-test.mjs" --url ws://127.0.0.1:8765 >"$LOGS/hands-check-hubtest-phone.log" 2>&1 \
   || { tail -30 "$LOGS/hands-check-hubtest-phone.log"; fail "hub-test.mjs on the phone"; }
-grep -E '^# (pass|fail)' "$LOGS/hands-check-hubtest-phone.log" | tr '\n' ' '; echo
+grep -E '^(#|ℹ) (pass|fail)' "$LOGS/hands-check-hubtest-phone.log" | tr '\n' ' '; echo
 
 echo; echo "PASS"

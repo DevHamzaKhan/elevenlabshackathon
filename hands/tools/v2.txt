@@ -1,0 +1,24 @@
+# Protocol additions, scripted (drive.mjs --script tools/v2.txt). Safe: nothing is sent or called.
+# Runs against the phone, the emulator or fakehub.mjs.
+caps
+expect type=caps_result
+home
+screen
+expect hash
+screen since
+expect same=true
+screen compact
+# open: a maps search and a web page (VIEW), a mail draft (SENDTO; only opens a compose screen)
+open geo:0,0?q=coffee --fast
+expect ok=true
+open https://example.com --then --compact
+expect ok=true
+expect screen.hash
+expect app
+open mailto:sam@example.com?subject=Hi&body=Hello
+expect app
+home
+# An unknown scheme nobody handles is not_found
+?open bobbynothing://x
+expect error=not_found
+home

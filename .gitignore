@@ -2,6 +2,12 @@
 .env
 .env.*
 local.properties
+# Filled-in copies of the templates in env/. The templates themselves stay tracked
+# and must keep empty values: put real keys in the root .env, never in env/*.env.
+env/*.local
+env/*.local.env
+env/*.filled.env
+*.secret
 private/
 
 # Dependencies, build output and caches

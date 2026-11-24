@@ -8,6 +8,12 @@
       ],
       "@elevenlabs/client": [
         "./node_modules/@elevenlabs/client"
+      ],
+      "@livekit/react-native-webrtc": [
+        "./node_modules/@livekit/react-native-webrtc"
+      ],
+      "@livekit/react-native": [
+        "./node_modules/@livekit/react-native"
       ]
     }
   }

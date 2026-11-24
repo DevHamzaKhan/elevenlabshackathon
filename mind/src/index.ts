@@ -1,14 +1,17 @@
 // bobby-mind: the entry point the final app calls. Everything arrives through `config`.
 // Nothing under src/ reads files or environment variables, or imports Node-only modules.
 
-import { Brain, parseContacts } from "./brain";
+import { Brain, type ConfirmPolicy } from "./brain";
+import { parseContactBook } from "./contacts";
 import { HubClient } from "./hub";
-import { DEFAULT_EFFORT, DEFAULT_MODEL, makeModel } from "./model";
+import { DEFAULT_MODELS, makeModel, modelOptionsFromEnv } from "./model";
 import { DEFAULT_TIMING, type MindConfig, type ModelFn } from "./types";
 
 export type { MindConfig, ModelFn, ModelRequest, ModelReply } from "./types";
-export { makeModel } from "./model";
-export { describeScreen } from "./screen";
+export { makeModel, modelOptionsFromEnv, DEFAULT_MODELS, DEFAULT_EFFORTS } from "./model";
+export { describeScreen, describeCompact } from "./screen";
+export { InMemoryStore, type KeyValueStore } from "./memory";
+export { ShortcutIndex } from "./shortcuts";
 
 /** `ws://127.0.0.1:8765` + role and token, unless hubUrl already names the role. */
 export function mindUrl(hubUrl: string, token: string): string {
@@ -18,19 +21,23 @@ export function mindUrl(hubUrl: string, token: string): string {
   return `${withRole}${withRole.includes("?") ? "&" : "?"}token=${encodeURIComponent(token ?? "")}`;
 }
 
-export function startMind(config: MindConfig): { stop(): void } {
+function confirmPolicy(v: string | undefined, log: (l: string) => void): ConfirmPolicy {
+  const p = (v ?? "").trim().toLowerCase();
+  if (!p) return "always";
+  if (p === "always" || p === "unknown_contacts" || p === "never") return p;
+  log(`mind: MIND_CONFIRM="${v}" is not always|unknown_contacts|never; using always`);
+  return "always";
+}
+
+export function startMind(config: MindConfig): { stop(): void; brain: Brain } {
   const log = config.log ?? (() => {});
   const env = config.env ?? {};
   const timing = { ...DEFAULT_TIMING, ...(config.timing ?? {}) };
   const model: ModelFn =
     config.model ??
-    makeModel({
-      apiKey: env.ANTHROPIC_API_KEY ?? "",
-      model: env.MIND_MODEL || DEFAULT_MODEL,
-      effort: env.MIND_EFFORT || DEFAULT_EFFORT,
-      log,
-    });
-  if (!config.model && !env.ANTHROPIC_API_KEY) log("mind: ANTHROPIC_API_KEY is missing; model calls will fail");
+    makeModel({ ...modelOptionsFromEnv(env), log });
+  if (!config.model && !env.OPENAI_API_KEY) log("mind: OPENAI_API_KEY is missing; model calls will fail");
+  const mo = modelOptionsFromEnv(env).models ?? {};
 
   let brain: Brain | null = null;
   const hub = new HubClient(
@@ -48,12 +55,17 @@ export function startMind(config: MindConfig): { stop(): void } {
     model,
     log,
     hints: config.hints ?? [],
-    contacts: parseContacts(env.CONTACTS),
+    contacts: parseContactBook(env.CONTACTS),
     timing,
+    confirm: confirmPolicy(env.MIND_CONFIRM, log),
+    storage: config.storage,
   });
   hub.start();
-  log(`mind: started (model ${env.MIND_MODEL || DEFAULT_MODEL}, effort ${env.MIND_EFFORT || DEFAULT_EFFORT}, ${config.hints?.length ?? 0} hints)`);
+  log(
+    `mind: started (router ${mo.router || DEFAULT_MODELS.router}, exec ${mo.exec || DEFAULT_MODELS.exec}, escalate ${mo.escalate || DEFAULT_MODELS.escalate}, ${config.hints?.length ?? 0} hints)`,
+  );
   return {
+    brain: brain!,
     stop() {
       brain?.stop();
       hub.stop();

@@ -1,5 +1,5 @@
 // bobby-mind example: proves the package runs in Expo Go.
-// 1) one real Claude call through makeModel(), 2) startMind() connected to a hub.
+// 1) one real model call through makeModel(), 2) startMind() connected to a hub.
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { Button, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -7,7 +7,7 @@ import { makeModel, startMind } from 'bobby-mind';
 
 // Example app only: Expo inlines EXPO_PUBLIC_* from example/.env at bundle time.
 // The package itself never reads process.env; the final app passes keys through config.env.
-const API_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '';
+const API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY ?? '';
 // The laptop's fake hub, as seen from the Android emulator.
 const HUB_URL = process.env.EXPO_PUBLIC_MIND_HUB_URL || 'ws://10.0.2.2:8765';
 
@@ -33,7 +33,7 @@ export default function App() {
 
   const runModel = async () => {
     if (!API_KEY) {
-      setModel('model: EXPO_PUBLIC_ANTHROPIC_API_KEY missing in example/.env');
+      setModel('model: EXPO_PUBLIC_OPENAI_API_KEY missing in example/.env');
       return;
     }
     setModel('model: calling…');
@@ -59,7 +59,7 @@ export default function App() {
     mind.current = startMind({
       hubUrl: HUB_URL,
       token: 'dev',
-      env: { ANTHROPIC_API_KEY: API_KEY },
+      env: { OPENAI_API_KEY: API_KEY },
       log,
       hints: [],
     });

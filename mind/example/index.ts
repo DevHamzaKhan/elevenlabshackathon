@@ -1,6 +1,6 @@
 import { registerRootComponent } from 'expo';
 
-// Load bobby-mind (and @anthropic-ai/sdk under it) while React Refresh is hidden.
+// Load bobby-mind while React Refresh is hidden (needed while it used @anthropic-ai/sdk; harmless now).
 // In dev builds Metro's require() hands every freshly loaded module's exports to React Refresh,
 // reading each export getter. The SDK has circular imports (beta/messages <-> BetaToolRunner),
 // so one getter is read before its module has finished loading and throws

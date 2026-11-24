@@ -8,6 +8,7 @@ import {
   ensureToken,
   loadEnv,
   loadSwitches,
+  mindStorage,
   parseEnv,
   saveEnv,
   saveSwitch,
@@ -50,7 +51,7 @@ function partConfig(part: Part) {
 function startPart(part: Part) {
   if (handles[part]) return;
   try {
-    if (part === 'mind') handles.mind = startMind({ ...partConfig('mind'), hints });
+    if (part === 'mind') handles.mind = startMind({ ...partConfig('mind'), hints, storage: mindStorage });
     if (part === 'mouth') handles.mouth = startMouth(partConfig('mouth'));
     if (part === 'caller') handles.caller = startCaller(partConfig('caller'));
   } catch (e) {
@@ -103,7 +104,7 @@ export async function setSwitch(part: Part, on: boolean) {
 
 /** Settings the real packages read (by name; see mind/MERGE.md and mouth/MERGE.md). Shown as a
  *  warning on the settings screen when not stored; they don't block waking. */
-export const EXPECTED_ENV = ['ANTHROPIC_API_KEY', 'ELEVENLABS_BOBBY_AGENT_ID', 'HUB_TOKEN'];
+export const EXPECTED_ENV = ['OPENAI_API_KEY', 'HUB_TOKEN'];
 
 /** Which required settings are missing (empty means complete). */
 export function missing(): string[] {

@@ -65,8 +65,26 @@ class CursorOverlay(private val service: AccessibilityService) {
     view = null
   }
 
-  /** Glides the hotspot to screen point ([tx], [ty]) and blocks until it arrives. */
-  fun glideTo(tx: Float, ty: Float, screenW: Int, screenH: Int) {
+  /**
+   * Hides the whole overlay (cursor and caption) so a screenshot doesn't show it, and blocks
+   * until a frame without it has been drawn. Undo with [endCapture].
+   */
+  fun beginCapture() {
+    val done = CountDownLatch(1)
+    main.post {
+      val v = view
+      if (v == null) { done.countDown(); return@post }
+      v.visibility = View.INVISIBLE
+      // Two frames: one to draw the hidden overlay, one for the compositor to pick it up.
+      v.postOnAnimation { v.postOnAnimation { done.countDown() } }
+    }
+    done.await(300, TimeUnit.MILLISECONDS)
+  }
+
+  fun endCapture() = main.post { view?.visibility = View.VISIBLE }
+
+  /** Glides the hotspot to screen point ([tx], [ty]) and blocks until it arrives. [fast]: 120-250 ms. */
+  fun glideTo(tx: Float, ty: Float, screenW: Int, screenH: Int, fast: Boolean = false) {
     val done = CountDownLatch(1)
     var ms = 0L
     main.post {
@@ -77,7 +95,7 @@ class CursorOverlay(private val service: AccessibilityService) {
       val wasHidden = v.cursorAlpha < 0.05f || curX < 0
       if (curX < 0) { curX = screenW / 2f; curY = screenH * 0.62f }
       val fx = curX; val fy = curY
-      ms = TargetMatcher.glideMs(fx, fy, tx, ty, screenW, screenH)
+      ms = TargetMatcher.glideMs(fx, fy, tx, ty, screenW, screenH, fast)
       if (wasHidden) { v.cursorAlpha = 1f; v.invalidate() } else v.cursorAlpha = 1f
       // A gentle arc: the control point sits off the straight line, so the motion feels natural.
       val dx = tx - fx; val dy = ty - fy

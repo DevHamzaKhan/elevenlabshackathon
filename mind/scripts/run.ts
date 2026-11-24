@@ -10,7 +10,7 @@ const env = loadEnv();
 const hints = loadHints(env.HINTS_DIR);
 const { file, log } = openLog("mind", (l) => !l.startsWith("model>"));
 console.log(`mind: log file ${file}`);
-console.log(`mind: key ${redact(env.ANTHROPIC_API_KEY)}, ${hints.length} hint files, hub ${hubUrl}`);
+console.log(`mind: key ${redact(env.OPENAI_API_KEY)}, ${hints.length} hint files, hub ${hubUrl}`);
 
 const mind = startMind({ hubUrl, token: env.HUB_TOKEN ?? "dev", env, hints, log });
 process.on("SIGINT", () => {

@@ -6,6 +6,7 @@
 //   node hands/tools/drive.mjs --script steps.txt    # run commands from a file, exit 1 on first failure
 //   node hands/tools/drive.mjs -e screen -e "point Gmail"            # run commands from the command line
 //   node hands/tools/drive.mjs --screenshot shots/   # save adb screencap after every action
+//   In scripts, a line "?cmd" may fail without stopping the script (check it with `expect`).
 //
 // Token: HUB_TOKEN from the environment, else the repo-root .env, else "dev".
 // Type `help` at the prompt for the command list.
@@ -16,8 +17,13 @@ import { createInterface } from 'node:readline';
 import { hubToken, roleUrl, setting, sleep } from './common.mjs';
 
 const HELP = `commands:
-  screen                       read the screen, print a table (flags t=tap e=edit s=scroll)
+  screen [image [file]] [since] [compact]
+                               read the screen, print a table (flags t=tap e=edit s=scroll, then
+                               c=checked o=unchecked d=disabled f=focused). since: send the last hash
+                               (prints "same" if unchanged). compact: ask for the compact node form
+  caps                         device capabilities (caps_result)
   tap <target>                 target: Reply | "Reply all" | 540 1200 | #12 (node n from last screen)
+                               | id:compose_button | key:k1a2b3c4d
   long <target>                long press
   point <target>               glide the cursor there, touch nothing
   type <text>                  type into the focused field
@@ -25,6 +31,13 @@ const HELP = `commands:
   swipe left|right|up|down [target]
   home | back | recents | notifications | enter     (or: key <name>)
   launch <app>                 open an app by label or package
+  open <uri> [action=A] [pkg=P] [mime=M] [extra.K=V]...
+                               start an intent: open mailto:a@b.c?subject=Hi | open geo:0,0?q=cafe
+                               | open action=android.intent.action.SET_TIMER extra.android.intent.extra.alarm.LENGTH=60
+                               (V: number, true/false, else string)
+  ... --fast --then --compact  on any act: quick glide, then_screen (reply carries the screen), compact
+  expect <path>[=value|~regex] check the last reply (e.g. expect same=true, expect why=stale,
+                               expect screen.hash, expect app~gm); fails the script if not
   wait <ms>                    Hands waits that long
   cursor on|off                show or hide the cursor now (no reply expected)
   peers                        print the last peers frame
@@ -100,6 +113,7 @@ let connected = null; // promise resolved on welcome (of the current socket)
 let up = false; // true between welcome and close
 let lastPeers = null;
 let lastScreen = null;
+let lastReply = null;
 let stopping = false;
 let backoff = 0;
 const BACKOFF = [1000, 2000, 5000];
@@ -191,10 +205,13 @@ async function request(frame) {
 
 const trunc = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 function screenTable(r) {
-  const lines = [`app ${r.app}  size ${(r.size || []).join('x')}  ${r.nodes.length} nodes`];
-  lines.push('   n tes cls            label                                                  bounds');
-  for (const n of r.nodes) {
-    const f = `${n.tap ? 't' : '-'}${n.edit ? 'e' : '-'}${n.scroll ? 's' : '-'}`;
+  if (r.same) return `app ${r.app}  size ${(r.size || []).join('x')}  same (hash ${r.hash}): nothing changed`;
+  if (r.locked) return `LOCKED (secure lock screen): no nodes`;
+  const nodes = r.nodes || [];
+  const lines = [`app ${r.app}  size ${(r.size || []).join('x')}  ${nodes.length} nodes${r.hash ? `  hash ${r.hash}` : ''}`];
+  lines.push('   n tesx cls            label                                                  bounds');
+  for (const n of nodes) {
+    const f = `${n.tap ? 't' : '-'}${n.edit ? 'e' : '-'}${n.scroll ? 's' : '-'}${n.checked === true ? 'c' : n.checked === false ? 'o' : n.disabled ? 'd' : n.focused ? 'f' : '-'}`;
     let label = n.text && n.desc && n.text !== n.desc ? `${n.text} | ${n.desc}` : (n.text || (n.desc ? `[${n.desc}]` : ''));
     if (!label && n.hint) label = `(hint: ${n.hint})`;
     lines.push(`${String(n.n).padStart(4)} ${f} ${trunc(n.cls || '', 14).padEnd(14)} ${trunc(label, 54).padEnd(54)} ${JSON.stringify(n.bounds)}`);
@@ -202,11 +219,16 @@ function screenTable(r) {
   return lines.join('\n');
 }
 
-async function getScreen(image = false) {
-  const { reply, ms } = await request({ type: 'screen', to: 'hands', ...(image ? { image: true } : {}) });
+async function getScreen(image = false, opts = {}) {
+  const frame = { type: 'screen', to: 'hands', ...(image ? { image: true } : {}) };
+  if (opts.since) frame.since = lastScreen?.hash || 'none';
+  if (opts.compact) frame.compact = true;
+  const { reply, ms } = await request(frame);
+  lastReply = reply;
   if (reply.type !== 'screen_result') throw new Error(`screen failed: ${reply.error || reply.type} (${ms} ms)`);
-  lastScreen = reply;
-  return { r: reply, ms };
+  // `same` has no nodes: the previous ones still hold.
+  lastScreen = reply.same && lastScreen ? { ...lastScreen, hash: reply.hash } : { ...reply, nodes: reply.nodes || [] };
+  return { r: reply.same ? reply : lastScreen, ms };
 }
 
 // ------------------------------------------------------------ parsing
@@ -217,6 +239,8 @@ function parseTarget(s) {
   if (!s) return null;
   let m;
   if ((m = s.match(/^#(\d+)$/))) return { n: Number(m[1]) };
+  if ((m = s.match(/^id:(\S+)$/))) return { id: m[1] };
+  if ((m = s.match(/^key:(\S+)$/))) return { key: m[1] };
   if ((m = s.match(/^(-?\d+)[\s,]+(-?\d+)$/))) return { x: Number(m[1]), y: Number(m[2]) };
   if ((m = s.match(/^"(.*)"$/)) || (m = s.match(/^'(.*)'$/))) return { text: m[1] };
   return { text: s };
@@ -238,10 +262,50 @@ function parseCommand(line) {
   const m = line.trim().match(/^(\S+)\s*(.*)$/s);
   if (!m) return null;
   const cmd = m[1].toLowerCase();
-  const rest = m[2];
+  // Act options anywhere on the line: --fast, --then (then_screen), --compact.
+  const opts = {};
+  const rest = m[2].replace(/(^|\s)--(fast|then|compact)(?=\s|$)/g, (_, sp, f) => { opts[f] = true; return ''; }).trim();
+  const c = parseCommandInner(cmd, rest);
+  if (c && c.kind === 'act') {
+    if (opts.fast) c.frame.fast = true;
+    if (opts.then) c.frame.then_screen = true;
+    if (opts.compact) c.frame.compact = true;
+  }
+  return c;
+}
+
+/** "extra.K=V" value: number, boolean, else string. */
+function extraValue(v) {
+  if (/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
+  if (v === 'true' || v === 'false') return v === 'true';
+  return v;
+}
+
+function parseCommandInner(cmd, rest) {
   const need = (on) => { if (!on) throw new Error(`${cmd} needs a target`); return on; };
   switch (cmd) {
-    case 'screen': case 's': return { kind: 'screen', image: /^\s*(image|img)\b/i.test(rest || ''), file: (rest || '').trim().split(/\s+/)[1] };
+    case 'screen': case 's': {
+      const words = (rest || '').trim().split(/\s+/).filter(Boolean);
+      const image = /^(image|img)$/i.test(words[0] || '');
+      const file = image && words[1] && !/^(since|compact)$/i.test(words[1]) ? words[1] : undefined;
+      return { kind: 'screen', image, file, since: words.includes('since'), compact: words.includes('compact') };
+    }
+    case 'caps': return { kind: 'caps' };
+    case 'expect': return { kind: 'expect', expr: rest.trim() };
+    case 'open': {
+      const frame = { do: 'open' };
+      for (const w of rest.trim().split(/\s+/).filter(Boolean)) {
+        let mm;
+        if ((mm = w.match(/^action=(.+)$/))) frame.action = mm[1];
+        else if ((mm = w.match(/^pkg=(.+)$/))) frame.pkg = mm[1];
+        else if ((mm = w.match(/^mime=(.+)$/))) frame.type_mime = mm[1];
+        else if ((mm = w.match(/^extra\.([^=]+)=(.*)$/))) (frame.extras ??= {})[mm[1]] = extraValue(mm[2]);
+        else if (!frame.uri) frame.uri = w;
+        else throw new Error(`open: unexpected '${w}'`);
+      }
+      if (!frame.uri && !frame.action) throw new Error('open needs a uri or action=');
+      return { kind: 'act', frame };
+    }
     case 'tap': return { kind: 'act', frame: { do: 'tap', on: need(parseTarget(rest)) } };
     case 'long': case 'long_press': return { kind: 'act', frame: { do: 'long_press', on: need(parseTarget(rest)) } };
     case 'point': return { kind: 'act', frame: { do: 'point', on: need(parseTarget(rest)) } };
@@ -290,18 +354,26 @@ function parseCommand(line) {
 async function act(frame, label) {
   const { reply, ms } = await request({ type: 'act', to: 'hands', ...frame });
   const ok = reply.ok === true;
-  out(`${stamp()} ${label ?? describe(frame)}: ${ok ? 'ok' : `ERROR ${reply.error}${reply.detail ? ` (${reply.detail})` : ''}`}  ${ms} ms`);
+  lastReply = reply;
+  const why = reply.why ?? reply.detail;
+  out(`${stamp()} ${label ?? describe(frame)}: ${ok ? 'ok' : `ERROR ${reply.error}${why ? ` (${why})` : ''}`}${reply.app ? `  app ${reply.app}` : ''}  ${ms} ms`);
+  if (reply.screen) {
+    const s = reply.screen;
+    lastScreen = s.same && lastScreen ? { ...lastScreen, hash: s.hash } : { ...s, nodes: s.nodes || [] };
+    out(`  then_screen:\n${screenTable(s)}`);
+  }
   await screenshot(label ?? describe(frame));
   return reply;
 }
 
 function describe(f) {
-  const t = (on) => (!on ? '' : 'n' in on ? ` #${on.n}` : 'text' in on ? ` "${on.text}"` : ` (${on.x},${on.y})`);
+  const t = (on) => (!on ? '' : 'n' in on ? ` #${on.n}` : 'text' in on ? ` "${on.text}"` : 'id' in on ? ` id:${on.id}` : 'key' in on ? ` key:${on.key}` : ` (${on.x},${on.y})`);
   switch (f.do) {
     case 'type': return `type${f.on ? ' @' + t(f.on).trim() : ''} ${JSON.stringify(f.text)}`;
     case 'swipe': return `swipe ${f.dir}${t(f.on)}`;
     case 'key': return `key ${f.name}`;
     case 'launch': return `launch ${f.app}`;
+    case 'open': return `open ${f.uri ?? ''}${f.action ? ` action=${f.action}` : ''}`.trim();
     case 'wait': return `wait ${f.ms}`;
     default: return `${f.do}${t(f.on)}`;
   }
@@ -323,7 +395,7 @@ async function run(line) {
       return true;
     case 'screen': {
       try {
-        const { r, ms } = await getScreen(c.image);
+        const { r, ms } = await getScreen(c.image, { since: c.since, compact: c.compact });
         out(`${stamp()} screen: ok  ${ms} ms\n${screenTable(r)}`);
         if (c.image) {
           if (r.image) {
@@ -337,6 +409,22 @@ async function run(line) {
       } catch (e) { out(`${stamp()} ${e.message}`); return false; }
     }
     case 'act': return (await act(c.frame)).ok === true;
+    case 'caps': {
+      const { reply, ms } = await request({ type: 'caps', to: 'hands' });
+      lastReply = reply;
+      out(`${stamp()} caps (${ms} ms): ${JSON.stringify(reply)}`);
+      return reply.type === 'caps_result';
+    }
+    case 'expect': {
+      const m = c.expr.match(/^([\w.]+)\s*(?:([=~])\s*(.*))?$/);
+      if (!m) { out('  expect <path>[=value|~regex]'); return false; }
+      const val = m[1].split('.').reduce((o, k) => (o == null ? undefined : o[k]), lastReply);
+      const got = typeof val === 'object' ? JSON.stringify(val) : String(val);
+      const pass = !m[2] ? val !== undefined && val !== null && val !== false
+        : m[2] === '=' ? got === m[3] : new RegExp(m[3]).test(got);
+      out(`${stamp()} expect ${c.expr}: ${pass ? 'ok' : `FAILED (got ${got.slice(0, 200)})`}`);
+      return pass;
+    }
     case 'raw': {
       if (!(await waitUp())) { out('not connected'); return false; }
       if (c.obj.id == null) { ws.send(JSON.stringify(c.obj)); out(`${stamp()} raw sent`); return true; }
@@ -616,6 +704,8 @@ async function main() {
       const line = raw.trim();
       if (!line || line.startsWith('#')) continue;
       out(`> ${line}`);
+      // "?cmd": a failure is expected or allowed (check it with `expect` on the next line).
+      if (line.startsWith('?')) { await run(line.slice(1).trim()); continue; }
       if (!(await run(line))) { out(`FAILED at: ${line}`); await quit(1); }
     }
     await quit(0);

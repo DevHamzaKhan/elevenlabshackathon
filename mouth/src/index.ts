@@ -1,8 +1,13 @@
-// bobby-mouth entry points (CONTRACT.md v1, "Packages").
+// bobby-mouth entry points (CONTRACT.md v1 "Packages"; protocol v2 in mind/PROTOCOL-V2.md).
 import { connectHub } from "./hub";
 import { Mouth } from "./mouth";
 import { elevenLabsVoice } from "./elevenlabs";
+import { openAIVoice } from "./openai";
 import { startCallerWith } from "./caller";
+import type { VoiceFactory } from "./voice";
+import { voiceChoice } from "./vendors";
+
+export { voiceChoice, callerChoice } from "./vendors";
 
 export interface Config {
   hubUrl: string;
@@ -11,10 +16,11 @@ export interface Config {
   log: (line: string) => void;
 }
 
-/** Connects to the hub as `mouth`. wake() starts a session with the Bobby agent and sends `wake`.
+/** Connects to the hub as `mouth`. wake() starts a voice session and sends `wake`.
  *  status() is an extra for test screens: "disconnected" (no hub), "idle", "starting" or "live". */
 export function startMouth(config: Config): { wake(): void; stop(): void; status(): string } {
-  const agentId = config.env.ELEVENLABS_BOBBY_AGENT_ID ?? "";
+  const env = config.env;
+  const choice = voiceChoice(env);
   let mouth: Mouth;
   const hub = connectHub({
     hubUrl: config.hubUrl,
@@ -23,11 +29,16 @@ export function startMouth(config: Config): { wake(): void; stop(): void; status
     log: config.log,
     onMessage: (m) => mouth.onHub(m),
   });
-  mouth = new Mouth({ send: (m) => hub.send(m), voice: elevenLabsVoice(agentId, config.log), log: config.log });
+  const voice: VoiceFactory =
+    choice.vendor === "elevenlabs"
+      ? elevenLabsVoice(env.ELEVENLABS_BOBBY_AGENT_ID ?? "", config.log)
+      : openAIVoice(env.OPENAI_API_KEY ?? "", { model: choice.model, voice: env.MOUTH_VOICE || undefined, transcribeModel: env.MOUTH_TRANSCRIBE_MODEL || undefined }, config.log);
+  mouth = new Mouth({ send: (m) => hub.send(m), voice, log: config.log });
+  config.log(`mouth: voice ${choice.vendor} ${choice.model}`);
   return {
     wake() {
-      if (!agentId) {
-        config.log("ELEVENLABS_BOBBY_AGENT_ID is missing: run mouth/agent/setup.mjs");
+      if (choice.missing) {
+        config.log(`mouth: ${choice.missing} is missing; can't start a voice session`);
         return;
       }
       void mouth.wake();

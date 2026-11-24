@@ -1,11 +1,14 @@
-// Test plumbing: a fake hub + phone, fake Mouth and Caller, and a rule-based stand-in for the model
-// that reads the fake phone's screen, so the brain can be tested with no API key.
+// Test plumbing: a fake hub + phone, fake Mouth (v1 or v2) and Caller, and the scripted fake
+// OpenAI behind the real model door, so the brain is tested end to end with no API key.
 
 import { startMind } from "../src/index";
+import { makeModel } from "../src/model";
+import { InMemoryStore } from "../src/memory";
 import { startFakeHub } from "../fakes/hub";
 import { startFakeMouth } from "../fakes/mouth";
 import { startFakeCaller } from "../fakes/caller";
-import type { ModelFn, ModelRequest, Timing } from "../src/types";
+import { fakeOpenAI, type FakeOpenAI } from "../fakes/openai";
+import type { ModelFn, Timing } from "../src/types";
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -18,119 +21,70 @@ export async function until(cond: () => boolean, ms = 8000, step = 20): Promise<
   return cond();
 }
 
-const blank = { whisper: "", title: "", goal: "", steps: [], call_name: "", call_goal: "", say: "" };
-const act = (o: any) => ({ status: "act", step: 1, do: "none", n: -1, text: "", dir: "", key: "", app: "", ms: -1, say: "", plan: [], ...o });
-
-function nodesFrom(user: string): { n: number; line: string }[] {
-  const out: { n: number; line: string }[] = [];
-  for (const line of user.split("\n")) {
-    const m = /^\[(\d+)\] (.*)$/.exec(line);
-    if (m) out.push({ n: Number(m[1]), line: m[2] });
-  }
-  return out;
-}
-
-/** A pretend model with fixed rules. `slowMs` delays each reply; `calls` records every request. */
-export function stubModel(opts: { slowMs?: number } = {}) {
-  const calls: ModelRequest[] = [];
-  const fn: ModelFn = async (req) => {
-    calls.push(req);
-    if (opts.slowMs) await sleep(opts.slowMs);
-    const json = req.purpose === "decide" ? decide(req.user) : step(req.user);
-    return { json, stopReason: "end_turn", ms: opts.slowMs ?? 0 };
-  };
-  return { fn, calls };
-}
-
-function decide(user: string) {
-  const heard = (/The user just said: "(.*)"/.exec(user)?.[1] ?? "").toLowerCase();
-  if (heard.includes("reply to sarah"))
-    return { ...blank, action: "task", title: "Reply to Sarah", goal: 'Reply to Sarah Chen\'s email with "3 works for me."', steps: [{ do: "Open Gmail", why: "Sarah's message is an email" }, { do: "Reply", why: "to answer her" }], say: "Finding Gmail." };
-  if (heard.startsWith("open "))
-    return { ...blank, action: "task", title: `Open ${heard.slice(5)}`, goal: `Open the ${heard.slice(5)} app`, steps: [{ do: "Find the icon", why: "to open it" }] };
-  if (heard.startsWith("call ")) {
-    const name = heard.split(" ")[1];
-    return { ...blank, action: "call", call_name: name[0].toUpperCase() + name.slice(1), call_goal: "Say I'm running late.", say: `I'm calling ${name} to say you're running late.` };
-  }
-  if (heard.includes("bye")) return { ...blank, action: "sleep" };
-  return { ...blank, action: "chat", whisper: "Sarah Chen emailed about pushing to 3." };
-}
-
-function step(user: string) {
-  const app = /^App: (.*)$/m.exec(user)?.[1] ?? "";
-  const nodes = nodesFrom(user);
-  const find = (re: RegExp) => nodes.find((x) => re.test(x.line));
-  const goal = /^Goal: (.*)$/m.exec(user)?.[1] ?? "";
-  const target = /spotify/i.test(goal) ? /"Spotify"/ : /"Gmail"/;
-  if (/Home screen/.test(app)) {
-    const icon = find(target);
-    if (icon) return act({ do: "tap", n: icon.n, say: "Found it, opening it." });
-    return act({ do: "swipe", dir: "left", say: "Not on this screen, so I'm swiping to the next one." });
-  }
-  if (/^Gmail/.test(app)) {
-    const reply = find(/^"Reply"/);
-    const sent = find(/^"Me: /);
-    if (sent) return { ...act({}), status: "done", do: "none", say: "Your reply to Sarah is sent." };
-    const row = find(/Sarah Chen, Meeting today/);
-    if (row) return act({ do: "tap", n: row.n, say: "Opening Sarah's email to answer it." });
-    if (reply) return act({ do: "tap", n: reply.n, say: "Tapping Reply to answer Sarah." });
-    const body = find(/"Compose email"/);
-    const send = find(/"Send"/);
-    if (body) return act({ do: "type", n: body.n, text: "3 works for me.", say: "Writing that 3 works for you." });
-    if (send) return act({ do: "tap", n: send.n, say: "Sending Sarah: 3 works for me." });
-  }
-  return act({ do: "key", key: "home", say: "Going home to start over." });
-}
+export const CONTACTS = "Alex=+14155550123,Hamza=+14155550111|hamza@example.com,Mom=+14155550199,Sam=sam@example.com";
 
 /** Fake hub + Mind + Mouth + Caller on a fresh port, all fast. */
 export async function setup(
   opts: {
-    slowMs?: number;
     mouth?: boolean;
+    /** The fake Mouth speaks protocol v2 (request/confirm_reply/...). */
+    v2?: boolean;
+    autoConfirm?: { ok: boolean; heard: string } | null;
     caller?: boolean;
     sleepMs?: number;
     contacts?: string;
-    /** Replace the stub model, e.g. to change the phone while it "thinks". */
-    model?: (hub: ReturnType<typeof startFakeHub>, stub: ModelFn) => ModelFn;
+    env?: Record<string, string>;
+    legacy?: boolean;
+    latency?: Partial<Record<string, number>>;
+    /** Wrap the model door, e.g. to change the phone while it "thinks". */
+    model?: (hub: ReturnType<typeof startFakeHub>, inner: ModelFn) => ModelFn;
     timing?: Partial<Timing>;
     msPerChar?: number;
     callerStepMs?: number;
+    storage?: InMemoryStore;
   } = {},
 ) {
   const lines: string[] = [];
   const log = (s: string) => lines.push(s);
-  // Port 0: the OS hands out a free port, so test files running side by side never collide.
-  const hub = startFakeHub({ port: 0, log, speed: 0 });
+  const hub = startFakeHub({ port: 0, log, speed: 0, legacy: opts.legacy });
   await hub.ready;
   const port = hub.port;
-  const model = stubModel({ slowMs: opts.slowMs });
+  const ai: FakeOpenAI = fakeOpenAI({ latency: opts.latency });
+  const door = makeModel({ apiKey: "sk-fake", log, fetch: ai.fetch });
+  const storage = opts.storage ?? new InMemoryStore();
   const mind = startMind({
     hubUrl: `ws://localhost:${port}`,
     token: "test",
-    env: { CONTACTS: opts.contacts ?? "Alex=+14155550123" },
+    env: { CONTACTS: opts.contacts ?? CONTACTS, ...(opts.env ?? {}) },
     log,
     hints: [],
-    model: opts.model ? opts.model(hub, model.fn) : model.fn,
-    timing: { actMs: 2000, sayMs: 2000, callMs: 5000, sleepMs: opts.sleepMs ?? 60_000, commandMs: 40, listenMs: 300, ...(opts.timing ?? {}) },
+    model: opts.model ? opts.model(hub, door) : door,
+    storage,
+    timing: { actMs: 2000, sayMs: 2000, callMs: 5000, sleepMs: opts.sleepMs ?? 60_000, commandMs: 40, listenMs: 300, confirmMs: 3000, bargeMs: 1500, ...(opts.timing ?? {}) },
   });
   const url = (role: string) => `ws://localhost:${port}/${role}?token=test`;
-  const mouth = opts.mouth === false ? null : startFakeMouth({ url: url("mouth"), log, msPerChar: opts.msPerChar ?? 0 });
+  const mouth =
+    opts.mouth === false
+      ? null
+      : startFakeMouth({ url: url("mouth"), log, msPerChar: opts.msPerChar ?? 0, v2: opts.v2, autoConfirm: opts.autoConfirm === undefined ? (opts.v2 ? { ok: true, heard: "yes, send it" } : null) : opts.autoConfirm });
   const caller = opts.caller === false ? null : startFakeCaller({ url: url("caller"), log, stepMs: opts.callerStepMs ?? 30 });
-  // Wait until the hub has told the Mind who's here.
-  await until(() => hub.wire.length >= 0 && (mouth ? mouth.awake : true), 3000);
+  await until(() => (mouth ? mouth.awake : true), 3000);
   await sleep(150);
   return {
     port,
     url,
     hub,
     mind,
+    brain: mind.brain,
     mouth,
     caller,
-    model,
+    ai,
+    storage,
     lines,
     toMind: (type: string) => hub.wire.filter((w) => w.to === "mind" && w.msg.type === type).map((w) => w.msg),
     fromMind: (type: string) => hub.wire.filter((w) => w.from === "mind" && w.msg.type === type).map((w) => w.msg),
     tasks: () => hub.watched.filter((m) => m.type === "task"),
+    acts: () => hub.wire.filter((w) => w.from === "mind" && w.msg.type === "act").map((w) => w.msg),
     async close() {
       mouth?.close();
       caller?.close();
@@ -138,4 +92,15 @@ export async function setup(
       await hub.close();
     },
   };
+}
+
+export type T = Awaited<ReturnType<typeof setup>>;
+
+/** v1 Mouth: answers a "Should I go ahead?" say with a press and a reply. */
+export async function answerConfirmV1(t: T, reply: string, ms = 6000): Promise<boolean> {
+  const ok = await until(() => t.fromMind("say").some((m) => /Should I go ahead\?/.test(m.text)), ms);
+  if (!ok) return false;
+  await sleep(30);
+  t.mouth!.hear(reply);
+  return true;
 }

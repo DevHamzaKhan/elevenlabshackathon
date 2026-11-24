@@ -19,7 +19,9 @@ const { parseEnv } = await import("../agent/setup.mjs");
 const args = process.argv.slice(2);
 const opt = (name, dflt) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : dflt; };
 const KEYS = ["ELEVENLABS_API_KEY", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "OWNER_NUMBER", "CALL_ALLOWLIST",
-  "CALLER_DRY_RUN", "ELEVENLABS_CALLER_AGENT_ID", "ELEVENLABS_PHONE_NUMBER_ID", "HUB_TOKEN"];
+  "CALLER_DRY_RUN", "ELEVENLABS_CALLER_AGENT_ID", "ELEVENLABS_PHONE_NUMBER_ID", "HUB_TOKEN",
+  "OPENAI_API_KEY", "CALLER_VENDOR", "CALLER_MODEL", "CALLER_VOICE", "CALLER_SUMMARY_MODEL", "CALLER_OWNER_NAME",
+  "CALLER_SIP_URL", "CALLER_SIP_USERNAME", "CALLER_SIP_PASSWORD"];
 
 const rootEnv = join(here, "..", "..", ".env");
 const fileEnv = existsSync(rootEnv) ? parseEnv(readFileSync(rootEnv, "utf8")) : {};
@@ -32,7 +34,11 @@ const hubUrl = opt("hub", `ws://localhost:${process.env.MOUTH_HUB_PORT || 8765}`
 const token = env.HUB_TOKEN || "dev";
 const log = (l) => console.log(`${new Date().toISOString().slice(11, 23)} ${l}`);
 log(`caller -> ${hubUrl} (${env.CALLER_DRY_RUN === "0" ? "REAL CALLS" : "dry run"}; allowlist: ${env.CALL_ALLOWLIST || "empty"})`);
-const caller = startCallerWith({ hubUrl, token, env, log }); // same as startCaller(config)
+// Node's WebSocket can't send an Authorization header; the OpenAI caller's sideband uses `ws` here.
+const { WebSocket: NodeWS } = await import("ws");
+const connect = (url, headers) => new NodeWS(url, { headers });
+log(`caller vendor: ${(env.CALLER_VENDOR || "openai").toLowerCase()}`);
+const caller = startCallerWith({ hubUrl, token, env, log, liveDeps: { connect } }); // same as startCaller(config)
 const quit = () => { caller.stop(); process.exit(0); };
 process.on("SIGINT", quit);
 process.on("SIGTERM", quit);

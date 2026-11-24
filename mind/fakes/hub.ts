@@ -18,6 +18,8 @@ export type FakeHubOptions = {
   /** When set, a wrong token is closed with 4003. Pretend hubs accept any token by default. */
   token?: string;
   random?: () => number;
+  /** The pretend phone behaves like v1 Hands (no open, hash, then_screen, caps). */
+  legacy?: boolean;
 };
 
 export type FakeHub = {
@@ -37,7 +39,7 @@ export type FakeHub = {
 export function startFakeHub(opts: FakeHubOptions = {}): FakeHub {
   const port = opts.port ?? 8765;
   const log = opts.log ?? ((s: string) => console.log(s));
-  const phone = new Phone({ log, speed: opts.speed, flaky: opts.flaky, random: opts.random });
+  const phone = new Phone({ log, speed: opts.speed, flaky: opts.flaky, random: opts.random, legacy: opts.legacy });
   const wire: FakeHub["wire"] = [];
   const watched: any[] = [];
   const conns: Partial<Record<(typeof SINGLE_ROLES)[number], WS>> = {};
@@ -106,13 +108,17 @@ export function startFakeHub(opts: FakeHubOptions = {}): FakeHub {
 
   const handsHandle = async (m: any) => {
     if (m.type === "screen") {
-      const r = phone.read();
-      log(`hub: screen read on ${phone.where()} (${r.nodes.length} nodes)`);
+      const r = phone.read({ since: m.since, compact: !!m.compact, image: !!m.image });
+      log(`hub: screen read on ${phone.where()} (${r.same ? "unchanged" : `${r.nodes.length} nodes`})`);
       fromHands({ type: "screen_result", re: m.id, ...r });
     } else if (m.type === "act") {
-      const r = await phone.act(m);
-      if (!r.ok) log(`phone: ${m.do} failed: ${r.error}`);
+      const r: any = await phone.act(m);
+      if (!r.ok) log(`phone: ${m.do} failed: ${r.error}${r.why ? ` (${r.why})` : ""}`);
+      if (m.then_screen && !phone.legacy) r.screen = phone.read({ compact: !!m.compact });
       fromHands({ type: "act_result", re: m.id, ...r });
+    } else if (m.type === "caps") {
+      const c = phone.caps();
+      if (c) fromHands({ type: "caps_result", re: m.id, ...c });
     } else if (m.type === "cursor") {
       log(`phone: cursor ${m.show ? "shown" : "hidden"}`);
     }

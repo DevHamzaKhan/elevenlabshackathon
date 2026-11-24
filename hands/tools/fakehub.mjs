@@ -9,9 +9,12 @@
 // a "Google" folder holding Gmail, a Gmail inbox, an open email, a reply compose screen with
 // Send / More options / Discard. `act` replies after ~200 ms; text it can't find is not_found.
 // Type `notify <title>: <text>` on stdin to push a notification to the Mind.
+// Also speaks the protocol additions (hands/README.md "Protocol additions"): `caps`, `open`,
+// `{id}`/`{key}` targets, `hash`/`since`/`compact` on screen, `then_screen`/`fast` on acts, `why`.
 import { WebSocketServer } from 'ws';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 // ---------------------------------------------------------------- HubCore port
 
@@ -208,12 +211,28 @@ function parseObj(text) {
 const W = 1080, H = 2400;
 const LAUNCHER = 'com.sec.android.app.launcher';
 const GMAIL = 'com.google.android.gm';
-const DOS = new Set(['tap', 'long_press', 'point', 'type', 'swipe', 'key', 'launch', 'wait']);
+const DOS = new Set(['tap', 'long_press', 'point', 'type', 'swipe', 'key', 'launch', 'wait', 'open']);
+/** `open`: which fake app handles a scheme or action (package, label). */
+const OPEN_HANDLERS = {
+  mailto: [GMAIL, 'Gmail compose'], sms: ['com.google.android.apps.messaging', 'Messages'], smsto: ['com.google.android.apps.messaging', 'Messages'],
+  tel: ['com.google.android.dialer', 'Phone'], https: ['com.android.chrome', 'Chrome'], http: ['com.android.chrome', 'Chrome'],
+  geo: ['com.google.android.apps.maps', 'Maps'], 'google.navigation': ['com.google.android.apps.maps', 'Maps navigation'],
+  'android.intent.action.SET_ALARM': ['com.google.android.deskclock', 'Clock'], 'android.intent.action.SET_TIMER': ['com.google.android.deskclock', 'Clock'],
+  'android.intent.action.WEB_SEARCH': ['com.google.android.googlequicksearchbox', 'Google'],
+  'android.intent.action.INSERT': ['com.google.android.calendar', 'Calendar event'],
+};
+const defaultAction = (scheme) => ({ mailto: 'android.intent.action.SENDTO', sms: 'android.intent.action.SENDTO', smsto: 'android.intent.action.SENDTO', tel: 'android.intent.action.DIAL' })[scheme] || 'android.intent.action.VIEW';
+
+function fnv32(str) {
+  let h = 0x811c9dc5;
+  for (const b of Buffer.from(str, 'utf8')) { h ^= b; h = Math.imul(h, 16777619) >>> 0; }
+  return h.toString(16).padStart(8, '0');
+}
 const DIRS = new Set(['left', 'right', 'up', 'down']);
 const KEYS = new Set(['home', 'back', 'recents', 'notifications', 'enter']);
 
 function N(text, desc, cls, bounds, opts = {}) {
-  return { text, desc, cls, bounds, tap: !!opts.tap, edit: !!opts.edit, scroll: !!opts.scroll, hint: opts.hint || '', act: opts.act || null, focused: !!opts.focused };
+  return { text, desc, cls, bounds, tap: !!opts.tap, edit: !!opts.edit, scroll: !!opts.scroll, hint: opts.hint || '', act: opts.act || null, focused: !!opts.focused, viewId: opts.id || '' };
 }
 function icon(label, col, row, act, desc = '') {
   const l = 40 + col * 250, t = 300 + row * 330;
@@ -279,7 +298,7 @@ export class FakePhone {
           N('Primary', '', 'TextView', [40, 290, 400, 360]),
           N('', '', 'RecyclerView', [0, 380, W, 2200], { scroll: true }),
           ...this.inboxRows().map((r, i) => N('', `${r.unread ? 'Unread, ' : ''}${r.from}, ${r.subject}, ${r.snippet}, ${r.when}`, 'ViewGroup', [0, 400 + i * 260, W, 640 + i * 260], { tap: true, act: `row:${i}` })),
-          N('Compose', '', 'Button', [640, 2050, 1040, 2180], { tap: true, act: 'noop' }),
+          N('Compose', '', 'Button', [640, 2050, 1040, 2180], { tap: true, act: 'noop', id: 'com.google.android.gm:id/compose_button' }),
         ];
         break;
       }
@@ -329,7 +348,7 @@ export class FakePhone {
         break;
       }
       case 'app':
-        app = `fake.app.${st.name.toLowerCase().replace(/\W+/g, '')}`;
+        app = st.pkg || `fake.app.${st.name.toLowerCase().replace(/\W+/g, '')}`;
         nodes = [N(st.name, '', 'TextView', [40, 200, 1040, 300])];
         break;
       case 'recents':
@@ -341,7 +360,14 @@ export class FakePhone {
         nodes = [N('', 'Wi-Fi,On', 'Switch', [40, 200, 300, 320], { tap: true, act: 'noop' }), N('Notification settings', '', 'Button', [40, 1800, 600, 1900], { tap: true, act: 'noop' })];
         break;
     }
-    nodes = [...toast, ...nodes].map((n, i) => ({ ...n, n: i }));
+    const seen = {};
+    nodes = [...toast, ...nodes].map((n, i) => {
+      const label = (n.edit ? n.hint || n.desc : n.text || n.desc).slice(0, 24);
+      const cxb = Math.floor((n.bounds[0] + n.bounds[2]) / 2 / (W / 8)), cyb = Math.floor((n.bounds[1] + n.bounds[3]) / 2 / (H / 16));
+      const base = 'k' + fnv32(`${app}|${n.viewId}|${n.cls}|${label}|${cxb},${cyb}`);
+      seen[base] = (seen[base] || 0) + 1;
+      return { ...n, n: i, key: seen[base] === 1 ? base : `${base}-${seen[base]}` };
+    });
     return { app, nodes };
   }
 
@@ -352,11 +378,26 @@ export class FakePhone {
 
   go(state) { this.stack.push(this.state); this.state = state; this.toast = ''; }
 
-  screen(re) {
+  /** opts: {since, compact} from the request. Always carries `hash`. */
+  screen(re, opts = {}) {
     const { app, nodes } = this.view();
     this.lastNodes = nodes;
-    return { type: 'screen_result', ...(re != null ? { re } : {}), app, size: [W, H], nodes: nodes.map(publicNode) };
+    const pub = nodes.map((n) => publicNode(n, false));
+    const hash = createHash('sha1').update(JSON.stringify([app, pub.map(({ n, key, ...rest }) => rest)])).digest('hex').slice(0, 16);
+    const head = { type: 'screen_result', ...(re != null ? { re } : {}) };
+    if (opts.since && opts.since === hash) return { ...head, same: true, hash, app, size: [W, H] };
+    return { ...head, app, size: [W, H], hash, nodes: nodes.map((n) => publicNode(n, !!opts.compact)) };
   }
+
+  caps(re) {
+    return { type: 'caps_result', ...(re != null ? { re } : {}), sdk: 35, release: '15', oem: 'samsung', brand: 'samsung', model: 'FAKE-S21',
+      locale: 'en-US', size: [W, H], density: 2.625, orientation: 'portrait', launcher: LAUNCHER, ime: 'com.samsung.android.honeyboard',
+      secureLock: false, locked: false, gestureNav: true, imeTyping: true, screenshot: false, displays: 1,
+      features: ['open', 'since', 'compact', 'then_screen', 'fast', 'target_id', 'target_key', 'locked', 'caps'], fake: true };
+  }
+
+  /** The package in front (act_result `app` after launch/open). */
+  front() { return this.view().app; }
 
   /** Resolves a target to {x, y, node}. Returns null when not found. */
   resolve(on, nodes) {
@@ -367,6 +408,15 @@ export class FakePhone {
     }
     if ('text' in on) {
       const n = byText(nodes, on.text);
+      return n ? { x: cx(n), y: cy(n), node: n } : null;
+    }
+    if ('id' in on) {
+      const q = String(on.id);
+      const n = nodes.find((x) => x.viewId && (q.includes(':') ? x.viewId === q : x.viewId.split('/').pop() === q.split('/').pop()));
+      return n ? { x: cx(n), y: cy(n), node: n } : null;
+    }
+    if ('key' in on) {
+      const n = nodes.find((x) => x.key === on.key);
       return n ? { x: cx(n), y: cy(n), node: n } : null;
     }
     return { x: on.x, y: on.y, node: null };
@@ -426,6 +476,14 @@ export class FakePhone {
         return null;
       }
       case 'wait': return null;
+      case 'open': {
+        const scheme = a.uri && /^[a-z][\w+.-]*:/i.test(a.uri) ? a.uri.slice(0, a.uri.indexOf(':')).toLowerCase() : null;
+        const h = OPEN_HANDLERS[a.action] || (scheme && OPEN_HANDLERS[scheme]);
+        if (!h) return ['not_found', `no app handles ${scheme ? scheme + ':' : a.action}`];
+        if (h[0] === GMAIL && scheme === 'mailto') this.log(`fake phone: open ${a.uri} (compose, not sent)`);
+        this.go({ s: 'app', name: h[1], pkg: h[0] });
+        return null;
+      }
     }
     return null;
   }
@@ -475,9 +533,13 @@ export class FakePhone {
   }
 }
 
-function publicNode(n) {
+function publicNode(n, compact = false) {
   const o = { n: n.n, text: n.text, desc: n.desc, cls: n.cls, bounds: n.bounds, tap: n.tap, edit: n.edit, scroll: n.scroll };
+  if (compact) for (const k of ['text', 'desc', 'cls', 'tap', 'edit', 'scroll']) if (o[k] === '' || o[k] === false) delete o[k];
   if (n.hint) o.hint = n.hint;
+  if (n.focused) o.focused = true;
+  if (n.viewId) o.id = n.viewId.split('/').pop();
+  if (n.key) o.key = n.key;
   return o;
 }
 const cx = (n) => Math.floor((n.bounds[0] + n.bounds[2]) / 2);
@@ -515,9 +577,15 @@ export function parseAct(o) {
     if ('n' in t) { if (typeof t.n !== 'number') return [null, 'on.n must be a number']; on = { n: Math.trunc(t.n) }; }
     else if ('text' in t) { if (!String(t.text ?? '').trim()) return [null, 'on.text is empty']; on = { text: String(t.text) }; }
     else if ('x' in t && 'y' in t) { if (typeof t.x !== 'number' || typeof t.y !== 'number') return [null, 'on.x and on.y must be numbers']; on = { x: Math.trunc(t.x), y: Math.trunc(t.y) }; }
-    else return [null, 'on needs n, text, or x and y'];
+    else if ('id' in t) { if (!String(t.id ?? '').trim()) return [null, 'on.id is empty']; on = { id: String(t.id).trim() }; }
+    else if ('key' in t) { if (!String(t.key ?? '').trim()) return [null, 'on.key is empty']; on = { key: String(t.key).trim() }; }
+    else return [null, 'on needs n, text, x and y, id, or key'];
   }
-  const a = { do: what, on, text: o.text == null ? null : String(o.text), dir: o.dir || null, name: o.name || null, app: o.app || null, ms: o.ms };
+  const s = (v) => (v == null || !String(v).trim() ? null : String(v).trim());
+  const a = { do: what, on, text: o.text == null ? null : String(o.text), dir: o.dir || null, name: o.name || null, app: o.app || null, ms: o.ms,
+    uri: s(o.uri), action: s(o.action), pkg: s(o.pkg), extras: o.extras ?? null, thenScreen: o.then_screen === true, compact: o.compact === true, fast: o.fast === true };
+  if (what === 'open' && !a.uri && !a.action) return [null, 'open needs uri or action'];
+  if (a.extras != null && (typeof a.extras !== 'object' || Array.isArray(a.extras))) return [null, 'extras must be an object'];
   if ('ms' in o && typeof o.ms !== 'number') return [null, 'ms must be a number'];
   if (['tap', 'long_press', 'point'].includes(what) && !on) return [null, `${what} needs on`];
   if (what === 'type' && a.text == null) return [null, 'type needs text'];
@@ -537,20 +605,26 @@ export function makeFakeHands({ reply, phone, settleMs = 200, log = () => {} }) 
     const re = o.id == null ? undefined : String(o.id);
     if (o.type === 'cursor') { log(`fake hands: cursor ${o.show === false ? 'off' : 'on'}`); return; }
     if (o.type === 'screen') {
-      chain = chain.then(() => new Promise((r) => setTimeout(() => { reply(JSON.stringify(phone.screen(re))); r(); }, 30)));
+      const opts = { since: typeof o.since === 'string' ? o.since : null, compact: o.compact === true };
+      chain = chain.then(() => new Promise((r) => setTimeout(() => { reply(JSON.stringify(phone.screen(re, opts))); r(); }, 30)));
       return;
     }
+    if (o.type === 'caps') { setTimeout(() => reply(JSON.stringify(phone.caps(re))), 10); return; }
     if (o.type !== 'act') return;
     chain = chain.then(() => new Promise((r) => {
+      let parsed = null;
       const res = (ok, error, detail) => {
         const out = { type: 'act_result', ...(re !== undefined ? { re } : {}), ok };
         if (!ok) out.error = error || 'bad_request';
-        if (detail) out.detail = detail;
+        if (detail) { out.detail = detail; out.why = detail; }
+        if (parsed && (parsed.do === 'launch' || parsed.do === 'open') && ok) out.app = phone.front();
+        if (parsed?.thenScreen) { const { type, re: _re, ...body } = phone.screen(null, { compact: parsed.compact }); out.screen = body; }
         reply(JSON.stringify(out));
         r();
       };
       const [a, bad] = parseAct(o);
       if (!a) return setTimeout(() => res(false, 'bad_request', bad), 20);
+      parsed = a;
       const delay = settleMs + (a.do === 'wait' ? a.ms : 0);
       setTimeout(() => {
         let err;

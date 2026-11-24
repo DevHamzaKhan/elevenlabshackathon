@@ -318,3 +318,71 @@ test('act with an unknown do gets act_result ok:false error bad_request', async 
   assert.equal(r2.error, 'bad_request');
   mind.close(); await mind.closed();
 });
+
+// ---- protocol additions (read-only: nothing is tapped or opened) ----
+
+test('caps gets a caps_result with the device fields', async () => {
+  const mind = await joined('mind');
+  const id = `c${uid()}`;
+  mind.send({ type: 'caps', to: 'hands', id });
+  const r = await mind.next(is('caps_result', { re: id }), 10000, 'caps_result');
+  for (const k of ['sdk', 'release', 'oem', 'model', 'locale', 'size', 'density', 'orientation', 'launcher', 'ime', 'secureLock', 'locked', 'gestureNav', 'imeTyping', 'screenshot', 'displays']) {
+    assert.ok(k in r, `caps_result.${k} present (may be null)`);
+  }
+  assert.equal(typeof r.sdk, 'number');
+  assert.ok(Array.isArray(r.size) && r.size.length === 2);
+  assert.ok(Array.isArray(r.features) && r.features.includes('since'));
+  mind.close(); await mind.closed();
+});
+
+test('screen carries hash; since=hash gets same:true without nodes; compact drops false/empty', async () => {
+  const mind = await joined('mind');
+  const id = `h${uid()}`;
+  mind.send({ type: 'screen', to: 'hands', id });
+  const r = await mind.next(is('screen_result', { re: id }), 10000, 'screen_result');
+  assert.equal(typeof r.hash, 'string');
+  assert.ok(r.hash.length >= 8);
+  // The screen may change between reads on a live phone (a notification, an animation): retry.
+  let same = null;
+  let hash = r.hash;
+  for (let i = 0; i < 4 && !same?.same; i++) {
+    const id2 = `h${uid()}`;
+    mind.send({ type: 'screen', to: 'hands', id: id2, since: hash });
+    same = await mind.next(is('screen_result', { re: id2 }), 10000, 'screen_result since');
+    hash = same.hash;
+  }
+  assert.equal(same.same, true, 'an unchanged screen answers same:true');
+  assert.equal(same.nodes, undefined, 'same:true has no nodes');
+  assert.equal(typeof same.app, 'string');
+  const id3 = `h${uid()}`;
+  mind.send({ type: 'screen', to: 'hands', id: id3, since: 'not-a-real-hash' });
+  const full = await mind.next(is('screen_result', { re: id3 }), 10000, 'screen_result changed');
+  assert.ok(Array.isArray(full.nodes), 'a different since gets the full screen');
+  const id4 = `h${uid()}`;
+  mind.send({ type: 'screen', to: 'hands', id: id4, compact: true });
+  const c = await mind.next(is('screen_result', { re: id4 }), 10000, 'compact screen_result');
+  for (const n of c.nodes) {
+    for (const k of ['tap', 'edit', 'scroll']) assert.notEqual(n[k], false, `compact node ${n.n} has ${k}:false`);
+    for (const k of ['text', 'desc']) assert.notEqual(n[k], '', `compact node ${n.n} has empty ${k}`);
+    assert.equal(typeof n.key, 'string', 'every node has a key');
+  }
+  mind.close(); await mind.closed();
+});
+
+test('new act forms validate: open without uri/action and empty id/key targets are bad_request', async () => {
+  const mind = await joined('mind');
+  const cases = [
+    { do: 'open' },
+    { do: 'point', on: { id: '' } },
+    { do: 'point', on: { key: ' ' } },
+  ];
+  for (const c of cases) {
+    const id = `v${uid()}`;
+    mind.send({ type: 'act', to: 'hands', id, ...c });
+    const r = await mind.next(is('act_result', { re: id }), 10000, 'act_result');
+    assert.equal(r.ok, false, JSON.stringify(c));
+    assert.equal(r.error, 'bad_request', JSON.stringify(c));
+    assert.equal(typeof r.why, 'string', 'why is set');
+  }
+  mind.close(); await mind.closed();
+});
