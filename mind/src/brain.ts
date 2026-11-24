@@ -143,6 +143,9 @@ export class Brain {
     this.systems = { exec: execSystem(o.hints), escalate: escalateSystem(o.hints), check: checkSystem() };
     this.memory = new Memory(o.storage ?? new InMemoryStore(), o.log);
     this.recipes = new RecipeBook(this.memory, o.log);
+    void this.memory.loaded.then(() => {
+      this.facts = [...this.memory.facts.slice(-10), ...this.facts].slice(-40);
+    });
     this.ticker = setInterval(() => this.tick(), 500);
     this.exec = new Executor({
       model: o.model,
@@ -166,6 +169,13 @@ export class Brain {
         return Promise.race([p, t.cancelSignal.then(() => null)]);
       },
     });
+  }
+
+  /** A thing the Mind knows happened: kept for corrections and the router, persisted in memory. */
+  private addFact(f: string) {
+    this.facts.push(f);
+    if (this.facts.length > 40) this.facts.shift();
+    this.memory.addFact(f);
   }
 
   private get now(): Date {
@@ -470,7 +480,7 @@ export class Brain {
         else {
           this.send({ type: "hush", to: "mouth" });
           this.whisper("The user said stop before anything began. Nothing was started on the phone.");
-          this.facts.push("The user said stop before the last request began, so nothing was done.");
+          this.addFact("The user said stop before the last request began, so nothing was done.");
         }
         return;
       }
@@ -601,7 +611,7 @@ export class Brain {
         if (this.current && !this.current.cancelled) {
           this.o.log(`mind: amend task ${this.current.id}: ${t.goal}`);
           this.current.amended = t;
-          this.facts.push(`The user changed "${this.current.plan.title}": ${t.goal}`);
+          this.addFact(`The user changed "${this.current.plan.title}": ${t.goal}`);
           await this.progress(this.current, String(d.say || "Got it, changing that."), "when_idle");
         } else this.enqueue(t);
         break;
@@ -751,7 +761,7 @@ export class Brain {
     if ((plan as any).failSay) return this.finishTask(task, "failed", (plan as any).failSay);
     if (plan.kind === "call") return this.runCall(task);
     if (!this.peers.hands) {
-      this.facts.push(`Couldn't start "${plan.title}": the phone wasn't ready.`);
+      this.addFact(`Couldn't start "${plan.title}": the phone wasn't ready.`);
       return this.finishTask(task, "failed", "The phone isn't ready yet, so I can't do that right now.", false);
     }
     this.o.log(`mind: task ${task.id} "${plan.title}": ${plan.goal}`);
@@ -942,7 +952,7 @@ export class Brain {
     this.o.log(`mind: task ${task.id} ${status}: ${line}`);
     if (published) this.watch({ type: "task", task: task.id, title: task.plan.title, status });
     this.taskUpdate(task, status, line);
-    this.facts.push(`Task "${task.plan.title}" ${status === "done" ? "finished" : "failed"}: ${line}`);
+    this.addFact(`Task "${task.plan.title}" ${status === "done" ? "finished" : "failed"}: ${line}`);
     this.memory.addOutcome({ task: task.id, title: task.plan.title, status, line, at: Date.now() });
     this.lastActivity = Date.now();
     if (this.current === task) this.current = null;
@@ -961,7 +971,7 @@ export class Brain {
     const fact = task.declined
       ? `Task "${task.plan.title}" was not finished: the user didn't confirm the last step, so nothing was sent.`
       : `Task "${task.plan.title}" was cancelled by the user${last ? ` after: ${last}` : " before any action"}. Nothing more will happen on the phone.`;
-    this.facts.push(fact);
+    this.addFact(fact);
     this.memory.addOutcome({ task: task.id, title: task.plan.title, status: "cancelled", line: fact, at: Date.now() });
     this.o.log(`mind: task ${task.id} cancelled${task.declined ? " (not confirmed)" : ""}`);
     if (task.declined) void this.progress(task, "Okay, I won't. Nothing was sent.", "when_idle");
@@ -1013,7 +1023,7 @@ export class Brain {
   private async runCall(task: Task) {
     const c = task.plan.call!;
     if (!this.peers.caller) {
-      this.facts.push(`Couldn't call ${c.name}: the calling part wasn't connected.`);
+      this.addFact(`Couldn't call ${c.name}: the calling part wasn't connected.`);
       return this.finishTask(task, "failed", `I can't make calls right now, so I couldn't ring ${c.name}.`, false);
     }
     this.watch({ type: "task", task: task.id, title: task.plan.title, status: "started" });
