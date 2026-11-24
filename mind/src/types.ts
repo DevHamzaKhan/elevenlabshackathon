@@ -50,6 +50,8 @@ export type MindConfig = {
   hints?: string[];
   /** Not in the contract: lets tests and the laptop runner replace the model door. */
   model?: ModelFn;
+  /** Persistent key-value store for memory and recipes (AsyncStorage-shaped). In memory if absent. */
+  storage?: import("./memory").KeyValueStore;
   /** Not in the contract: test-only speedups (timeouts in ms). */
   timing?: Partial<Timing>;
 };
@@ -72,6 +74,10 @@ export type Timing = {
   listenMs: number;
   /** The final result line or the Send line waits this long at most for the previous line to finish. */
   sayWaitMs: number;
+  /** How long a confirmation waits for the user before it counts as "no". */
+  confirmMs: number;
+  /** A barge-in with nothing after it resumes the task after this long. */
+  bargeMs: number;
 };
 
 export const DEFAULT_TIMING: Timing = {
@@ -85,6 +91,8 @@ export const DEFAULT_TIMING: Timing = {
   commandMs: 1_500,
   listenMs: 14_000,
   sayWaitMs: 4_000,
+  confirmMs: 30_000,
+  bargeMs: 4_000,
 };
 
 export type PlanStep = { n: number; do: string; why: string };
@@ -171,4 +179,8 @@ export type TaskPlan = {
   /** Who the task talks to, for the unknown_contacts confirm policy. */
   recipient?: { name: string; known: boolean };
   call?: { name: string; number: string; goal: string };
+  /** What Bobby says when it is done ("Sent it to Sam."). */
+  doneSay?: string;
+  /** Set when the task can't run at all (e.g. no number): Bobby says this instead. */
+  failSay?: string;
 };

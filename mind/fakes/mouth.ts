@@ -11,6 +11,11 @@ export type FakeMouthOptions = {
   log?: (s: string) => void;
   /** ms of speech per character; 0 makes tests fast. */
   msPerChar?: number;
+  /** Speak protocol v2: announce `voice_caps`, send `request` instead of `heard`. */
+  v2?: boolean;
+  /** v2: answer every `confirm_request` automatically with this (after `confirmDelayMs`). */
+  autoConfirm?: { ok: boolean; heard: string } | null;
+  confirmDelayMs?: number;
 };
 
 export function startFakeMouth(opts: FakeMouthOptions) {
@@ -20,6 +25,7 @@ export function startFakeMouth(opts: FakeMouthOptions) {
   const queue: { id: string; text: string }[] = [];
   let speaking: { id: string; timer: ReturnType<typeof setTimeout> } | null = null;
   const received: any[] = [];
+  let lastConfirm: any = null;
 
   const speakNext = () => {
     if (speaking || queue.length === 0) return;
@@ -84,12 +90,30 @@ export function startFakeMouth(opts: FakeMouthOptions) {
           break;
         case "peers":
           break;
+        case "progress":
+          log(`BOBBY (${m.priority}): ${m.text}`);
+          break;
+        case "task_update":
+          log(`(task ${m.task} ${m.status}${m.text ? `: ${m.text}` : ""})`);
+          break;
+        case "status_result":
+          log(`(status) ${m.text}`);
+          break;
+        case "confirm_request":
+          log(`BOBBY ASKS: ${m.summary}. Should I go ahead?`);
+          lastConfirm = m;
+          if (opts.autoConfirm) {
+            const a = opts.autoConfirm;
+            setTimeout(() => conn.send({ type: "confirm_reply", re: m.id, ok: a.ok, heard: a.heard }), opts.confirmDelayMs ?? 20);
+          }
+          break;
         default:
           log(`(got ${m.type})`);
       }
     },
     log,
     () => {
+      if (opts.v2) conn.send({ type: "voice_caps", v: 2, tools: ["request", "amend", "cancel", "confirm", "status"] });
       if (!awake) {
         awake = true;
         conn.send({ type: "wake" });
@@ -98,6 +122,7 @@ export function startFakeMouth(opts: FakeMouthOptions) {
   );
 
   const wake = () => {
+    if (opts.v2) conn.send({ type: "voice_caps", v: 2, tools: ["request", "amend", "cancel", "confirm", "status"] });
     if (!awake) {
       awake = true;
       conn.send({ type: "wake" });
@@ -121,6 +146,39 @@ export function startFakeMouth(opts: FakeMouthOptions) {
     hearMore(text: string) {
       log(`USER (no press): ${text}`);
       conn.send({ type: "heard", text });
+    },
+    /** v2: the voice model called request(text); `heard` is the raw transcript. */
+    request(text: string, heard = text) {
+      awake = true;
+      log(`USER: ${heard}`);
+      conn.send({ type: "heard", text: heard });
+      conn.send({ type: "request", text, heard });
+    },
+    amend(text: string) {
+      log(`USER (amend): ${text}`);
+      conn.send({ type: "heard", text });
+      conn.send({ type: "amend", text });
+    },
+    cancel(scope: "current" | "all" = "all") {
+      conn.send({ type: "cancel", scope });
+    },
+    bargeIn() {
+      conn.send({ type: "barge_in" });
+    },
+    /** v2: answer the latest confirm_request (ok from the voice model, heard = raw transcript). */
+    confirm(ok: boolean, heard: string) {
+      if (!lastConfirm) return false;
+      log(`USER: ${heard}`);
+      conn.send({ type: "heard", text: heard });
+      conn.send({ type: "confirm_reply", re: lastConfirm.id, ok, heard });
+      lastConfirm = null;
+      return true;
+    },
+    get pendingConfirm() {
+      return lastConfirm;
+    },
+    status(id = "s1") {
+      conn.send({ type: "status", id });
     },
     spoke(text: string) {
       wake();

@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Brain, buildAct, type HubLike } from "../src/brain";
+import { Brain, type HubLike } from "../src/brain";
+import { buildAct } from "../src/exec";
 import { DEFAULT_TIMING, type Msg } from "../src/types";
 import { describeScreen } from "../src/screen";
 import { mindUrl } from "../src/index";
@@ -99,13 +100,18 @@ test("screen_result example renders for the model", () => {
 
 test("buildAct makes acts shaped like the contract's", () => {
   const screen = examples.find((e) => e.type === "screen_result");
-  const tap = buildAct({ do: "tap", n: 0 }, screen);
-  assert.deepEqual(tap, { act: { type: "act", do: "tap", on: { n: 0 } } });
-  assert.deepEqual(buildAct({ do: "key", n: -1, key: "back" }, screen), { act: { type: "act", do: "key", name: "back" } });
-  assert.deepEqual(buildAct({ do: "swipe", n: -1, dir: "left" }, screen), { act: { type: "act", do: "swipe", dir: "left" } });
-  assert.deepEqual(buildAct({ do: "type", n: -1, text: "hi" }, screen), { act: { type: "act", do: "type", text: "hi" } });
-  assert.deepEqual(buildAct({ do: "launch", n: -1, app: "Gmail" }, screen), { act: { type: "act", do: "launch", app: "Gmail" } });
-  assert.ok("error" in buildAct({ do: "tap", n: 99 }, screen), "missing node rejected");
+  const act = (a: any, i = 0) => {
+    const b = buildAct(a, screen, i, false);
+    return "error" in b ? b : b.act;
+  };
+  assert.deepEqual(act({ do: "tap", n: 0 }), { do: "tap", on: { n: 0 } });
+  // A later action in a batch never uses n: the node's unique label instead.
+  assert.deepEqual(act({ do: "tap", n: 0 }, 1), { do: "tap", on: { text: "Reply" } });
+  assert.deepEqual(act({ do: "key", n: -1, key: "back" }), { do: "key", name: "back" });
+  assert.deepEqual(act({ do: "swipe", n: -1, dir: "left" }), { do: "swipe", dir: "left" });
+  assert.deepEqual(act({ do: "type", n: -1, text: "hi" }), { do: "type", text: "hi" });
+  assert.deepEqual(act({ do: "launch", n: -1, app: "Gmail" }), { do: "launch", app: "Gmail" });
+  assert.ok("error" in buildAct({ do: "tap", n: 99 }, screen, 0, false), "missing node rejected");
   const contractAct = examples.find((e) => e.type === "act");
   assert.deepEqual(Object.keys(contractAct).sort(), ["do", "id", "on", "to", "type"]);
 });
