@@ -229,3 +229,24 @@ test("a contact name with regex characters doesn't break routing", async () => {
     await t.close();
   }
 });
+
+test("a late close from a stopped socket doesn't disconnect the restarted client", async () => {
+  const hub = startFakeHub({ port: 0, log: () => {}, speed: 0 });
+  await hub.ready;
+  const ups: boolean[] = [];
+  const c = new HubClient(`ws://localhost:${hub.port}/mind?token=test`, "mind", () => {}, () => {}, (up) => ups.push(up));
+  try {
+    c.start();
+    assert.ok(await until(() => c.connected, 2000));
+    c.stop();
+    assert.equal(c.connected, false);
+    c.start();
+    assert.ok(await until(() => c.connected, 2000), "reconnected");
+    await sleep(200); // the first socket's close arrives in this window
+    assert.equal(c.connected, true, "still connected");
+    assert.deepEqual(ups, [true, false, true]);
+  } finally {
+    c.stop();
+    await hub.close();
+  }
+});
