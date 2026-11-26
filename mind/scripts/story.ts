@@ -4,7 +4,7 @@
 //                    confirmation 800 ms after it is asked. The phone glides 400-900 ms (120-250 fast).
 //   (default)        the real OpenAI models from the root .env (OPENAI_API_KEY, MIND_*).
 //   --v1             drive with the v1 Mouth (heard/say) instead of v2 tool calls.
-//   --flaky [--flaky-rate 0.3], --port N, --only digest|email|shortcut|chain|call|stop|recipe
+//   --flaky [--flaky-rate 0.3], --port N, --only digest|email|shortcut|chain|call|ask|stop|recipe
 // Prints PASS/FAIL per check, a timing table (ms from the user's words) and model calls per role.
 
 import { startMind } from "../src/index";
@@ -27,9 +27,9 @@ const url = (role: string) => `ws://localhost:${port}/${role}?token=story`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const env = loadEnv();
-env.CONTACTS = "Alex=+14155550123,Hamza=+14155550111|hamza@example.com,Mom=+14155550199";
+env.CONTACTS = "Alex=+14155550123,Hamza=+14155550111|hamza@example.com,Mom=+14155550199,Sam Lee=+14155550144,Sam Park=+14155550155";
 const hints = loadHints(env.HINTS_DIR);
-const { file, log } = openLog("story", (l) => /^(mind: (progress|say|task|confirm|queued|local)|USER|BOBBY|phone: (EMAIL|TEXT|CALL|tap|type|launch|opened)|CALL|call )/.test(l));
+const { file, log } = openLog("story", (l) => /^(mind: (progress|say|task|confirm|ask|queued|local)|USER|BOBBY|phone: (EMAIL|TEXT|CALL|tap|type|launch|opened)|CALL|call )/.test(l));
 console.log(`story: log ${file}`);
 console.log(`story: ${sim ? "SIMULATED model latencies (fake OpenAI)" : `real OpenAI, key ${redact(env.OPENAI_API_KEY)}`}, ${v2 ? "v2" : "v1"} Mouth, ${hints.length} hint files`);
 if (!sim && !env.OPENAI_API_KEY) {
@@ -54,7 +54,7 @@ await sleep(800);
 hub.notify("com.google.android.gm", "Sarah Chen", "Running late, can we push to 3?");
 hub.notify("com.whatsapp", "Mum", "Call me when you get a chance x");
 await sleep(300);
-const mouth = startFakeMouth({ url: url("mouth"), log, msPerChar: 35, v2, autoConfirm: v2 ? { ok: true, heard: "yes, go ahead" } : null, confirmDelayMs: 800 });
+const mouth = startFakeMouth({ url: url("mouth"), log, msPerChar: 35, v2, autoConfirm: v2 ? { ok: true, heard: "yes, go ahead" } : null, autoAnswer: v2 ? { heard: "the second one" } : null, confirmDelayMs: 800 });
 await sleep(1500);
 
 const results: { name: string; ok: boolean; detail: string }[] = [];
@@ -83,13 +83,20 @@ async function run(name: string, text: string, done: () => boolean, ms = 60_000)
           await sleep(800);
           mouth.hear("yes, go ahead");
         }
+        // ...and a question with options the same way.
+        const ask = hub.wire.slice(w0).find((w) => w.from === "mind" && w.msg.type === "say" && /Option one:/.test(w.msg.text) && !(w as any).answered);
+        if (ask) {
+          (ask as any).answered = true;
+          await sleep(800);
+          mouth.hear("the second one");
+        }
         await sleep(100);
       }
     })();
   }
   while (!done() && Date.now() - start < ms) await sleep(50);
   const after = hub.wire.slice(w0);
-  const firstLine = after.find((w) => w.from === "mind" && (w.msg.type === "say" || w.msg.type === "progress" || w.msg.type === "confirm_request"));
+  const firstLine = after.find((w) => w.from === "mind" && (w.msg.type === "say" || w.msg.type === "progress" || w.msg.type === "confirm_request" || w.msg.type === "ask_request"));
   const firstAct = after.find((w) => w.from === "mind" && w.msg.type === "act");
   const asked = after.find((w) => w.from === "mind" && (w.msg.type === "confirm_request" || (w.msg.type === "say" && /Should I go ahead/.test(w.msg.text))));
   const answered = after.find((w) => w.to === "mind" && (w.msg.type === "confirm_reply" || (w.msg.type === "heard" && /go ahead/.test(w.msg.text))));
@@ -140,6 +147,15 @@ if (!only || only === "call") {
   const n = ended().length;
   const ok = await run("call Alex (AI caller)", "call Alex and tell him I'm running late", () => ended().length > n, 30_000);
   check("call summary", ok && caller.calls.length > 0, caller.calls[0] ? `to ${caller.calls[0].number}` : "no call");
+  await sleep(1500);
+}
+
+if (!only || only === "ask") {
+  const n = ended().length;
+  const ok = await run("text Sam (one question, two Sams)", "text Sam I'm running late", () => ended().length > n);
+  const asked = hub.wire.filter((w) => w.from === "mind" && (w.msg.type === "ask_request" || (w.msg.type === "say" && /Option one:/.test(w.msg.text)))).length;
+  const to = hub.phone.texts.filter((x) => /running late/.test(x.body)).map((x) => x.to);
+  check("question with options", ok && asked === 1 && to.join() === "+14155550155", `${asked} question(s), text to ${to.join(", ") || "nobody"}`);
   await sleep(1500);
 }
 

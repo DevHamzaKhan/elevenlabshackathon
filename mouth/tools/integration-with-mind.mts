@@ -28,7 +28,7 @@ async function pass(v2: boolean, port: number) {
   await hub.ready;
   const url = `ws://localhost:${port}`;
   const ai = fakeOpenAI();
-  const mind = startMind({ hubUrl: url, token: "t", env: { CONTACTS: "Alex=+14155550123,Hamza=+14155550111|hamza@example.com" }, log: log("mind"), hints: [], model: makeModel({ apiKey: "fake", log: log("model"), fetch: ai.fetch }) });
+  const mind = startMind({ hubUrl: url, token: "t", env: { CONTACTS: "Alex=+14155550123,Hamza=+14155550111|hamza@example.com,Sam Lee=+14155550144,Sam Park=+14155550155" }, log: log("mind"), hints: [], model: makeModel({ apiKey: "fake", log: log("model"), fetch: ai.fetch }) });
   const spoken: string[] = [];
   const context: string[] = [];
   let cb: any;
@@ -99,6 +99,34 @@ async function pass(v2: boolean, port: number) {
   }
   check(`${tag}: Mind sends call to the Caller`, await until(() => wire().includes("mind->caller call")));
   check(`${tag}: Caller answers with call_status and call_result`, await until(() => wire().includes("caller->mind call_result")));
+
+  // A question back to the user: two contacts are called Sam, so the Mind asks which, with options.
+  const asked = () => spoken.some((s) => /Which Sam\? Option one: Sam Lee\. Option two: Sam Park\./.test(s));
+  const confirms = () => (v2 ? context.filter((c) => /CONFIRM id=/.test(c)).length : spoken.filter((s) => /Should I go ahead/.test(s)).length);
+  const before = confirms();
+  await mouth.wake();
+  cb.onUserTranscript("text Sam I'm running late");
+  if (v2) cb.onToolCall("request", { text: "Text Sam I'm running late" }, "call_5");
+  check(`${tag}: the Mind's question is spoken with its options`, await until(asked, 8000));
+  if (v2) {
+    const qid = /QUESTION id=(\S+):/.exec(context.find((c) => /QUESTION id=/.test(c)) ?? "")?.[1];
+    cb.onUserTranscript("uh, the second one");
+    cb.onToolCall("answer", { id: qid, option: 2, text: "the second one" }, "call_6");
+    check(`${tag}: ask_reply carries the pick and the raw transcript`, await until(() => hub.wire.some((w: any) => w.msg.type === "ask_reply" && w.msg.option === 2 && /second one/.test(w.msg.heard)), 3000));
+    await until(() => confirms() > before, 5000);
+    const id = /CONFIRM id=(\S+):/.exec(context.filter((c) => /CONFIRM id=/.test(c)).pop() ?? "")?.[1];
+    cb.onUserTranscript("yes");
+    cb.onToolCall("confirm", { id, answer: "yes" }, "call_7");
+  } else {
+    await sleep(300);
+    await mouth.wake();
+    cb.onUserTranscript("the second one");
+    await until(() => confirms() > before, 10000);
+    await sleep(300);
+    await mouth.wake();
+    cb.onUserTranscript("yes");
+  }
+  check(`${tag}: the text goes to the Sam the user picked`, await until(() => hub.phone.texts.some((x: any) => x.to === "+14155550155"), 8000) && !hub.phone.texts.some((x: any) => x.to === "+14155550144"));
 
   if (!v2) {
     await mouth.wake();

@@ -30,6 +30,8 @@ export async function setup(
     /** The fake Mouth speaks protocol v2 (request/confirm_reply/...). */
     v2?: boolean;
     autoConfirm?: { ok: boolean; heard: string } | null;
+    autoAnswer?: { heard: string; option?: number } | null;
+    noAnswerTool?: boolean;
     caller?: boolean;
     sleepMs?: number;
     contacts?: string;
@@ -60,13 +62,13 @@ export async function setup(
     hints: [],
     model: opts.model ? opts.model(hub, door) : door,
     storage,
-    timing: { actMs: 2000, sayMs: 2000, callMs: 5000, sleepMs: opts.sleepMs ?? 60_000, commandMs: 40, listenMs: 300, confirmMs: 3000, bargeMs: 1500, ...(opts.timing ?? {}) },
+    timing: { actMs: 2000, sayMs: 2000, callMs: 5000, sleepMs: opts.sleepMs ?? 60_000, commandMs: 40, listenMs: 300, confirmMs: 3000, askMs: 3000, bargeMs: 1500, ...(opts.timing ?? {}) },
   });
   const url = (role: string) => `ws://localhost:${port}/${role}?token=test`;
   const mouth =
     opts.mouth === false
       ? null
-      : startFakeMouth({ url: url("mouth"), log, msPerChar: opts.msPerChar ?? 0, v2: opts.v2, autoConfirm: opts.autoConfirm === undefined ? (opts.v2 ? { ok: true, heard: "yes, send it" } : null) : opts.autoConfirm });
+      : startFakeMouth({ url: url("mouth"), log, msPerChar: opts.msPerChar ?? 0, v2: opts.v2, autoConfirm: opts.autoConfirm === undefined ? (opts.v2 ? { ok: true, heard: "yes, send it" } : null) : opts.autoConfirm, autoAnswer: opts.autoAnswer, noAnswerTool: opts.noAnswerTool });
   const caller = opts.caller === false ? null : startFakeCaller({ url: url("caller"), log, stepMs: opts.callerStepMs ?? 30 });
   await until(() => (mouth ? mouth.awake : true), 3000);
   await sleep(150);

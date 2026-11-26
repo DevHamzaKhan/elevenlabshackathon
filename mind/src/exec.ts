@@ -5,11 +5,15 @@
 import type { Check, DoneWhen, HandsAct, ModelFn, Msg, Risk, SubgoalSpec, Target } from "./types";
 import { CHECK_SCHEMA, ESCALATE_SCHEMA, EXEC_SCHEMA } from "./prompts";
 import { checkScreen, describeCompact, findNode, nodeLabel, stableTarget, unreadable } from "./screen";
+import { cleanQuestion, type Question } from "./ask";
 
 export type ActResult = { ok: boolean; error?: string; why?: string; app?: string; screen: Msg | null };
 
 /** One step of a successful grounded run, with a stable target: what a recipe replays. */
 export type TraceStep = { act: HandsAct; expect: Check; label: string };
+
+/** How a question to the user ended: something to note and carry on with, or the task changed under us. */
+export type AskOutcome = { kind: "note"; note: string } | { kind: "cancelled" } | { kind: "amended" };
 
 export type ExecDeps = {
   model: ModelFn;
@@ -22,6 +26,10 @@ export type ExecDeps = {
   gate(): Promise<"go" | "cancelled">;
   /** Asks the user before an irreversible action the sub-goal didn't announce. */
   confirm(summary: string): Promise<boolean>;
+  /** Asks the user a question the screen raised. Always comes back with something to go on. */
+  ask(q: Question): Promise<AskOutcome>;
+  /** False once this task has used its questions: the model is told to decide by itself. */
+  canAsk(): boolean;
   /** Escalations left for this task; take() uses one. */
   escalations: { left(): number; take(): void };
   counters: { exec: number; escalate: number; check: number };
@@ -40,6 +48,8 @@ export type SubgoalRun = {
   budget: number;
   /** A taught sub-goal nothing has been done for yet: the screen can't already show it finished. */
   mustAct?: boolean;
+  /** Answers the user gave to earlier questions ("Which Alex? -> Alex Kim"), so they aren't asked again. */
+  known?: string[];
 };
 
 export type SubgoalResult =
@@ -104,6 +114,9 @@ export class Executor {
     let modelFails = 0;
     let blind = 0;
     let escalatedHere = 0;
+    // A run the user steered isn't a recipe: next time the screen may offer different choices.
+    let asked = false;
+    const done = (): SubgoalResult => ({ ok: true, trace: asked ? [] : trace, how: "grounded" });
     while (steps < run.budget) {
       if ((await this.d.gate()) === "cancelled") return { ok: false, cancelled: true, reason: "cancelled", say: "" };
       const unreadableNow = (s: Msg | null) => !!s && unreadable(s);
@@ -115,7 +128,7 @@ export class Executor {
       }
       if (screen.locked) return { ok: false, reason: "locked", say: "Your phone is locked, so I can't do that. Unlock it and ask me again." };
       const doneWhy = checkScreen(spec.done_when, screen);
-      if (doneWhy === null && !(run.mustAct && steps === 0)) return { ok: true, trace, how: "grounded" };
+      if (doneWhy === null && !(run.mustAct && steps === 0)) return done();
 
       const stuck = mismatches >= 2 || unreadableNow(screen);
       let reply: any = null;
@@ -170,9 +183,25 @@ export class Executor {
       modelFails = 0;
       if (reply.note) run.scratch.push(String(reply.note));
 
+      if (reply.status === "ask") {
+        steps += 1;
+        const q = cleanQuestion(reply);
+        if (!q) {
+          history.push("asked the user an empty question");
+          mismatches += 1;
+          continue;
+        }
+        const a = await this.d.ask(q);
+        if (a.kind === "cancelled") return { ok: false, cancelled: true, reason: "cancelled", say: "" };
+        if (a.kind === "amended") return { ok: false, reason: "amended", say: "" };
+        asked = true;
+        run.scratch.push(a.note);
+        continue;
+      }
+
       if (reply.status === "done" || (!escalated && reply.status === "act" && (!reply.actions || reply.actions.length === 0))) {
         const why = await this.isDone(spec.done_when, screen);
-        if (why === null) return { ok: true, trace, how: "grounded" };
+        if (why === null) return done();
         history.push(`claimed done, but the check says: ${why}`);
         mismatches += 1;
         steps += 1;
@@ -228,7 +257,7 @@ export class Executor {
       if (batchOk) mismatches = 0;
       if (batchOk && current !== screen) {
         const why = checkScreen(spec.done_when, current);
-        if (why === null) return { ok: true, trace, how: "grounded" };
+        if (why === null) return done();
       }
       void escalatedHere;
     }
@@ -245,6 +274,8 @@ export class Executor {
     if (run.spec.risk === "irreversible") lines.push(run.confirmed ? "This sub-goal is the irreversible step; the user has confirmed it." : "This sub-goal is irreversible.");
     if (run.spec.guide) lines.push(`How the user showed this, step by step (do the same where the screen allows; adapt when it differs):\n${run.spec.guide}`);
     if (run.scratch.length) lines.push(`Notes from earlier steps:\n${run.scratch.slice(-6).map((s) => `- ${s}`).join("\n")}`);
+    if (run.known?.length) lines.push(`The user's answers to earlier questions:\n${run.known.map((s) => `- ${s}`).join("\n")}`);
+    if (!this.d.canAsk()) lines.push("You can't ask the user anything now: decide yourself.");
     if (history.length) {
       const start = Math.max(0, history.length - 8);
       lines.push(`Tried so far${start ? ` (last ${history.length - start})` : ""}:`);

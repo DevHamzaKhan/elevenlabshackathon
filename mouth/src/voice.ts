@@ -13,7 +13,7 @@ export interface VoiceCallbacks {
   onAgentResponse(text: string): void;
   onModeChange(mode: VoiceMode): void;
   onError(message: string): void;
-  /** The voice model called one of Bobby's tools (request, amend, cancel, confirm, status). */
+  /** The voice model called one of Bobby's tools (request, amend, cancel, confirm, answer, status). */
   onToolCall?(name: string, args: Record<string, unknown>, callId: string): void;
   /** The user started talking (voice activity), e.g. over Bobby or during a task. */
   onSpeechStarted?(): void;

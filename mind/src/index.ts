@@ -39,6 +39,16 @@ function teachMode(v: string | undefined, log: (l: string) => void): TeachMode {
   return "hybrid";
 }
 
+/** MIND_ASK_MAX: most questions per request and per running task. Default 1; 0 turns questions off. */
+function askMax(v: string | undefined, log: (l: string) => void): number {
+  const t = (v ?? "").trim();
+  if (!t) return 1;
+  const n = Number(t);
+  if (Number.isInteger(n) && n >= 0 && n <= 3) return n;
+  log(`mind: MIND_ASK_MAX="${v}" is not a whole number from 0 to 3; using 1`);
+  return 1;
+}
+
 export function startMind(config: MindConfig): { stop(): void; brain: Brain } {
   const log = config.log ?? (() => {});
   const env = config.env ?? {};
@@ -68,6 +78,7 @@ export function startMind(config: MindConfig): { stop(): void; brain: Brain } {
     contacts: parseContactBook(env.CONTACTS),
     timing,
     confirm: confirmPolicy(env.MIND_CONFIRM, log),
+    askMax: askMax(env.MIND_ASK_MAX, log),
     storage: config.storage,
     teachMode: teachMode(env.MIND_TEACH_MODE, log),
   });

@@ -59,7 +59,7 @@ export function fakeOpenAI(opts: { latency?: Partial<Record<string, number>> } =
 
 // ---------- router ----------
 
-const NONE = { whisper: "", teach: "", say: "", cancel_scope: "", tasks: [] as any[] };
+const NONE = { question: "", options: [] as string[], whisper: "", teach: "", say: "", cancel_scope: "", tasks: [] as any[] };
 const dw = (o: Partial<{ app: string; text_present: string; text_absent: string; describe: string }>) => ({ app: "", text_present: "", text_absent: "", describe: "", ...o });
 
 export function replyToSarahTask(n: string) {
@@ -167,7 +167,11 @@ function nodesOf(user: string): N[] {
 
 const X = { app: "", text_present: "", text_absent: "", field_label: "", field_value: "" };
 export const action = (o: any) => ({ do: "tap", n: -1, target_text: "", text: "", dir: "", key: "", app: "", ms: -1, irreversible: false, ...o, expect: { ...X, ...(o.expect ?? {}) } });
-export const actReply = (actions: any[], say = "", note = "") => ({ status: "act", say, note, actions });
+export const actReply = (actions: any[], say = "", note = "") => ({ status: "act", say, note, question: "", options: [] as string[], actions });
+/** The executor (or escalation) asks the user instead of acting. */
+export const askReply = (question: string, options: string[]) => ({ status: "ask", say: "", note: "", question, options, actions: [], replan: [] });
+/** The router asks before starting anything. */
+export const routeAsk = (question: string, options: string[]) => ({ ...NONE, route: "ask", question, options });
 
 /**
  * A sub-goal that carries the steps the user once showed. The pretend model does what a real one

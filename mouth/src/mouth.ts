@@ -26,11 +26,12 @@ type State = "asleep" | "starting" | "live";
 type Item =
   | { kind: "say"; id: string; text: string; queuedAt: number }
   | { kind: "correct"; text: string }
-  /** v2 `progress` / `confirm_request` lines: spoken in order, no say_started/say_done. */
-  | { kind: "line"; text: string };
+  /** v2 `progress` / `confirm_request` / `ask_request` lines: spoken in order, no say_started/say_done.
+   *  `mic` reopens the microphone once the line has been spoken, for the user's answer. */
+  | { kind: "line"; text: string; mic?: boolean };
 
 /** Bobby's tools (protocol v2), announced in `voice_caps`. */
-export const V2_TOOLS = ["request", "amend", "cancel", "confirm", "status", "teach"];
+export const V2_TOOLS = ["request", "amend", "cancel", "confirm", "status", "teach", "answer"];
 
 export class Mouth {
   private state: State = "asleep";
@@ -58,6 +59,8 @@ export class Mouth {
   /** Tasks the Mind reports as running/paused/waiting: speech then counts as a barge-in. */
   private activeTasks = new Set<string>();
   private pendingConfirm: { id: string; summary: string; task: string } | null = null;
+  /** A question from the Mind waiting for the user. `heard` is the raw transcript since it was asked. */
+  private pendingAsk: { id: string; task: string; heard: string } | null = null;
   private statusCalls = new Map<string, { callId: string; timer: ReturnType<typeof setTimeout> }>();
   private statusSeq = 0;
   private lastBargeAt = 0;
@@ -184,14 +187,32 @@ export class Mouth {
         this.pump();
         return;
       }
+      case "ask_request": {
+        if (typeof msg.id !== "string") return;
+        const question = String(msg.question ?? "");
+        const options = Array.isArray(msg.options) ? msg.options.map(String) : [];
+        if (!question) return;
+        this.pendingAsk = { id: msg.id, task: String(msg.task ?? ""), heard: "" };
+        const numbered = options.map((o, i) => `${i + 1}) ${o}`).join("; ");
+        this.session!.sendContextualUpdate(
+          `QUESTION id=${msg.id}: ${question}${numbered ? ` Options: ${numbered}.` : ""} When the user replies, call answer with id "${msg.id}", the number of the option they chose (0 if they said something else) and what they said.`,
+        );
+        // The Mind sends the line to read, options included; the bare question is the fallback.
+        this.queue.unshift({ kind: "line", text: typeof msg.say === "string" && msg.say ? msg.say : question, mic: true });
+        this.openMic(); // the user may answer before the options are all read out
+        this.pump();
+        return;
+      }
       case "task_update": {
         const id = String(msg.task ?? "");
         const st = String(msg.status ?? "");
-        if (["running", "paused", "waiting_confirm"].includes(st)) this.activeTasks.add(id);
+        if (["running", "paused", "waiting_confirm", "waiting_answer"].includes(st)) this.activeTasks.add(id);
         else this.activeTasks.delete(id);
         // A confirmation ends with its task.
         const ended = ["cancelled", "done", "failed"].includes(st);
         if (ended && this.pendingConfirm && (!this.pendingConfirm.task || this.pendingConfirm.task === id)) this.pendingConfirm = null;
+        // So does a question that task asked. One asked before any task has no task id and stays.
+        if (ended && this.pendingAsk && this.pendingAsk.task === id) this.pendingAsk = null;
         return;
       }
       case "status_result": {
@@ -240,6 +261,16 @@ export class Mouth {
         this.pendingConfirm = null;
         return reply({ recorded: true, note: "Wait for the UPDATE before saying anything happened." }, false);
       }
+      case "answer": {
+        const ask = this.pendingAsk;
+        const id = typeof args.id === "string" && args.id ? args.id : ask?.id;
+        if (!id) return reply({ error: "no question is waiting for an answer" }, false);
+        const option = Number.isInteger(args.option) ? Number(args.option) : 0;
+        // The Mind reads the raw transcript first; the voice model's pick only stands in for it.
+        this.d.send({ type: "ask_reply", re: id, option, text, heard: ask?.id === id ? ask.heard : "" });
+        if (ask?.id === id) this.pendingAsk = null;
+        return reply({ recorded: true, note: "Say nothing about what happens next until an UPDATE." }, false);
+      }
       case "status": {
         const id = `st${++this.statusSeq}`;
         const timer = setTimeout(() => {
@@ -265,7 +296,7 @@ export class Mouth {
 
   /** The user started talking while a task runs: the Mind pauses it at the next step. */
   private onSpeechStarted(): void {
-    if (this.state !== "live" || this.activeTasks.size === 0 || this.pendingConfirm) return;
+    if (this.state !== "live" || this.activeTasks.size === 0 || this.pendingConfirm || this.pendingAsk) return;
     const now = this.now();
     if (now - this.lastBargeAt < 2000) return;
     this.lastBargeAt = now;
@@ -292,6 +323,7 @@ export class Mouth {
     for (const w of this.statusCalls.values()) clearTimeout(w.timer);
     this.statusCalls.clear();
     this.pendingConfirm = null;
+    this.pendingAsk = null;
     this.finishCurrent(true);
     this.dropQueue();
     this.flushHeld();
@@ -318,6 +350,7 @@ export class Mouth {
     if (!/[\p{L}\p{N}]/u.test(t)) return; // "..." and other noise-only transcripts
     if (t.startsWith(SAY_TAG) || t.startsWith(CORRECT_TAG)) return; // our own instructions
     this.lastHeard = t;
+    if (this.pendingAsk) this.pendingAsk.heard = `${this.pendingAsk.heard} ${t}`.trim();
     // A typed test turn may be echoed back as a transcript: it was already sent as heard.
     const i = this.typedTurns.findIndex((x) => x.text === t && this.now() - x.at < 10_000);
     if (i >= 0) {
@@ -392,7 +425,12 @@ export class Mouth {
       }
       this.setSayTimer(this.d.sayMaxMs ?? 30_000);
     } else if (mode === "listening") {
-      if (c && c.started) this.finishCurrent(true);
+      if (c && c.started) {
+        this.finishCurrent(true);
+        // A question was just read out: (re)open the mic so its time limits start now, not when
+        // the question arrived. Reading four options can take longer than the limit itself.
+        if (c.kind === "line" && c.mic && this.pendingAsk) this.openMic();
+      }
       this.pump();
     }
   }

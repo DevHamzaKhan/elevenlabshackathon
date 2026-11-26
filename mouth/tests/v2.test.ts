@@ -45,7 +45,7 @@ test("wake announces voice_caps v2 (tools) before wake", async () => {
   const s = await live();
   assert.deepEqual(s.sent.slice(0, 2).map((f) => f.type), ["voice_caps", "wake"]);
   assert.equal(s.sent[0].v, 2);
-  assert.deepEqual(s.sent[0].tools, ["request", "amend", "cancel", "confirm", "status", "teach"]);
+  assert.deepEqual(s.sent[0].tools, ["request", "amend", "cancel", "confirm", "status", "teach", "answer"]);
 });
 
 test("teach tool -> `teach` start/done/cancel with the raw transcript; Bobby invites the demo", async () => {
@@ -143,14 +143,14 @@ test("v1 still works: say gets say_started/say_done and is spoken through speak(
 
 // ---------- OpenAI Realtime, plain-TS half ----------
 
-test("session config: model from env, semantic VAD, transcription, Bobby's five tools, voice", () => {
+test("session config: model from env, semantic VAD, transcription, Bobby's six tools, voice", () => {
   const c = sessionConfig({ model: "gpt-realtime-2.1", voice: "cedar" });
   assert.equal(c.type, "realtime");
   assert.equal(c.model, "gpt-realtime-2.1");
   assert.equal(c.audio.output.voice, "cedar");
   assert.equal(c.audio.input.turn_detection.type, "semantic_vad");
   assert.ok(c.audio.input.transcription.model);
-  assert.deepEqual(c.tools.map((t) => t.name), ["request", "amend", "cancel", "confirm", "status", "teach"]);
+  assert.deepEqual(c.tools.map((t) => t.name), ["request", "amend", "cancel", "confirm", "answer", "status", "teach"]);
   for (const t of BOBBY_TOOLS) assert.equal(t.type, "function");
   assert.match(c.instructions, /Never say a task is done/);
   assert.equal(sessionConfig().model, "gpt-realtime-2.1-mini");
@@ -216,6 +216,56 @@ test("a confirmation is dropped when its task finishes, so speech can barge in a
   s.m.onHub({ type: "confirm_request", id: "c1", task: "t1", summary: "Send it" });
   s.m.onHub({ type: "task_update", task: "t1", status: "failed" });
   s.m.onHub({ type: "task_update", task: "t2", status: "running" });
+  s.v.cb.onSpeechStarted!();
+  assert.equal(s.of("barge_in").length, 1);
+});
+
+// ---------- questions from the Mind (ask_request / the answer tool) ----------
+
+const ASK = { type: "ask_request", to: "mouth", id: "m8", task: "t1", question: "Which Alex?", options: ["Alex Chen", "Alex Kim"], say: "Which Alex? Option one: Alex Chen. Option two: Alex Kim." };
+
+test("ask_request: the question and its options are read out, the mic opens, answer tool -> ask_reply", async () => {
+  const s = await live();
+  s.m.onHub(ASK);
+  assert.deepEqual(s.v.spoken, ["Which Alex? Option one: Alex Chen. Option two: Alex Kim."]);
+  assert.ok(s.v.context.some((c) => /QUESTION id=m8: Which Alex\? Options: 1\) Alex Chen; 2\) Alex Kim\./.test(c)));
+  assert.equal(s.v.mic[s.v.mic.length - 1], false, "mic open for the answer");
+  s.v.cb.onUserTranscript("uh yeah the second one works");
+  s.v.cb.onToolCall!("answer", { id: "m8", option: 2, text: "the second one" }, "c5");
+  assert.deepEqual(s.of("ask_reply")[0], { type: "ask_reply", re: "m8", option: 2, text: "the second one", heard: "uh yeah the second one works" });
+  assert.equal(s.v.results[0].respond, false, "no speech until the Mind's update");
+  s.v.cb.onToolCall!("answer", { id: "", option: 1, text: "one" }, "c6");
+  assert.match(s.v.results[1].output.error, /no question/);
+});
+
+test("ask_reply carries only what was said after the question, never the original request", async () => {
+  const s = await live();
+  s.v.cb.onUserTranscript("text alex i'm late");
+  s.m.onHub(ASK);
+  // The tool call can arrive before the transcript of the answer does.
+  s.v.cb.onToolCall!("answer", { id: "m8", option: 0, text: "oh you know what, call him instead" }, "c5");
+  assert.deepEqual(s.of("ask_reply")[0], { type: "ask_reply", re: "m8", option: 0, text: "oh you know what, call him instead", heard: "" });
+});
+
+test("a question without a `say` line falls back to the bare question; the mic reopens once it has been read", async () => {
+  const s = await live();
+  s.m.onHub({ type: "ask_request", to: "mouth", id: "m9", task: "", question: "What should the subject be?", options: [] });
+  assert.deepEqual(s.v.spoken, ["What should the subject be?"]);
+  const opens = () => s.v.mic.filter((m) => m === false).length;
+  const before = opens();
+  s.v.cb.onModeChange("speaking");
+  s.v.cb.onModeChange("listening");
+  assert.equal(opens(), before + 1, "reopened after the question was spoken");
+});
+
+test("no barge_in while a question is out; a question ends with its task", async () => {
+  const s = await live();
+  s.m.onHub({ type: "task_update", to: "mouth", task: "t1", status: "waiting_answer" });
+  s.m.onHub(ASK);
+  s.v.cb.onSpeechStarted!();
+  assert.equal(s.of("barge_in").length, 0, "answering is not a barge-in");
+  s.m.onHub({ type: "task_update", to: "mouth", task: "t1", status: "cancelled" });
+  s.m.onHub({ type: "task_update", to: "mouth", task: "t2", status: "running" });
   s.v.cb.onSpeechStarted!();
   assert.equal(s.of("barge_in").length, 1);
 });

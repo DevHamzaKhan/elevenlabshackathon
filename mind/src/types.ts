@@ -43,7 +43,7 @@ export type MindConfig = {
   hubUrl: string;
   token: string;
   /** OPENAI_API_KEY, MIND_ROUTER_MODEL, MIND_EXEC_MODEL, MIND_ESCALATE_MODEL, MIND_*_EFFORT,
-   *  MIND_CONFIRM, CONTACTS, plus optional MIND_* tuning knobs. */
+   *  MIND_CONFIRM, MIND_ASK_MAX, CONTACTS, plus optional MIND_* tuning knobs. */
   env: Record<string, string | undefined>;
   log: (line: string) => void;
   /** Per-app navigation notes. May be empty. */
@@ -84,6 +84,10 @@ export type Timing = {
   teachMaxMs: number;
   /** Teaching: how long Hands gets to answer `observe`. */
   observeMs: number;
+  /** How long a question waits for the user before the Mind goes with its own first option. */
+  askMs: number;
+  /** v2: after the user speaks during a question, how long the voice model has to send its `answer` call before the transcript alone is taken. */
+  askGraceMs: number;
 };
 
 export const DEFAULT_TIMING: Timing = {
@@ -102,6 +106,8 @@ export const DEFAULT_TIMING: Timing = {
   teachIdleMs: 25_000,
   teachMaxMs: 300_000,
   observeMs: 2_500,
+  askMs: 30_000,
+  askGraceMs: 2_500,
 };
 
 export type PlanStep = { n: number; do: string; why: string };
