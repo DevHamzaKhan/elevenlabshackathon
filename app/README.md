@@ -51,6 +51,11 @@ Phone: Developer options on, USB debugging on, plugged in, `adb devices` shows i
    Settings > Advanced features > Side button > Press and hold is set to the digital assistant.
 7. **Check.** `./check.sh` (all of it: typecheck, `npm test`, build, install, grant, push config, Mind off, `drive.mjs`
    smoke script, then checks that opening the app wakes Bobby and moves it to the back).
+   **Locked phone (optional).** On the settings screen, under "Unlock when locked", tap Set up:
+   confirm it's you, enter your PIN twice, your phrase, and pick your connected earbuds. Then,
+   with the phone PIN-locked and the earbuds connected, hold the side button and say the phrase.
+   Bobby types the PIN once; if that fails he disarms until you set it up again. Details:
+   `hands/README.md` "Locked-phone unlock".
 8. **Try it.** Hold the side button. Bobby wakes (keep-alive notification appears) and the
    app goes to the back. Tap the notification to see the settings screen without waking.
 

@@ -11,6 +11,21 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
 class BobbyHandsModule : Module() {
+  companion object {
+    @Volatile private var live: BobbyHandsModule? = null
+    @Volatile private var assistListeners = false
+
+    /** True when the app's JavaScript is running and listening for `onAssist`. */
+    fun listeningForAssist(): Boolean = live != null && assistListeners
+
+    /** Tells the app's JavaScript the side button was held on a locked phone. */
+    fun emitAssist(): Boolean {
+      val m = live ?: return false
+      if (!assistListeners) return false
+      return try { m.sendEvent("onAssist", mapOf("locked" to true)); true } catch (e: Exception) { false }
+    }
+  }
+
   /** Set when the activity receives an intent from Bobby's keep-alive notification. */
   @Volatile private var fromNotification = false
 
@@ -20,7 +35,16 @@ class BobbyHandsModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("BobbyHands")
 
+    Events("onAssist")
+    OnStartObserving("onAssist") { assistListeners = true }
+    OnStopObserving("onAssist") { assistListeners = false }
+
+    OnDestroy {
+      if (live === this@BobbyHandsModule) { live = null; assistListeners = false }
+    }
+
     OnCreate {
+      live = this@BobbyHandsModule
       fromNotification = appContext.currentActivity?.intent
         ?.getBooleanExtra(KeepAliveService.FROM_NOTIFICATION, false) ?: false
     }
@@ -99,6 +123,37 @@ class BobbyHandsModule : Module() {
     Function("openedFromNotification") {
       fromNotification || (appContext.currentActivity?.intent
         ?.getBooleanExtra(KeepAliveService.FROM_NOTIFICATION, false) ?: false)
+    }
+
+    /** Bobby's locked-phone unlock: whether it's set up and armed. Never any secret. */
+    Function("unlockStatus") {
+      val c = ctx
+      val st = UnlockVault.status(c)
+      mapOf(
+        "setUp" to st.setUp,
+        "armed" to st.armed,
+        "earbuds" to st.earbuds,
+        "earbudsConnected" to LockedUnlock.connectedEarbuds(c).any {
+          val (name, tail) = UnlockVault.earbuds(c)
+          UnlockLogic.sameEarbuds(name, tail, it.first, it.second)
+        },
+        "disarmedReason" to st.disarmedReason,
+        "lastResult" to st.lastResult,
+        "lastAt" to st.lastAt.toDouble(),
+        "secureLockSet" to c.getSystemService(android.app.KeyguardManager::class.java).isDeviceSecure,
+      )
+    }
+
+    /** Opens the native setup screen (PIN, phrase, earbuds). The PIN never reaches JavaScript. */
+    Function("openUnlockSetup") {
+      val c = ctx
+      c.startActivity(Intent(c, UnlockSetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    /** Forgets the stored PIN, phrase and key. Needs no confirmation: it only removes access. */
+    Function("turnOffUnlock") {
+      UnlockVault.turnOff(ctx)
+      Hub.log("unlock: turned off from the app")
     }
 
     Function("clearOpenedFromNotification") {

@@ -95,6 +95,45 @@ mailto, not_found) and `tools/v2-emu.txt` (stale `{n}`, launch ranking, then_scr
 folded-label tap, `id:` target). At the prompt: `caps`, `screen since`, `screen compact`,
 `open mailto:a@b.c?subject=Hi`, `tap key:k1a2b3c4d --fast --then`, `expect same=true`.
 
+## Locked-phone unlock
+
+Holding the side button on a PIN-locked phone wakes Bobby over the lock screen. When he hears the
+owner's phrase while their trusted earbuds are connected, Hands types the PIN on the lock
+screen's own keypad, once.
+
+- **Setup is native** (`UnlockSetupActivity`, opened by `openUnlockSetup()`; the app's settings
+  screen has the button). It asks for a fingerprint, face or the phone's PIN first, sets
+  FLAG_SECURE (no screenshots or recording) and takes the PIN, the phrase and one connected
+  Bluetooth audio device. The PIN never passes through JavaScript, the hub or `.env`.
+- **Storage** (`UnlockVault`): the PIN is AES-256-GCM encrypted with a non-exportable Android
+  Keystore key (StrongBox when available) and stored in `noBackupFilesDir`. The phrase is kept
+  only as a salted PBKDF2 hash. `turnOffUnlock()` deletes the key and the file.
+- **Rules** (`UnlockLogic.gate`, checked by Hands on every `heard` from the Mouth while the phone
+  is PIN-locked): set up and armed → secure lock showing → this lock session's attempt unused →
+  trusted earbuds connected (name plus the last two address bytes) → the phrase appears as
+  consecutive words in what was heard (at most 3 misses per lock session).
+- **One attempt, never a retry.** "Attempt started" is written to disk before the first digit.
+  A failed attempt (wrong PIN, a key press failing, a crash mid-entry) disarms the feature until
+  the owner sets it up again. A lock session's attempt resets only when the phone is unlocked
+  (`ACTION_USER_PRESENT`). If no full 0-9 keypad is found, nothing is typed.
+- **Opening the keypad** (types nothing): already showing → tap the lock screen's unlock icon
+  through accessibility (what works on Android 15; an injected swipe up does not open a PIN
+  keypad) → `requestDismissKeyguard` from the invisible `BouncerActivity`, which stays up while
+  the PIN is typed → a swipe up. Keys are matched by id (`key0`..`key9`, `key_enter`) first,
+  then by label; Delete and Emergency are never pressed.
+- **Probe** (read-only, for a new phone): `node hands/tools/unlock-probe.mjs` (after `adb forward
+  tcp:8765 tcp:8765`, with the phone PIN-locked) sends `{"type":"unlock_probe","to":"hands"}`.
+  Hands opens the keypad and answers `unlock_probe_result` with `keypad`, `how`, `enter`,
+  `clickable`, `byId`. It never types and never uses the attempt.
+- While the PIN is typed the cursor and captions are hidden, and `heard` captions aren't shown on
+  a locked phone with the unlock set up (they would show the phrase).
+- The unlock runs on the Hands worker and the hub calls the observer before forwarding `heard`
+  to the Mind, so the Mind's next `screen` waits for the unlock and then sees the real screen.
+  If any rule fails, the Mind gets `locked` as before.
+- JS API: `unlockStatus()` (no secrets), `openUnlockSetup()`, `turnOffUnlock()`,
+  `addAssistListener(fn)` (side button on a locked phone with the unlock armed; the app wakes
+  Bobby without coming to the front).
+
 ## Build, install, grant, drive
 
 Laptop: Node 22, JDK 17 or 21 (`JAVA_HOME`; Homebrew `openjdk@17` works), Android SDK (`export ANDROID_HOME=$HOME/Library/Android/sdk`).

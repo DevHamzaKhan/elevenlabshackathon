@@ -126,6 +126,29 @@
       android:turnScreenOn="true"
       android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
+    <!-- Shows the PIN keypad (requestDismissKeyguard) and stays up while Hands types the PIN. -->
+    <activity
+      android:name="dev.bobby.hands.BouncerActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:noHistory="true"
+      android:taskAffinity="dev.bobby.hands.bouncer"
+      android:launchMode="singleInstance"
+      android:showWhenLocked="true"
+      android:turnScreenOn="true"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+    <!--
+      Bobby's unlock setup: PIN, phrase and earbuds. Native (not React) so the PIN never
+      passes through JavaScript; FLAG_SECURE is set in code. Not exported: only the app opens it.
+    -->
+    <activity
+      android:name="dev.bobby.hands.UnlockSetupActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:label="Bobby unlock"
+      android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
     <!-- Keeps the app's JavaScript alive while other apps are on screen (startKeepAlive). -->
     <service
       android:name="dev.bobby.hands.KeepAliveService"

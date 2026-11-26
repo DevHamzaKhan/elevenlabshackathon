@@ -85,6 +85,11 @@ export default function App() {
     if (started.current) return;
     started.current = true;
     const linkSub = Linking.addEventListener('url', (e) => void onUrl(e.url));
+    // Side button held on a PIN-locked phone with the unlock armed: the app can't come to the
+    // front, so Hands tells us here. Bobby then listens for the owner's phrase.
+    const assistSub = hands.addAssistListener(() => {
+      void init().then(() => wake('side button, phone locked'));
+    });
     void (async () => {
       await onUrl(await Linking.getInitialURL());
       await cameToFront('opened');
@@ -96,6 +101,7 @@ export default function App() {
     });
     return () => {
       linkSub.remove();
+      assistSub.remove();
       appSub.remove();
     };
   }, []);
@@ -140,6 +146,14 @@ export default function App() {
     { label: 'keep-alive', on: !!status.keepAlive },
   ];
   const names = Object.keys(st.env).sort();
+  const unlock = hands.unlockStatus();
+  const unlockLine = !unlock.secureLockSet
+    ? 'The phone has no PIN lock, so there is nothing to unlock.'
+    : !unlock.setUp
+      ? 'Off. Set it up to let Bobby type your PIN when he hears your phrase.'
+      : unlock.armed
+        ? `On, with ${unlock.earbuds} (${unlock.earbudsConnected ? 'connected' : 'not connected'}).`
+        : `Off after a failed try: ${unlock.disarmedReason}. Set it up again to turn it back on.`;
 
   return (
     <View style={styles.screen}>
@@ -190,6 +204,34 @@ export default function App() {
           <Pressable style={styles.btn} onPress={stopBobby}>
             <Text style={styles.btnText}>Stop keep-alive</Text>
           </Pressable>
+        </View>
+
+        <Text style={styles.h}>Unlock when locked</Text>
+        <View style={styles.row}>
+          <View style={[styles.dot, unlock.armed ? styles.on : unlock.setUp ? styles.bad : styles.off]} />
+          <Text style={styles.label}>{unlockLine}</Text>
+        </View>
+        {unlock.lastResult ? (
+          <Text style={styles.small}>
+            Last: {unlock.lastResult}
+            {unlock.lastAt ? ` (${new Date(unlock.lastAt).toLocaleString()})` : ''}
+          </Text>
+        ) : null}
+        <View style={styles.row}>
+          <Pressable
+            style={styles.btn}
+            onPress={() => {
+              quietFor(120000);
+              hands.openUnlockSetup();
+            }}
+          >
+            <Text style={styles.btnText}>{unlock.setUp ? 'Change' : 'Set up'}</Text>
+          </Pressable>
+          {unlock.setUp ? (
+            <Pressable style={styles.btn} onPress={() => hands.turnOffUnlock()}>
+              <Text style={styles.btnText}>Turn off</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <Text style={styles.h}>Hub</Text>

@@ -50,7 +50,11 @@ object Hub {
       val text = msg.optString("text").trim()
       if (text.isNotEmpty()) {
         if (to == "mouth" && type == "say") HandsService.instance?.caption(text, false)
-        else if (from == "mouth" && type == "heard") HandsService.instance?.caption(text, true)
+        else if (from == "mouth" && type == "heard") {
+          val s = HandsService.instance
+          s?.onHeard(text)
+          if (s?.quietHeardCaption() != true) s?.caption(text, true)
+        }
       }
     }
     val s = Server(c)
