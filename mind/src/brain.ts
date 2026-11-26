@@ -880,8 +880,10 @@ export class Brain {
       await this.quiet(this.o.timing.sayWaitMs);
       void this.say(`${summary.replace(/[.!?\s]+$/, "")}. Should I go ahead?`);
     }
-    const timer = sleep(this.o.timing.confirmMs).then(() => ({ ok: false, heard: "", timeout: true }) as any);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const timer = new Promise<any>((r) => (timeout = setTimeout(() => r({ ok: false, heard: "", timeout: true }), this.o.timing.confirmMs)));
     const r: any = await Promise.race([reply, timer, task.cancelSignal.then(() => ({ ok: false, heard: "", cancelled: true }))]);
+    clearTimeout(timeout);
     this.pendingConfirm = null;
     if (r.cancelled) return false;
     const go = r.ok === true && isAffirmative(r.heard);
