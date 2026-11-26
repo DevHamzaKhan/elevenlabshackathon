@@ -44,6 +44,10 @@ export class HubClient {
       this.ws?.close(1000, "stop");
     } catch {}
     this.ws = null;
+    if (this.connected) {
+      this.connected = false;
+      this.onConnected(false);
+    }
   }
 
   /** A new request id, unique to the Mind. */
@@ -131,9 +135,11 @@ export class HubClient {
       }
     };
     ws.onclose = (ev: CloseEvent) => {
+      // A socket replaced by stop()/start() may close late; it must not tear down the new one.
+      if (this.ws !== ws) return;
       const wasUp = this.connected;
       this.connected = false;
-      if (this.ws === ws) this.ws = null;
+      this.ws = null;
       // No reply can arrive on a closed socket: release every wait now instead of at its timeout.
       for (const [, p] of this.pending) {
         clearTimeout(p.timer);

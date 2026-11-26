@@ -193,3 +193,13 @@ test("voice vendor choice from env", () => {
   assert.equal(voiceChoice({ MOUTH_VOICE_MODEL: "gpt-realtime-2.1" }).missing, "OPENAI_API_KEY");
   assert.equal(voiceChoice({ MOUTH_VOICE_VENDOR: "elevenlabs", ELEVENLABS_BOBBY_AGENT_ID: "a" }).vendor, "elevenlabs");
 });
+
+test("a confirmation is dropped when its task finishes, so speech can barge in again", async () => {
+  const s = await live();
+  s.m.onHub({ type: "task_update", task: "t1", status: "running" });
+  s.m.onHub({ type: "confirm_request", id: "c1", task: "t1", summary: "Send it" });
+  s.m.onHub({ type: "task_update", task: "t1", status: "failed" });
+  s.m.onHub({ type: "task_update", task: "t2", status: "running" });
+  s.v.cb.onSpeechStarted!();
+  assert.equal(s.of("barge_in").length, 1);
+});

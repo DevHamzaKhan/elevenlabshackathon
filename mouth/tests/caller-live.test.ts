@@ -161,3 +161,34 @@ test("helpers: failure mapping, transcript merging, disclosure, vendor choice", 
   assert.equal(callerChoice({}), "openai");
   assert.equal(callerChoice({ CALLER_VENDOR: "ElevenLabs" }), "elevenlabs");
 });
+
+test("after a hangup, a session.closed that never comes stops the wait 10 s later, not at the call deadline", async () => {
+  let t = 0;
+  let sleeps = 0;
+  const sock = new FakeSock();
+  const frames: Frame[] = [];
+  const f = async (url: string) => {
+    if (url.endsWith("/live/sessions")) return { ok: true, status: 200, text: async () => JSON.stringify({ session: { id: "live_1" } }) };
+    return { ok: true, status: 200, text: async () => "" }; // hangup accepted, but no session.closed follows
+  };
+  await liveCall(CALL, {
+    env: ENV,
+    send: (fr) => frames.push(fr),
+    log: () => {},
+    fetch: f,
+    connect: () => {
+      setTimeout(() => sock.emit({ type: "transport.answered", event_id: "a" }), 0);
+      return sock;
+    },
+    now: () => t,
+    sleep: async () => {
+      sleeps++;
+      t += 1000;
+      await new Promise((r) => setTimeout(r, 0));
+    },
+    maxCallMs: 10 * 60_000,
+    cancelled: () => t > 3000,
+  });
+  assert.ok(sleeps < 30, `gave up after ${sleeps} polls`);
+  assert.equal(frames.filter((x) => x.type === "call_result").length, 1);
+});

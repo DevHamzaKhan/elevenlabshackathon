@@ -250,3 +250,16 @@ test("transcript lines drop the voice model's expression tags", async () => {
   assert.equal(stripTags("[sorry] Hey, I'm running late."), "Hey, I'm running late.");
   assert.equal(stripTags("[happy] Three thirty works great. [laughs] See you!"), "Three thirty works great. See you!");
 });
+
+test("a Twilio poll that fails mid-call hangs the call up instead of leaving it running", async () => {
+  let polls = 0;
+  const r = await run(ENV, [
+    ["POST", /register-call$/, () => ({ body: "<Response/>" })],
+    ["POST", /Calls\.json$/, () => ({ body: { sid: "CA1" } })],
+    ["GET", /Calls\/CA1\.json$/, () => (++polls < 3 ? { body: { status: "in-progress" } } : { status: 500, body: "oops" })],
+    ["POST", /Calls\/CA1\.json$/, () => ({ body: { status: "completed" } })],
+  ]);
+  const hangup = r.reqs.find((q) => q.method === "POST" && /Calls\/CA1\.json$/.test(q.url));
+  assert.equal(new URLSearchParams(hangup?.body).get("Status"), "completed");
+  assert.equal(r.result.ok, false);
+});

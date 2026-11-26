@@ -57,7 +57,7 @@ export class Mouth {
   private lastHeard = "";
   /** Tasks the Mind reports as running/paused/waiting: speech then counts as a barge-in. */
   private activeTasks = new Set<string>();
-  private pendingConfirm: { id: string; summary: string } | null = null;
+  private pendingConfirm: { id: string; summary: string; task: string } | null = null;
   private statusCalls = new Map<string, { callId: string; timer: ReturnType<typeof setTimeout> }>();
   private statusSeq = 0;
   private lastBargeAt = 0;
@@ -177,7 +177,7 @@ export class Mouth {
       case "confirm_request": {
         if (typeof msg.id !== "string") return;
         const summary = String(msg.summary ?? "");
-        this.pendingConfirm = { id: msg.id, summary };
+        this.pendingConfirm = { id: msg.id, summary, task: String(msg.task ?? "") };
         this.session!.sendContextualUpdate(`CONFIRM id=${msg.id}: ${summary}. Ask the user if you should go ahead, then call confirm with id "${msg.id}" and their answer.`);
         this.queue.unshift({ kind: "line", text: `${summary.replace(/[.!?\s]+$/, "")}. Should I go ahead?` });
         this.openMic(); // the user has to be able to answer
@@ -189,7 +189,9 @@ export class Mouth {
         const st = String(msg.status ?? "");
         if (["running", "paused", "waiting_confirm"].includes(st)) this.activeTasks.add(id);
         else this.activeTasks.delete(id);
-        if (st === "cancelled" && this.pendingConfirm) this.pendingConfirm = null;
+        // A confirmation ends with its task.
+        const ended = ["cancelled", "done", "failed"].includes(st);
+        if (ended && this.pendingConfirm && (!this.pendingConfirm.task || this.pendingConfirm.task === id)) this.pendingConfirm = null;
         return;
       }
       case "status_result": {

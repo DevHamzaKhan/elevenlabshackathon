@@ -266,6 +266,8 @@ export async function realCall(msg: Frame, d: CallDeps): Promise<void> {
     result({ ok: true, summary: summarize(conv, transcript), transcript });
   } catch (e) {
     d.log(`caller: call failed: ${e instanceof Error ? e.message : String(e)}`);
+    // A poll that failed mid-call must not leave the call running with nobody listening.
+    if (callSid && lastStatus !== "ended") await tw(`/Calls/${callSid}.json`, "POST", { Status: "completed" }).catch(() => {});
     fail("failed");
   } finally {
     if (!finished) fail("failed");

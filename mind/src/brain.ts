@@ -9,7 +9,7 @@ import { ROUTER_SCHEMA, checkSystem, escalateSystem, execSystem, routerSystem } 
 import { appLabel, checkScreen, fingerprint } from "./screen";
 import { Executor, subgoalFromModel, type ActResult, type SubgoalResult, type SubgoalRun } from "./exec";
 import { ShortcutIndex, packageFor } from "./shortcuts";
-import { findContact, parseContactBook, parseContacts as parseContactsV1, type Contact } from "./contacts";
+import { escapeRe, findContact, parseContactBook, parseContacts as parseContactsV1, type Contact } from "./contacts";
 import { InMemoryStore, Memory, type KeyValueStore } from "./memory";
 import { RecipeBook } from "./recipes";
 
@@ -656,7 +656,7 @@ export class Brain {
     }
     if (!subgoals.length) subgoals.push({ goal: String(t.goal || t.title || ""), done_when: { describe: String(t.goal || "") }, risk: "safe" });
     const goal = String(t.goal || t.title || "");
-    const who = this.contactsCtx().contacts.find((c) => new RegExp(`\\b${c.name.split(/\s+/)[0]}\\b`, "i").test(`${t.title} ${goal}`));
+    const who = this.contactsCtx().contacts.find((c) => new RegExp(`\\b${escapeRe(c.name.split(/\s+/)[0])}\\b`, "i").test(`${t.title} ${goal}`));
     return {
       kind: "phone",
       title: String(t.title || "Task"),
@@ -880,8 +880,10 @@ export class Brain {
       await this.quiet(this.o.timing.sayWaitMs);
       void this.say(`${summary.replace(/[.!?\s]+$/, "")}. Should I go ahead?`);
     }
-    const timer = sleep(this.o.timing.confirmMs).then(() => ({ ok: false, heard: "", timeout: true }) as any);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const timer = new Promise<any>((r) => (timeout = setTimeout(() => r({ ok: false, heard: "", timeout: true }), this.o.timing.confirmMs)));
     const r: any = await Promise.race([reply, timer, task.cancelSignal.then(() => ({ ok: false, heard: "", cancelled: true }))]);
+    clearTimeout(timeout);
     this.pendingConfirm = null;
     if (r.cancelled) return false;
     const go = r.ok === true && isAffirmative(r.heard);
@@ -946,9 +948,6 @@ export class Brain {
   // ---------- finishing ----------
 
   private async finishTask(task: Task, status: "done" | "failed", line: string, published = true) {
-    if (published && !task.stepStatus[1] && status === "failed" && task.plan.kind === "phone") {
-      // never started on screen: still publish so the dashboard shows it
-    }
     this.o.log(`mind: task ${task.id} ${status}: ${line}`);
     if (published) this.watch({ type: "task", task: task.id, title: task.plan.title, status });
     this.taskUpdate(task, status, line);
@@ -1115,12 +1114,12 @@ export class Brain {
       const first = n.title.split(/\s+/)[0];
       if (/^[A-Z][a-z]+$/.test(first)) people.add(first);
     }
-    const has = (hay: string, name: string) => new RegExp(`\\b${name}\\b`, "i").test(hay);
+    const has = (hay: string, name: string) => new RegExp(`\\b${escapeRe(name)}\\b`, "i").test(hay);
     const subjects = [...people].filter((n) => has(about, n));
     if (subjects.length !== 1 || has(text, subjects[0])) return null;
     for (const other of people) {
       if (other === subjects[0]) continue;
-      const re = new RegExp(`\\b(call(?:ing|ed)?|ring(?:ing)?|phon(?:e|ing|ed)|repl(?:y|ying|ied) to|email(?:ing|ed)?|text(?:ing|ed)?|messag(?:e|ing|ed)|writ(?:e|ing) to|tell(?:ing)?|told|answer(?:ing)?)\\s+${other}\\b`, "i");
+      const re = new RegExp(`\\b(call(?:ing|ed)?|ring(?:ing)?|phon(?:e|ing|ed)|repl(?:y|ying|ied) to|email(?:ing|ed)?|text(?:ing|ed)?|messag(?:e|ing|ed)|writ(?:e|ing) to|tell(?:ing)?|told|answer(?:ing)?)\\s+${escapeRe(other)}\\b`, "i");
       if (re.test(text)) {
         t.correctedName = true;
         return { right: subjects[0], said: other };
