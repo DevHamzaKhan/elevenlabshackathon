@@ -1,5 +1,15 @@
 # Mind: status (James C, 10x)
 
+## Questions back to the user (2026-11-26, branch `t3/tibby-clarifying-questions`, rebased on main after teaching, in a pull request)
+Bobby can now ask one question with options when a guess would matter, and takes "the second one", a label, "you pick", "never mind" or free speech as the answer.
+- **One round trip, three askers.** `ask_request{id, task, question, options, say}` → `ask_reply{re, option, text, heard}` (`PROTOCOL-V2.md`). Asked by code (a shortcut is about to act on a first name two contacts share: "Which Sam?"; no model call; a mere mention of Sam asks nothing), by the router (new route `ask`, before anything starts) and by the executor or escalation (new status `ask`, for a choice the screen shows). The same sentence in each prompt sets the bar for asking (`ASK_BAR` in `src/prompts.ts`).
+- **`src/ask.ts`** (pure, no hub or model): tidies a question (at most 4 distinct options), builds the spoken line ("Which Alex? Option one: Alex Chen. Option two: Alex Kim."), and reads the answer in code: an option's label or a word only it has ("Kim", "the work one"), an explicit ordinal ("the second one", "option B", "the last one", "not the first, the second"), a bare number or letter ("two", "yeah, C works"), "you pick"/"sure" (the first option), "never mind"/"neither"/"no" (drop it), else free speech passed on untouched.
+- **What an answer costs.** A picked option: no model call (the shortcut re-plans with the full name; the executor gets a note and carries on). Free speech: one router call, as the answer to the router's question, or as a change to the running task (the existing amend path). Nobody answers in 30 s (`timing.askMs`): the first option, which is the Mind's own pick, so it is what Bobby would have guessed before this change.
+- **Keeping questions rare.** `MIND_ASK_MAX` (default 1) per request before it starts and per task while it runs; once spent, the executor is told it can't ask and a further question falls back to its first option. A picked option is remembered (`memory.answers`, persisted, last 20) and reused without asking ("Going with Sam Park, like last time."); the last 4 are shown to the router and executor. A run the user steered is not saved as a recipe. Irreversible steps still get their own confirmation.
+- **When the voice model misbehaves.** An answer sent with the wrong tool (`request`/`amend`) is still the answer. If the user speaks and no tool call follows in 2.5 s (`askGraceMs`), the transcript alone is the answer. A v2 Mouth without the `answer` tool gets the question as a `progress` line; a v1 Mouth gets a `say` and the next press is the answer.
+- Also fixed: `leadingContact` tried a contact's first name before other contacts' full names, so "text Sam Lee ..." could go to Sam Park with "Lee" in the message. Found by the new tests.
+- Checks: `test/ask.test.ts` (23 tests: reading answers, then each asker end to end, remembered answers across a restart, no answer, never mind, the budget, stop, wrong tool, grace, v1). `./check.sh` 114/114 after the rebase onto teaching. `npm run story:sim` 8/8 with the new `--only ask` part. `mouth/check.sh` (without the Android build) passes, with the real Mouth and real Mind doing a question round trip.
+
 ## Teaching by showing (2026-11-26, branch `teach-by-showing`, rebased on main, in a pull request)
 James's request: "tell Tibby I'm teaching him a skill, show it on my phone, and have him remember it"; compare ways of doing it and build the best for reliability and speed. Touches Hands and Mouth as well as the Mind (at James C's request). Write-up and numbers: `TEACHING.md`. Wire additions: `PROTOCOL-V2.md`, "Teaching by showing".
 - **What was built.** Hands: `observe` (the accessibility service reports the user's taps, typing, scrolls and the settled screens between them as `observed` frames) and `launch` `fresh:true`. Mouth: a `teach` tool for the voice model. Mind: `src/teach.ts` (what the user says, the demo compiler, skills with slots, their store, local matching) and `src/script.ts` (replay in code: find each control again, act, check; close tips; scroll to find; restart the app at its first screen), wired into `brain.ts` (the lesson, the router's `teach` route, taught sub-goals: script → saved recipe → grounded executor with the demo as a guide).
@@ -47,9 +57,11 @@ Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 
 - Backing up Stage: extras 1 (hints for six apps), 2 (app icon), 3 (README draft + architecture diagram), 5 (cursor preview) and two experiments (voice-cursor timing strip, record button) done. Details in `stage/STATUS.md`.
 
 ## Doing now
+- Questions back to the user are on branch `t3/tibby-clarifying-questions`, rebased on main (after teaching by showing) and up as a pull request; `check.sh` (114 tests) and `npm run story:sim` (8/8) pass. Nothing here has run against the real models or a real voice session (no `OPENAI_API_KEY` in this checkout).
 - Teaching by showing is built, on branch `teach-by-showing` (rebased on main after pull request #3) and up as a pull request against `main`. Everything that needs no person is done; what's left needs a key, a voice or the phone. The emulator lesson was last run before the rebase: another session had put its own Hands build on the emulator, so it was not re-run after.
 
 ## Open
+000. Questions with real models: watch how often the router and executor choose `ask` on real requests and screens, and tighten `ASK_BAR` in `src/prompts.ts` if they over-ask (the fakes can't show this). Check that the realtime voice model reads all the options and calls `answer` rather than `request`.
 00. Teaching, with a key: `npm run teach:phone -- --real` (real teach model: does it name the skill sensibly and pick the right slot from "I'll type test test"?), then by voice in the final app. Then on the S21: apps built with Compose, Flutter or React Native (do their clicks reach the recorder with a usable node?) and Samsung's keyboard.
 0. v2 with real models: run `npm run story` (real OpenAI) and tune the router/executor prompts on its logs; then on the phone with the v2 Hands (open intents, then_screen, keys). Check the contract questions in `PROTOCOL-V2.md`.
 1. Tune against Hamza's real Hands hub once the phone build is up (real screens have many more nodes and real labels). Needs the phone, so it waits for stitching day.
@@ -63,6 +75,8 @@ Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 
 - Your working copy of `env/mind.env` (a committed template) holds your real API key. It is not committed; please clear it there and keep the key only in the root `.env`, so nobody `git add`s it by accident.
 
 ## Try it yourself
+- `cd mind && npm run story -- --sim --only ask`: "text Sam I'm running late" with two Sams; Bobby asks, the user says "the second one", the text goes to Sam Park. Add `--v1` for the press-to-answer path.
+- On the phone: put two contacts with the same first name in `CONTACTS` (`Sam Lee=+1...,Sam Park=+1...`), say "text Sam I'm running late", and answer "Park", "the second one", "you pick" or "oh, you know what, email him instead". Ask the same thing again: he shouldn't ask twice.
 - Teaching, no key or phone: `cd mind && npm run teach:bench` (the comparison table, about a minute).
 - Teaching on the emulator or a phone on USB, no key: install the Hands test app (`hands/check.sh`), then `cd mind && npm run teach:phone -- --name Zed`. It leaves two contacts ("Testy", "Zed") on the device.
 - Teaching by voice, in the final app, once it is rebuilt and has a key: double-press, "I'm going to show you how to add a new project, I'll type test test", do it, double-press, "done". Then: "add a project called Apollo". "Forget how to add a project" removes it.
@@ -90,6 +104,12 @@ Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 
 8. **Small things.** "Bye" gives Bobby 2.5 s to answer before `sleep`. Request ids carry a random session part, so a late reply to an old Mind can't match a new request. The system prompt uses the 1-hour cache life.
 
 ## Decisions
+- Questions: the first option is always the Mind's own pick, and silence means that option. So a question can never strand a task, and with nobody listening Bobby behaves exactly as before (he guessed). The confirmation gate still stands between a wrong guess and anything sent.
+- Questions: the answer is read from the raw transcript in code before the voice model's `option` is believed (same rule as confirmations), but unlike a confirmation the voice model's pick is accepted when the words name no option ("the later one"): every option is one the Mind itself offered, so a wrong pick is a mistake, not a breach.
+- Questions: free speech during a task goes to the router as an amend rather than to the executor as a note. The executor sees one sub-goal and can't change the plan; "oh, you know what, call her instead" needs the planner. If the router doesn't amend, the words are kept as a note and the step carries on.
+- Questions: a remembered pick is reused without asking and said aloud ("like last time"). Risk: a stale preference; the user can name the other one in full ("text Sam Lee"), and sends are confirmed. `MIND_CONFIRM=never` plus a stale pick could text the wrong Sam.
+- Questions: an unknown v2 Mouth is assumed to have the `answer` tool. `voice_caps` is dropped by the hub when the Mouth connects before the Mind, and gating on it made questions silently degrade (seen as a flaky test).
+- "Tibby" in James's request is Bobby (the repo is `Tibby`); the code and prompts still say Bobby.
 - Teaching: **hybrid** (script first, the guided executor when it can't go on) over a coordinate macro, a script alone, or the model every time, on the bench numbers in `TEACHING.md`: the script's speed where it holds, the model's reach where it doesn't.
 - The demo is read from **accessibility events**, not a screen recording or raw touches: no extra consent, every tap arrives with the control it hit, and it is exactly what the replay acts through. Cost: what accessibility can't see can't be taught.
 - The compiler is **code**; the model is asked once per lesson only for what code can't know (a name, trigger words, which values were examples). A skill still gets saved if that call fails.
@@ -131,6 +151,7 @@ Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 
 
 ## Contract questions
 - Teaching adds `teach` (Mouth → Mind), `observe` / `observe_result` / `observed` (Mind ↔ Hands) and `fresh` on `launch`; documented in `PROTOCOL-V2.md`, question 5 there.
+- New in `PROTOCOL-V2.md`: `ask_request` (Mind → Mouth), `ask_reply` (Mouth → Mind), the voice tool `answer`, and `task_update` status `waiting_answer`. All additive. Please fold them into the contract with the other v2 messages.
 - Hands sends an extra `hint` field on nodes (an empty field's placeholder). The Mind now reads it. Worth adding to the contract's `screen_result` so the other parts know.
 - Hang-up: now sent as `{"type":"hangup","to":"caller","re":"m9"}` and handled by the v2 Caller. Please add it to the contract.
 - v2 messages (Mouth and Caller) and the Hands additions the Mind relies on are in `mind/PROTOCOL-V2.md`, with four open questions at the end.

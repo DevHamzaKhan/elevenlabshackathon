@@ -1,6 +1,6 @@
 # bobby-mouth
 
-Bobby's voice and the Caller. **v2 (default): OpenAI.** The voice is an OpenAI Realtime model over WebRTC with Bobby's tools (`request`, `amend`, `cancel`, `confirm`, `status`; `mind/PROTOCOL-V2.md`), and the Caller places calls through GPT-Live over a SIP trunk with a stock voice. The v1 ElevenLabs agent and cloned-voice caller stay selectable (`MOUTH_VOICE_VENDOR=elevenlabs`, `CALLER_VENDOR=elevenlabs`). Every call is a dry run unless `CALLER_DRY_RUN=0`. Plain TypeScript with no build step; only `src/openai.ts` and `src/elevenlabs.ts` need React Native.
+Bobby's voice and the Caller. **v2 (default): OpenAI.** The voice is an OpenAI Realtime model over WebRTC with Bobby's tools (`request`, `amend`, `cancel`, `confirm`, `answer`, `status`; `mind/PROTOCOL-V2.md`), and the Caller places calls through GPT-Live over a SIP trunk with a stock voice. The v1 ElevenLabs agent and cloned-voice caller stay selectable (`MOUTH_VOICE_VENDOR=elevenlabs`, `CALLER_VENDOR=elevenlabs`). Every call is a dry run unless `CALLER_DRY_RUN=0`. Plain TypeScript with no build step; only `src/openai.ts` and `src/elevenlabs.ts` need React Native.
 
 | Path | What |
 |---|---|

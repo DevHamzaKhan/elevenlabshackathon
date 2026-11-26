@@ -16,6 +16,10 @@ export type FakeMouthOptions = {
   /** v2: answer every `confirm_request` automatically with this (after `confirmDelayMs`). */
   autoConfirm?: { ok: boolean; heard: string } | null;
   confirmDelayMs?: number;
+  /** v2: answer every `ask_request` automatically: what the user said, and the voice model's pick (0 = none). */
+  autoAnswer?: { heard: string; option?: number } | null;
+  /** v2 without the `answer` tool (an older Mouth): questions arrive as progress lines. */
+  noAnswerTool?: boolean;
 };
 
 export function startFakeMouth(opts: FakeMouthOptions) {
@@ -26,6 +30,8 @@ export function startFakeMouth(opts: FakeMouthOptions) {
   let speaking: { id: string; timer: ReturnType<typeof setTimeout> } | null = null;
   const received: any[] = [];
   let lastConfirm: any = null;
+  let lastAsk: any = null;
+  const tools = ["request", "amend", "cancel", "confirm", "status", "teach", ...(opts.noAnswerTool ? [] : ["answer"])];
 
   const speakNext = () => {
     if (speaking || queue.length === 0) return;
@@ -107,13 +113,31 @@ export function startFakeMouth(opts: FakeMouthOptions) {
             setTimeout(() => conn.send({ type: "confirm_reply", re: m.id, ok: a.ok, heard: a.heard }), opts.confirmDelayMs ?? 20);
           }
           break;
+        case "ask_request":
+          if (opts.noAnswerTool) {
+            log("(got ask_request: ignored, this Mouth has no answer tool)");
+            break;
+          }
+          log(`BOBBY ASKS: ${m.say ?? m.question}`);
+          lastAsk = m;
+          if (opts.autoAnswer) {
+            const a = opts.autoAnswer;
+            setTimeout(() => {
+              if (lastAsk !== m) return;
+              lastAsk = null;
+              log(`USER: ${a.heard}`);
+              conn.send({ type: "heard", text: a.heard });
+              conn.send({ type: "ask_reply", re: m.id, option: a.option ?? 0, text: a.heard, heard: a.heard });
+            }, opts.confirmDelayMs ?? 20);
+          }
+          break;
         default:
           log(`(got ${m.type})`);
       }
     },
     log,
     () => {
-      if (opts.v2) conn.send({ type: "voice_caps", v: 2, tools: ["request", "amend", "cancel", "confirm", "status", "teach"] });
+      if (opts.v2) conn.send({ type: "voice_caps", v: 2, tools });
       if (!awake) {
         awake = true;
         conn.send({ type: "wake" });
@@ -122,7 +146,7 @@ export function startFakeMouth(opts: FakeMouthOptions) {
   );
 
   const wake = () => {
-    if (opts.v2) conn.send({ type: "voice_caps", v: 2, tools: ["request", "amend", "cancel", "confirm", "status", "teach"] });
+    if (opts.v2) conn.send({ type: "voice_caps", v: 2, tools });
     if (!awake) {
       awake = true;
       conn.send({ type: "wake" });
@@ -185,6 +209,18 @@ export function startFakeMouth(opts: FakeMouthOptions) {
     },
     get pendingConfirm() {
       return lastConfirm;
+    },
+    /** v2: answer the latest ask_request. `option` is the voice model's pick (1-based, 0 = none); `heard` the raw transcript. */
+    answer(heard: string, option = 0, text = heard) {
+      if (!lastAsk) return false;
+      log(`USER: ${heard}`);
+      if (heard) conn.send({ type: "heard", text: heard });
+      conn.send({ type: "ask_reply", re: lastAsk.id, option, text, heard });
+      lastAsk = null;
+      return true;
+    },
+    get pendingAsk() {
+      return lastAsk;
     },
     status(id = "s1") {
       conn.send({ type: "status", id });

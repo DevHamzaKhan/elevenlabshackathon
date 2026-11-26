@@ -1,15 +1,17 @@
 // The brain (v2): turns what the user asked into a queue of tasks, each a list of sub-goals with
 // code-checked `done_when`s, and runs them one at a time: shortcut intents first, saved recipes
 // next, grounded multi-action batches from the exec model last, escalating to the vision model
-// when stuck. Irreversible steps wait for a confirmation. Also: notifications, calls through the
+// when stuck. Irreversible steps wait for a confirmation, and a choice only the user can make
+// becomes one spoken question with options (src/ask.ts). Also: notifications, calls through the
 // Caller, corrections, sleeping, and the v1 Mouth messages for compatibility.
 
 import type { HandsAct, ModelFn, Msg, SubgoalSpec, TaskPlan, Timing } from "./types";
 import { ROUTER_SCHEMA, TEACH_SCHEMA, checkSystem, escalateSystem, execSystem, routerSystem, teachSystem } from "./prompts";
 import { appLabel, checkScreen, fingerprint } from "./screen";
-import { Executor, subgoalFromModel, type ActResult, type SubgoalResult, type SubgoalRun } from "./exec";
+import { Executor, subgoalFromModel, type ActResult, type AskOutcome, type SubgoalResult, type SubgoalRun } from "./exec";
+import { cleanQuestion, questionKey, resolveAnswer, spokenQuestion, type Answer, type Question, type RawAnswer } from "./ask";
 import { ShortcutIndex, packageFor } from "./shortcuts";
-import { escapeRe, findContact, parseContactBook, parseContacts as parseContactsV1, type Contact } from "./contacts";
+import { escapeRe, findContact, parseContactBook, parseContacts as parseContactsV1, sharedFirstName, type Contact } from "./contacts";
 import { InMemoryStore, Memory, type KeyValueStore } from "./memory";
 import { RecipeBook } from "./recipes";
 import { closeOverlay, firstTargetVisible, runScript } from "./script";
@@ -33,6 +35,8 @@ export type BrainOptions = {
   contacts: Record<string, string> | Contact[];
   timing: Timing;
   confirm?: ConfirmPolicy;
+  /** Most questions per request before it starts, and again per task while it runs. 0 = never ask. Default 1. */
+  askMax?: number;
   storage?: KeyValueStore;
   now?: () => Date;
   /** How taught skills run: script first, then the model with the demo as a guide (default). */
@@ -55,7 +59,10 @@ type Teaching = {
 
 type Notif = { app: string; title: string; text: string; at: number };
 
-type TaskStatus = "queued" | "running" | "waiting_confirm" | "paused" | "done" | "failed" | "cancelled";
+type TaskStatus = "queued" | "running" | "waiting_confirm" | "waiting_answer" | "paused" | "done" | "failed" | "cancelled";
+
+/** A question already put to the user for this request, and what came of it. */
+type Clarified = { q: Question; answer: string; assumed: boolean };
 
 type Task = {
   id: string;
@@ -75,6 +82,7 @@ type Task = {
   resumed: Promise<void>;
   amended?: TaskPlan;
   escalationsUsed: number;
+  asksUsed: number;
   correctedOnce: boolean;
   correctedName?: boolean;
   cancelSignal: Promise<void>;
@@ -145,6 +153,14 @@ export class Brain {
   private handsHash = "";
   caps: Msg | null = null;
   private pendingConfirm: { id: string; task: Task; resolve: (r: { ok: boolean; heard: string }) => void } | null = null;
+  /** The one question out with the user. `heard` is the raw transcript since it was asked. */
+  private pendingAsk: { id: string; task: Task | null; q: Question; heard: string; grace?: ReturnType<typeof setTimeout>; resolve: (a: Answer) => void } | null = null;
+  /**
+   * The v2 Mouth has the `answer` tool. Assumed until a `voice_caps` says otherwise (it can be
+   * missed when the Mouth connects first); a Mouth without it gets the question as a line and
+   * answers with `request`.
+   */
+  private mouthAsks = true;
   private lastHeardRaw = "";
   private bargeTimer: ReturnType<typeof setTimeout> | null = null;
   shortcuts = new ShortcutIndex();
@@ -185,6 +201,8 @@ export class Brain {
       narrate: (t) => this.narrate(t),
       gate: () => (this.current ? this.gate(this.current) : Promise.resolve("go")),
       confirm: (summary) => (this.current ? this.confirmGate(this.current, summary) : Promise.resolve(false)),
+      ask: (q) => this.askInTask(this.current, q),
+      canAsk: () => !!this.current && this.current.asksUsed < this.askMax && this.peers.mouth,
       escalations: {
         left: () => (this.current ? MAX_ESCALATIONS - this.current.escalationsUsed : 0),
         take: () => {
@@ -215,6 +233,10 @@ export class Brain {
     return this.o.confirm ?? "always";
   }
 
+  private get askMax(): number {
+    return this.o.askMax ?? 1;
+  }
+
   private contactsCtx() {
     const learned = this.memory.contacts.filter((c) => !this.book.some((b) => b.name === c.name));
     return { contacts: [...this.book, ...learned], now: this.now };
@@ -230,6 +252,7 @@ export class Brain {
       this.send({ type: "observe", to: "hands", id: this.o.hub.nextId(), on: false });
       this.teaching = null;
     }
+    this.pendingAsk?.resolve({ kind: "cancel" });
     for (const t of [this.current, ...this.queue]) {
       if (!t) continue;
       t.cancelled = true;
@@ -325,9 +348,11 @@ export class Brain {
         if (!m.mouth) {
           this.awake = false;
           this.mouthV2 = false;
+          this.mouthAsks = true;
           this.endWindow();
           for (const id of [...this.pendingSays]) this.o.hub.cancelWait(id);
           if (this.pendingConfirm) this.pendingConfirm.resolve({ ok: false, heard: "" });
+          this.pendingAsk?.resolve({ kind: "none" });
         }
         if (!m.hands) for (const id of [...this.handsWaits]) this.o.hub.cancelWait(id);
         if (!m.hands && this.teaching?.phase === "watching") void this.endTeach(this.teaching.actions > 0);
@@ -337,6 +362,7 @@ export class Brain {
       }
       case "voice_caps":
         this.mouthV2 = Number(m.v) >= 2;
+        this.mouthAsks = !Array.isArray(m.tools) || m.tools.includes("answer");
         this.peers.mouth = true;
         break;
       case "notification":
@@ -356,6 +382,7 @@ export class Brain {
             // v2: the voice model's tool calls are the input; heard is the raw transcript only.
             this.pushConvo("user", m.text);
             this.lastActivity = Date.now();
+            if (this.pendingAsk) this.heardDuringAsk(m.text);
           } else this.onHeard(m.text);
         }
         break;
@@ -388,6 +415,12 @@ export class Brain {
         this.mouthV2 = true;
         if (this.pendingConfirm && m.re === this.pendingConfirm.id) {
           this.pendingConfirm.resolve({ ok: m.ok === true, heard: String(m.heard ?? "") });
+        }
+        break;
+      case "ask_reply":
+        this.mouthV2 = true;
+        if (this.pendingAsk && m.re === this.pendingAsk.id) {
+          this.answerAsk({ option: Number(m.option) || 0, text: String(m.text ?? ""), heard: String(m.heard ?? "") || this.pendingAsk.heard });
         }
         break;
       case "barge_in":
@@ -510,6 +543,13 @@ export class Brain {
       this.pendingConfirm.resolve({ ok: isAffirmative(text), heard: text });
       return;
     }
+    // So does a pending question.
+    if (this.pendingAsk) {
+      this.closeWindow();
+      this.pushConvo("user", text);
+      this.answerAsk({ heard: text });
+      return;
+    }
 
     // While a demo is being watched, "stop" means "stop watching": utter() handles it.
     if (!this.teaching && isCancel(text) && text.split(/\s+/).length <= 8) {
@@ -559,6 +599,11 @@ export class Brain {
       this.pendingConfirm.resolve({ ok: isAffirmative(text), heard: raw });
       return;
     }
+    // The voice model sometimes sends the answer to a question as a request: take it as the answer.
+    if (this.pendingAsk) {
+      this.answerAsk({ text, heard: this.pendingAsk.heard });
+      return;
+    }
     if (isCancel(text) && text.split(/\s+/).length <= 8) {
       this.epoch += 1;
       this.pushConvo("user", text);
@@ -570,13 +615,14 @@ export class Brain {
 
   private async onAmend(text: string) {
     this.resumeIfPaused();
+    if (this.pendingAsk) return this.answerAsk({ text, heard: this.pendingAsk.heard });
     if (!this.current) return void this.utter(text, text);
     await this.utter(`Change the running task: ${text}`, text, true);
   }
 
   private onBargeIn() {
     const t = this.current;
-    if (!t || t.paused || t.status === "waiting_confirm") return;
+    if (!t || t.paused || t.status === "waiting_confirm" || t.status === "waiting_answer") return;
     t.paused = true;
     this.o.log(`mind: barge-in: task ${t.id} pauses at the next step`);
     this.taskUpdate(t, "paused");
@@ -603,14 +649,35 @@ export class Brain {
 
   // ---------- routing ----------
 
-  /** One command: instant local shortcut match, else one router call. */
-  private async utter(text: string, raw: string, amend = false) {
-    this.answerPending = true;
-    this.pushConvo("user", raw);
-    if (await this.teachTalk(text, raw)) return;
+  /**
+   * One command: instant local shortcut match, else one router call. `clar` is set on the second
+   * pass, after the user answered a question about this command: no second question then.
+   */
+  private async utter(text: string, raw: string, amend = false, clar?: Clarified): Promise<void> {
+    if (!clar) {
+      this.answerPending = true;
+      this.pushConvo("user", raw);
+      // Mid-lesson, or the start of one: that is teaching's to handle, never a question's.
+      if (await this.teachTalk(text, raw)) return;
+    }
     const epoch = this.epoch;
-    if (!amend) {
-      const local = this.shortcuts.matchUtterance(text, this.contactsCtx());
+    if (!amend && !clar) {
+      const ctx = this.contactsCtx();
+      let local = this.shortcuts.matchUtterance(text, ctx);
+      // A shortcut is about to act on a first name two contacts share: settled in code, with no
+      // model call. (Anything else that mentions the name is the router's to judge.)
+      const shared = local && this.askMax > 0 ? sharedFirstName(ctx.contacts, text) : null;
+      if (shared) {
+        const q: Question = { question: `Which ${shared.first}?`, options: shared.names.slice(0, 4) };
+        const a = await this.askUser(null, q);
+        if (epoch !== this.epoch || this.stopped) return;
+        if (a.kind === "cancel") return this.dropRequest();
+        if (a.kind === "free") return this.utter(text, raw, false, { q, answer: a.text, assumed: false });
+        const name = a.kind === "option" ? a.label : q.options[0];
+        if (a.kind === "none") void this.progress(null, `Going with ${name}.`, "when_idle");
+        text = text.replace(new RegExp(`\\b${escapeRe(shared.first)}\\b`, "gi"), name);
+        local = this.shortcuts.matchUtterance(text, ctx);
+      }
       if (local) {
         this.stats.local += 1;
         this.o.log(`mind: local shortcut match: ${local.matches.map((m) => `${m.id} ${JSON.stringify(m.slots)}`).join(" | ")}`);
@@ -621,7 +688,7 @@ export class Brain {
     this.decidesInFlight += 1;
     this.stats.route += 1;
     const r = await this.o
-      .model({ purpose: "route", role: "router", system: this.routerSys, user: this.routerInput(text), schema: ROUTER_SCHEMA, timeoutMs: 12_000, maxTokens: 2500 })
+      .model({ purpose: "route", role: "router", system: this.routerSys, user: this.routerInput(text, clar), schema: ROUTER_SCHEMA, timeoutMs: 12_000, maxTokens: 2500 })
       .finally(() => {
         this.decidesInFlight -= 1;
       });
@@ -656,6 +723,29 @@ export class Brain {
       case "teach":
         void this.startTeach(String(d.teach ?? "").trim() || (teachIntent(text)?.name ?? ""), raw, true);
         break;
+      case "ask": {
+        const q = cleanQuestion(d);
+        if (!q || clar || this.askMax <= 0) {
+          // Not allowed to ask (again). Mid-task the caller carries on with the user's words as a note.
+          this.o.log(`mind: router asked ${clar ? "a second question" : "with questions off"}; dropped`);
+          if (!amend) {
+            await this.progress(null, "Sorry, I'm not sure what you mean. Try saying it another way.", "interrupt");
+            this.sleepSoon();
+          }
+          break;
+        }
+        const a = await this.askUser(null, q);
+        if (epoch !== this.epoch || this.stopped) return;
+        if (a.kind === "cancel") return this.dropRequest();
+        if (a.kind === "none" && !q.options.length) {
+          await this.progress(null, "No worries, I'll leave that for now.", "when_idle");
+          this.sleepSoon();
+          break;
+        }
+        const answer = a.kind === "option" ? a.label : a.kind === "free" ? a.text : q.options[0];
+        if (a.kind === "none") void this.progress(null, `Going with ${answer}.`, "when_idle");
+        return this.utter(text, raw, amend, { q, answer, assumed: a.kind === "none" });
+      }
       case "amend": {
         const t = Array.isArray(d.tasks) && d.tasks[0] ? this.planFromRouter(d.tasks[0]) : null;
         if (!t) break;
@@ -719,10 +809,15 @@ export class Brain {
     } as TaskPlan;
   }
 
-  private routerInput(heard: string): string {
+  private routerInput(heard: string, clar?: Clarified): string {
     const lines: string[] = [];
     const now = this.now;
     lines.push(`The user just said: "${heard}"`);
+    if (clar) {
+      const opts = clar.q.options.length ? ` (options: ${clar.q.options.join("; ")})` : "";
+      const got = clar.assumed ? `The user didn't answer, so go with "${clar.answer}".` : `The user answered: "${clar.answer}".`;
+      lines.push(`Bobby then asked: "${clar.q.question}"${opts}. ${got} You can't ask again: decide now.`);
+    } else if (this.askMax <= 0) lines.push("You can't ask the user anything: decide yourself.");
     lines.push("");
     lines.push(`Now: ${now.toDateString()} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")} (local time)`);
     const t = this.current;
@@ -735,6 +830,8 @@ export class Brain {
     lines.push(notifs.length ? `Recent notifications, newest last:\n${notifs.map((n) => `- ${notifLine(n)} (${ago(n.at)})`).join("\n")}` : "Recent notifications: none");
     const facts = [...this.memory.outcomes.slice(-3).map((o) => `${o.title}: ${o.status} (${o.line})`), ...this.facts.slice(-5)];
     if (facts.length) lines.push(`What has happened so far:\n${facts.map((f) => `- ${f}`).join("\n")}`);
+    const known = this.knownAnswers();
+    if (known.length) lines.push(`The user's answers to earlier questions (don't ask these again):\n${known.map((k) => `- ${k}`).join("\n")}`);
     const convo = this.convo.slice(-9, -1);
     if (convo.length) lines.push(`Recent conversation:\n${convo.map((c) => `${c.who === "user" ? "User" : "Bobby"}: ${c.text}`).join("\n")}`);
     return lines.join("\n");
@@ -759,6 +856,7 @@ export class Brain {
       resume: () => {},
       resumed: Promise.resolve(),
       escalationsUsed: 0,
+      asksUsed: 0,
       correctedOnce: false,
       cancelSignal,
       fireCancel,
@@ -858,7 +956,7 @@ export class Brain {
   }
 
   private async runSubgoal(task: Task, sg: SubgoalSpec): Promise<SubgoalResult> {
-    const run: SubgoalRun = { spec: sg, taskGoal: task.plan.goal, scratch: task.scratch, confirmed: false, budget: SUBGOAL_BUDGET };
+    const run: SubgoalRun = { spec: sg, taskGoal: task.plan.goal, scratch: task.scratch, confirmed: false, budget: SUBGOAL_BUDGET, known: this.knownAnswers() };
     const onlyLaunch = !sg.direct || sg.direct.every((a) => a.do === "launch");
     // A taught sub-goal is never "already done": the user asked for it to be done again.
     if (sg.risk === "safe" && onlyLaunch && !sg.script && !sg.guide) {
@@ -1141,6 +1239,122 @@ export class Brain {
     return true;
   }
 
+  // ---------- questions ----------
+
+  private knownAnswers(): string[] {
+    return this.memory.answers.slice(-4).map((a) => `${a.q} -> ${a.a}`);
+  }
+
+  /**
+   * Puts one question to the user and waits. An option picked before is reused without asking.
+   * "none" means nobody answered (or nobody could be asked): callers go with the first option.
+   */
+  private async askUser(task: Task | null, q: Question): Promise<Answer> {
+    const key = questionKey(q.question);
+    const before = this.memory.answerTo(key)?.toLowerCase();
+    const again = before ? q.options.findIndex((o) => o.toLowerCase() === before) : -1;
+    if (again >= 0) {
+      this.o.log(`mind: not asking "${q.question}" again: ${q.options[again]} (remembered)`);
+      void this.progress(task, `Going with ${q.options[again]}, like last time.`, "when_idle");
+      return { kind: "option", index: again, label: q.options[again] };
+    }
+    if (!this.peers.mouth || this.pendingAsk) {
+      this.o.log(`mind: can't ask "${q.question}" (${this.pendingAsk ? "another question is out" : "no Mouth"})`);
+      return { kind: "none" };
+    }
+    const id = this.o.hub.nextId();
+    const say = spokenQuestion(q);
+    let resolve!: (a: Answer) => void;
+    const reply = new Promise<Answer>((r) => (resolve = r));
+    this.pendingAsk = { id, task, q, heard: "", resolve };
+    if (task) this.taskUpdate(task, "waiting_answer", q.question);
+    this.o.log(`mind: ask ${id}: ${say}`);
+    if (this.mouthV2 && this.mouthAsks) {
+      this.recentSays.push({ text: say, at: Date.now() });
+      this.pushConvo("bobby", say);
+      this.send({ type: "ask_request", to: "mouth", id, task: task?.id ?? "", question: q.question, options: q.options, say });
+    } else if (this.mouthV2) void this.progress(task, say, "when_idle");
+    else {
+      await this.quiet(this.o.timing.sayWaitMs);
+      void this.say(say);
+    }
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const timer = new Promise<Answer>((r) => (timeout = setTimeout(() => r({ kind: "none" }), this.o.timing.askMs)));
+    const a = await Promise.race([reply, timer, ...(task ? [task.cancelSignal.then((): Answer => ({ kind: "cancel" }))] : [])]);
+    clearTimeout(timeout);
+    if (this.pendingAsk?.grace) clearTimeout(this.pendingAsk.grace);
+    this.pendingAsk = null;
+    this.lastActivity = Date.now();
+    this.o.log(`mind: ask ${id}: ${a.kind === "option" ? `option ${a.index + 1} (${a.label})` : a.kind === "free" ? `"${a.text}"` : a.kind === "cancel" ? "never mind" : "no answer"}`);
+    if (a.kind === "option") this.memory.addAnswer(key, q.question, a.label);
+    if (task && !task.cancelled) this.taskUpdate(task, "running");
+    return a;
+  }
+
+  /**
+   * v2: the user spoke while a question is out. The voice model normally follows with its
+   * `answer` call; if it doesn't, the transcript alone is the answer after a short grace.
+   */
+  private heardDuringAsk(text: string) {
+    const p = this.pendingAsk;
+    if (!p) return;
+    p.heard = `${p.heard} ${text}`.trim();
+    if (p.grace) clearTimeout(p.grace);
+    p.grace = setTimeout(() => {
+      if (this.pendingAsk !== p) return;
+      this.o.log(`mind: ask ${p.id}: no answer call from the Mouth; taking what was heard`);
+      this.answerAsk({ heard: p.heard });
+    }, this.o.timing.askGraceMs);
+  }
+
+  private answerAsk(raw: RawAnswer) {
+    const p = this.pendingAsk;
+    if (!p) return;
+    this.lastActivity = Date.now();
+    this.sleepSent = false;
+    this.sleepAt = 0;
+    p.resolve(resolveAnswer(p.q, raw));
+  }
+
+  /** The user said "never mind" to a question asked before anything started. */
+  private dropRequest() {
+    this.addFact("The user dropped the last request when asked about it, so nothing was done.");
+    void this.progress(null, "Okay, never mind.", "when_idle");
+    this.sleepSoon();
+  }
+
+  /**
+   * A question the executor raised from the screen. A picked option costs no model call: it is
+   * noted and the step carries on. Anything else the user says goes to the router as a change to
+   * the task ("oh, you know what you should do..."). With no answer, the first option stands.
+   */
+  private async askInTask(task: Task | null, q: Question): Promise<AskOutcome> {
+    const first = q.options[0];
+    const unasked = first ? `Couldn't ask the user "${q.question}"; going with "${first}".` : `Couldn't ask the user "${q.question}"; decide yourself.`;
+    if (!task || task.asksUsed >= this.askMax) return { kind: "note", note: unasked };
+    task.asksUsed += 1;
+    const a = await this.askUser(task, q);
+    if (task.cancelled || this.stopped) return { kind: "cancelled" };
+    switch (a.kind) {
+      case "cancel":
+        this.cancelTasks("current");
+        return { kind: "cancelled" };
+      case "option":
+        return { kind: "note", note: `Asked the user "${q.question}"; they chose "${a.label}".` };
+      case "none":
+        if (first) void this.progress(task, `Going with ${first}.`, "when_idle");
+        return { kind: "note", note: unasked };
+      case "free": {
+        const note = `Asked the user "${q.question}"; they said: "${a.text}".`;
+        await this.utter(`Change the running task: ${a.text}`, a.text, true, { q, answer: a.text, assumed: false });
+        if (task.cancelled || this.stopped) return { kind: "cancelled" };
+        if (!task.amended) return { kind: "note", note };
+        task.scratch.push(note);
+        return { kind: "amended" };
+      }
+    }
+  }
+
   // ---------- Hands ----------
 
   private waitHands(id: string, ms = this.o.timing.actMs): Promise<Msg | null> {
@@ -1252,13 +1466,15 @@ export class Brain {
       if (this.pendingConfirm?.task === t) this.pendingConfirm.resolve({ ok: false, heard: "" });
       t.fireCancel();
     } else if (!quiet && !this.mouthV2) this.send({ type: "hush", to: "mouth" });
+    // A question about a request that hasn't started is dropped with it.
+    if (this.pendingAsk && !this.pendingAsk.task) this.pendingAsk.resolve({ kind: "cancel" });
   }
 
   private statusLine(): string {
     const t = this.current;
     if (!t) return this.queue.length ? `Nothing running; ${this.queue.length} queued.` : "Nothing running right now.";
     const step = t.plan.subgoals[t.idx];
-    const state = t.status === "waiting_confirm" ? "waiting for your OK" : t.status === "paused" ? "paused" : `on step ${t.idx + 1} of ${t.plan.subgoals.length}${step ? `: ${step.goal}` : ""}`;
+    const state = t.status === "waiting_confirm" ? "waiting for your OK" : t.status === "waiting_answer" ? "waiting for your answer" : t.status === "paused" ? "paused" : `on step ${t.idx + 1} of ${t.plan.subgoals.length}${step ? `: ${step.goal}` : ""}`;
     return `${t.plan.title}: ${state}.${this.queue.length ? ` Then ${this.queue.map((q) => q.plan.title).join(", ")}.` : ""}`;
   }
 
@@ -1408,7 +1624,7 @@ export class Brain {
       else if (t.actions > 0 && now - t.lastActionAt >= this.o.timing.teachIdleMs) void this.endTeach(true, "nothing more was happening");
       return;
     }
-    if (!this.awake || this.current || this.queue.length || this.pendingConfirm || this.listening || this.decidesInFlight > 0 || this.pendingSays.size > 0) return;
+    if (!this.awake || this.current || this.queue.length || this.pendingConfirm || this.pendingAsk || this.listening || this.decidesInFlight > 0 || this.pendingSays.size > 0) return;
     const now = Date.now();
     if (this.sleepAt && now >= this.sleepAt) {
       this.sleepAt = 0;

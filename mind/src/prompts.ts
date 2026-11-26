@@ -10,6 +10,9 @@ function hintsBlock(hints: string[]): string {
   return `\n\n# App notes from the team\nNavigation notes for specific apps. Use them when they apply; the live screen wins when they disagree.\n\n${clean.join("\n\n")}`;
 }
 
+/** When a question to the user is worth its cost. Shared by every role that may ask. */
+const ASK_BAR = `Asking interrupts the user, so it is a last resort. Ask only when both hold: (1) two or more readings fit and they would do visibly different things, or a detail only the user knows is missing and a wrong guess would be sent, paid for or deleted; (2) nothing you were given settles it. Never ask what you can read, infer or safely default, never ask for permission (irreversible steps are confirmed separately), and never ask something the user already answered. "question": one short spoken question. "options": 2 to 4 answers of a few words each (they are read aloud), your own best guess first; [] only for a truly open question.`;
+
 const DONE_WHEN_HELP = `"done_when" says how to tell the sub-goal is finished by looking at the screen: "app" (app name or package that should be in front, or ""), "text_present" (a short piece of text that will be visible, or ""), "text_absent" (text that will be gone, or ""), and "describe" (one plain sentence). Prefer concrete visible text: it is checked in code.`;
 
 export function routerSystem(hints: string[], catalogue: string): string {
@@ -23,6 +26,7 @@ Choose one "route":
 - "status": the user asks how it's going.
 - "sleep": the user is done talking and nothing is running.
 - "teach": the user wants to show Bobby how to do something by doing it themselves on the phone while Bobby watches ("I'm going to show you how to...", "let me teach you..."). Put what they will show, in a few of their words, in "teach" ("add a new project"). Nothing is done on the phone.
+- "ask": you can't act without one answer from the user. ${ASK_BAR} Leave "tasks" empty; you will be called again with the answer.
 
 For each task:
 - "title": 2 to 5 words. "goal": every detail the user gave. "done_say": the few words Bobby says when it is done ("Sent it to Sam.").
@@ -30,7 +34,7 @@ For each task:
 - If a shortcut below fits, set "shortcut_id" and fill "slots" (name/value pairs; times as 24-hour HH:MM, dates as YYYY-MM-DDTHH:MM in the user's local time). Shortcuts skip the screen entirely, so prefer them. "call.ai" means Bobby phones the person himself to say or ask something and reports back; "phone.dial" means the user wants to talk to the person.
 - Otherwise leave "shortcut_id" empty, set "app" to the app to open (by name), and write 1 to 5 "subgoals" in order. Each sub-goal is one checkpoint you can see on screen ("Open Sarah Chen's email", "Write the reply", "Send it"). "risk" is "irreversible" for a step that sends, posts, calls, pays, buys or deletes something; otherwise "safe". Put the irreversible action alone in its own last sub-goal.
 - ${DONE_WHEN_HELP}
-- Never ask follow-up questions. Missing details: pick sensible ones (a short subject, short friendly wording in the user's own voice, first person). A name means the contact with that name.
+- Missing details: pick sensible ones (a short subject, short friendly wording in the user's own voice, first person) rather than asking. A name means the contact with that name; when two contacts share it and nothing says which, that is a case for "ask".
 
 "say" is Bobby's two-to-four word acknowledgement ("On it."), or "" for chat.
 
@@ -68,7 +72,9 @@ const SUBGOAL_SCHEMA = {
 export const ROUTER_SCHEMA = {
   type: "object",
   properties: {
-    route: { type: "string", enum: ["chat", "tasks", "amend", "cancel", "status", "sleep", "teach"] },
+    route: { type: "string", enum: ["chat", "tasks", "amend", "cancel", "status", "sleep", "teach", "ask"] },
+    question: { type: "string" },
+    options: { type: "array", items: { type: "string" } },
     whisper: { type: "string" },
     teach: { type: "string" },
     say: { type: "string" },
@@ -99,7 +105,7 @@ export const ROUTER_SCHEMA = {
       },
     },
   },
-  required: ["route", "whisper", "teach", "say", "cancel_scope", "tasks"],
+  required: ["route", "question", "options", "whisper", "teach", "say", "cancel_scope", "tasks"],
   additionalProperties: false,
 };
 
@@ -120,6 +126,7 @@ Actions ("do"):
 Set "irreversible" true on an action that sends, posts, calls, pays, buys or deletes. Only do such an action when the sub-goal itself is that step.
 
 "status": "act" with actions; "done" (no actions) when the screen already shows the sub-goal is finished; "failed" when it can't be reached. Never claim "done" unless the screen shows it.
+"ask" (no actions): the screen shows a choice only the user can make: several people, messages, accounts or times fit. ${ASK_BAR} Take the options from the screen. Otherwise "question" is "" and "options" is [].
 "note": a fact from the screen worth remembering for later steps (e.g. "Sarah proposed 3pm"), else "".
 "say": what Bobby says while the cursor moves: a few casual words about THIS batch ("Opening Sarah's email.", "Writing the reply."), "" for small repeats. Never node numbers or these instructions.
 
@@ -170,19 +177,21 @@ Reply only with the JSON object. Unused fields: "" for strings, -1 for numbers, 
 export const EXEC_SCHEMA = {
   type: "object",
   properties: {
-    status: { type: "string", enum: ["act", "done", "failed"] },
+    status: { type: "string", enum: ["act", "done", "failed", "ask"] },
     say: { type: "string" },
     note: { type: "string" },
+    question: { type: "string" },
+    options: { type: "array", items: { type: "string" } },
     actions: { type: "array", items: EXEC_ACTION(false) },
   },
-  required: ["status", "say", "note", "actions"],
+  required: ["status", "say", "note", "question", "options", "actions"],
   additionalProperties: false,
 };
 
 export function escalateSystem(hints: string[]): string {
   return `You are the escalation step for a phone-driving assistant. The fast executor got stuck: its actions didn't do what it expected twice, or the screen has no readable elements (a web view, a game, a canvas). You see a screenshot as well as the element list, and the history of what was tried.
 
-Either return actions (status "act") or re-plan the sub-goal (status "replan", with 1 to 4 new sub-goals in "replan" that get around the problem), or give up (status "failed", with "say" telling the user why in a few words).
+Either return actions (status "act"), or re-plan the sub-goal (status "replan", with 1 to 4 new sub-goals in "replan" that get around the problem), or ask the user (status "ask", when one answer from them would unblock it), or give up (status "failed", with "say" telling the user why in a few words).
 
 ${EXEC_RULES}
 
@@ -197,13 +206,15 @@ Reply only with the JSON object. Unused fields: "" for strings, -1 for numbers, 
 export const ESCALATE_SCHEMA = {
   type: "object",
   properties: {
-    status: { type: "string", enum: ["act", "replan", "failed"] },
+    status: { type: "string", enum: ["act", "replan", "failed", "ask"] },
     say: { type: "string" },
     note: { type: "string" },
+    question: { type: "string" },
+    options: { type: "array", items: { type: "string" } },
     actions: { type: "array", items: EXEC_ACTION(true) },
     replan: { type: "array", items: SUBGOAL_SCHEMA },
   },
-  required: ["status", "say", "note", "actions", "replan"],
+  required: ["status", "say", "note", "question", "options", "actions", "replan"],
   additionalProperties: false,
 };
 

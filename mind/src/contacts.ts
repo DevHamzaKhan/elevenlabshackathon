@@ -41,13 +41,35 @@ export function findContact(book: Contact[], name: string): Contact | null {
   return book.find((c) => c.name.toLowerCase().split(/\s+/)[0] === first) ?? null;
 }
 
+/**
+ * A first name in `text` that two or more contacts share, when `text` doesn't say which one
+ * ("text Alex" with Alex Chen and Alex Kim). Null when it is clear: a full name was said, or one
+ * contact is called just that name.
+ */
+export function sharedFirstName(book: Contact[], text: string): { first: string; names: string[] } | null {
+  const byFirst = new Map<string, Contact[]>();
+  for (const c of book) {
+    const first = c.name.trim().split(/\s+/)[0].toLowerCase();
+    if (first) byFirst.set(first, [...(byFirst.get(first) ?? []), c]);
+  }
+  for (const [first, group] of byFirst) {
+    if (group.length < 2) continue;
+    if (!new RegExp(`\\b${escapeRe(first)}(?:'s)?\\b`, "i").test(text)) continue;
+    const settled = group.some((c) => c.name.toLowerCase() === first || new RegExp(`\\b${escapeRe(c.name)}\\b`, "i").test(text));
+    if (settled) continue;
+    return { first: group[0].name.trim().split(/\s+/)[0], names: group.map((c) => c.name) };
+  }
+  return null;
+}
+
 /** If `text` starts with a known contact's name, returns it and the rest of the text. */
 export function leadingContact(book: Contact[], text: string): { contact: Contact; rest: string } | null {
   const t = text.trim();
   const sorted = [...book].sort((a, b) => b.name.length - a.name.length);
-  for (const c of sorted) {
-    for (const n of [c.name, c.name.split(/\s+/)[0]]) {
-      const re = new RegExp(`^${escapeRe(n)}(?:'s)?\\b[\\s,:]*`, "i");
+  // Every full name before any first name: "Sam Lee ..." must not match Sam Park by his first name.
+  for (const nameOf of [(c: Contact) => c.name, (c: Contact) => c.name.split(/\s+/)[0]]) {
+    for (const c of sorted) {
+      const re = new RegExp(`^${escapeRe(nameOf(c))}(?:'s)?\\b[\\s,:]*`, "i");
       const m = re.exec(t);
       if (m) return { contact: c, rest: t.slice(m[0].length) };
     }

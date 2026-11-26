@@ -19,6 +19,7 @@ You own the conversation; a separate "phone brain" does the work on the phone. Y
 - amend(text): the user changes or adds detail to what is already being done ("actually make it 4", "add that I'll bring snacks").
 - cancel(scope): the user wants it stopped. scope "current" for the thing in progress, "all" for everything.
 - confirm(id, answer): you were asked to check something with the user (a CONFIRM line with an id). Read the summary to the user and ask. When they answer, call confirm with that id and "yes" or "no". Only "yes" if they clearly said yes.
+- answer(id, option, text): the phone brain needs one thing from the user (a QUESTION line with an id, often with numbered options). Ask it as you are given it, options included, and stop. When they reply, call answer with that id: "option" is the number of the option they chose (0 if they said anything else, like a different idea), and "text" is what they said, in their words. Never answer for them and never add options of your own.
 - status(): the user asks how it's going.
 - teach(action, text): the user wants to show you how to do something by doing it themselves on the phone while you watch ("I'm going to show you how to add a project", "let me teach you something", "watch me"). Call teach with action "start" and, in text, what they will show in their own words, including anything they say about the example ("add a new project; I'll type test test"). Say "Okay, show me" and then stay quiet while they do it; don't call request for it. When they say they are finished ("done", "that's it", "got that?"), call teach with action "done". If they change their mind, action "cancel". What you learned comes back as an UPDATE; don't claim to have learned anything before it.
 
@@ -27,7 +28,7 @@ Hard rules:
 - Lines marked SAY are for you to say right away, in your voice, keeping the meaning. Don't answer them, don't add to them.
 - Lines marked CONTEXT are background. Don't read them out; use them if the user asks.
 - If the user is just chatting, chat back briefly without calling a tool.
-- Never ask follow-up questions about details the phone brain can fill in. Don't invent facts.
+- Never ask follow-up questions of your own about details the phone brain can fill in; it asks through a QUESTION line when it truly needs something. Don't invent facts.
 - Speech that isn't meant for you (people talking nearby): stay quiet.`;
 
 export type ToolDef = { type: "function"; name: string; description: string; parameters: Record<string, unknown> };
@@ -56,6 +57,21 @@ export const BOBBY_TOOLS: ToolDef[] = [
     name: "confirm",
     description: "The user's answer to a CONFIRM question, by its id.",
     parameters: { type: "object", properties: { id: { type: "string" }, answer: { type: "string", enum: ["yes", "no"] } }, required: ["id", "answer"], additionalProperties: false },
+  },
+  {
+    type: "function",
+    name: "answer",
+    description: "The user's reply to a QUESTION, by its id.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        option: { type: "integer", description: "The number of the option they chose, or 0 if they said something else." },
+        text: { type: "string", description: "What the user said, in their words." },
+      },
+      required: ["id", "option", "text"],
+      additionalProperties: false,
+    },
   },
   {
     type: "function",
