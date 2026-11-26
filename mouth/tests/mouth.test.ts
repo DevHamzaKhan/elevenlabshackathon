@@ -6,17 +6,24 @@ import type { VoiceCallbacks, VoiceSession } from "../src/voice";
 
 class FakeVoice implements VoiceSession {
   cb!: VoiceCallbacks;
-  userMessages: string[] = [];
+  userMessages: string[] = []; // typed test turns (test_user_turn) only
+  spoken: string[] = []; // every line Bobby was told to say, in order
+  results: { callId: string; output: string; respond: boolean }[] = [];
   context: string[] = [];
   interrupts = 0;
   ended = 0;
   sendUserMessage(t: string) { this.userMessages.push(t); }
+  speak(t: string) { this.spoken.push(t); }
+  toolResult(callId: string, output: string, respond: boolean) { this.results.push({ callId, output, respond }); }
   sendContextualUpdate(t: string) { this.context.push(t); }
   interrupt() { this.interrupts++; }
   micMuted: boolean[] = []; // every setMicMuted call, in order
   setMicMuted(m: boolean) { this.micMuted.push(m); }
   async end() { this.ended++; }
 }
+
+/** What a fresh session sends first: voice_caps (protocol v2), then wake. */
+const WOKE: Frame[] = [{ type: "voice_caps", v: 2, tools: ["request", "amend", "cancel", "confirm", "status", "teach", "answer"] }, { type: "wake" }];
 
 const tick = () => new Promise((r) => setImmediate(r));
 const made: Mouth[] = [];
@@ -48,14 +55,14 @@ async function live(opts = {}) {
   return s;
 }
 
-test("wake starts one session and sends wake; a second wake does nothing", async () => {
+test("wake starts one session and sends voice_caps then wake; a second wake does nothing", async () => {
   const s = await setup();
   const w1 = s.m.wake();
   const w2 = s.m.wake();
   assert.deepEqual(s.sent, []); // not live yet
   s.release();
   await Promise.all([w1, w2]);
-  assert.deepEqual(s.sent, [{ type: "wake" }]);
+  assert.deepEqual(s.sent, WOKE);
   assert.equal(s.m.status, "live");
 });
 
@@ -64,25 +71,25 @@ test("messages that arrive while the session is starting are held and handled in
   const w = s.m.wake();
   s.m.onHub({ type: "whisper", to: "mouth", text: "3 new notifications" });
   s.m.onHub({ type: "say", to: "mouth", id: "m5", text: "Hello" });
-  assert.equal(s.v.userMessages.length, 0);
+  assert.equal(s.v.spoken.length, 0);
   s.release();
   await w;
   assert.deepEqual(s.v.context, ["3 new notifications"]);
-  assert.deepEqual(s.v.userMessages, ["[SAY] Hello"]);
+  assert.deepEqual(s.v.spoken, ["Hello"]);
 });
 
 test("say: queued in order, say_started when Bobby speaks, say_done when he stops", async () => {
   const s = await live();
   s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "one" });
   s.m.onHub({ type: "say", to: "mouth", id: "m2", text: "two" });
-  assert.deepEqual(s.v.userMessages, ["[SAY] one"]); // second waits
+  assert.deepEqual(s.v.spoken, ["one"]); // second waits
   s.v.cb.onModeChange("speaking");
   s.v.cb.onAgentResponse("One.");
   s.v.cb.onModeChange("listening");
-  assert.deepEqual(s.v.userMessages, ["[SAY] one", "[SAY] two"]);
+  assert.deepEqual(s.v.spoken, ["one", "two"]);
   s.v.cb.onModeChange("speaking");
   s.v.cb.onModeChange("listening");
-  assert.deepEqual(s.sent.slice(1), [
+  assert.deepEqual(s.sent.slice(WOKE.length), [
     { type: "say_started", re: "m1" },
     { type: "spoke", text: "One." },
     { type: "say_done", re: "m1" },
@@ -96,9 +103,9 @@ test("a say waits while Bobby is already speaking", async () => {
   const s = await live();
   s.v.cb.onModeChange("speaking");
   s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "later" });
-  assert.deepEqual(s.v.userMessages, []);
+  assert.deepEqual(s.v.spoken, []);
   s.v.cb.onModeChange("listening");
-  assert.deepEqual(s.v.userMessages, ["[SAY] later"]);
+  assert.deepEqual(s.v.spoken, ["later"]);
 });
 
 test("hush stops audio and drops the queue; every say still gets say_done", async () => {
@@ -108,13 +115,13 @@ test("hush stops audio and drops the queue; every say still gets say_done", asyn
   s.v.cb.onModeChange("speaking");
   s.m.onHub({ type: "hush", to: "mouth" });
   assert.equal(s.v.interrupts, 1);
-  assert.deepEqual(s.sent.slice(1), [
+  assert.deepEqual(s.sent.slice(WOKE.length), [
     { type: "say_started", re: "m1" },
     { type: "say_done", re: "m1" },
     { type: "say_done", re: "m2", spoken: false },
   ]);
   s.v.cb.onModeChange("listening");
-  assert.deepEqual(s.v.userMessages, ["[SAY] one"]); // nothing else sent
+  assert.deepEqual(s.v.spoken, ["one"]); // nothing else sent
 });
 
 test("correct is spoken before queued lines and gets no say_started", async () => {
@@ -124,10 +131,10 @@ test("correct is spoken before queued lines and gets no say_started", async () =
   s.m.onHub({ type: "say", to: "mouth", id: "m2", text: "two" });
   s.m.onHub({ type: "correct", to: "mouth", text: "It's 3, not 2." });
   s.v.cb.onModeChange("listening");
-  assert.equal(s.v.userMessages[1], "[CORRECT] It's 3, not 2.");
+  assert.equal(s.v.spoken[1], "Quick correction: It's 3, not 2.");
   s.v.cb.onModeChange("speaking");
   s.v.cb.onModeChange("listening");
-  assert.equal(s.v.userMessages[2], "[SAY] two");
+  assert.equal(s.v.spoken[2], "two");
   assert.equal(s.sent.filter((f) => f.type === "say_started").length, 1);
 });
 
@@ -139,7 +146,7 @@ test("sleep ends the session, sends asleep, and asleep rules apply", async () =>
   await tick();
   assert.equal(s.v.ended, 1);
   assert.equal(s.m.status, "asleep");
-  assert.deepEqual(s.sent.slice(1), [
+  assert.deepEqual(s.sent.slice(WOKE.length), [
     { type: "say_done", re: "m1", spoken: false },
     { type: "say_done", re: "m2", spoken: false },
     { type: "asleep" },
@@ -153,21 +160,20 @@ test("sleep ends the session, sends asleep, and asleep rules apply", async () =>
   assert.deepEqual(s.v.context, []);
 });
 
-test("heard: real user turns only; our own tagged lines and echoed test turns are not forwarded twice", async () => {
+test("heard: real user turns only; noise and echoed test turns are not forwarded", async () => {
   const s = await live();
-  s.v.cb.onUserTranscript("[SAY] one");
-  s.v.cb.onUserTranscript("[CORRECT] two");
   s.v.cb.onUserTranscript("...");
   s.v.cb.onUserTranscript("reply to Sarah, tell her 3 works");
   s.m.onHub({ type: "test_user_turn", to: "mouth", text: "open Gmail" });
   s.v.cb.onUserTranscript("open Gmail"); // echo of the typed turn
   s.v.cb.onAgentResponse("On it.");
-  assert.deepEqual(s.sent.slice(1), [
+  assert.deepEqual(s.sent.slice(WOKE.length), [
     { type: "heard", text: "reply to Sarah, tell her 3 works" },
     { type: "heard", text: "open Gmail" },
     { type: "spoke", text: "On it." },
   ]);
   assert.deepEqual(s.v.userMessages, ["open Gmail"]);
+  assert.deepEqual(s.v.spoken, []);
 });
 
 test("the user speaks before a say starts: the say is re-sent after Bobby answers the user", async () => {
@@ -178,7 +184,7 @@ test("the user speaks before a say starts: the say is re-sent after Bobby answer
   s.v.cb.onAgentResponse("Just a moment.");
   s.v.cb.onModeChange("listening");
   assert.equal(s.sent.filter((f) => f.type === "say_started").length, 0, "the answer was not the say");
-  assert.deepEqual(s.v.userMessages, ["[SAY] Looking for Reply", "[SAY] Looking for Reply"]);
+  assert.deepEqual(s.v.spoken, ["Looking for Reply", "Looking for Reply"]);
   s.v.cb.onModeChange("speaking");
   s.v.cb.onModeChange("listening");
   assert.deepEqual(s.sent.filter((f) => f.type.startsWith("say_")), [
@@ -206,8 +212,8 @@ test("a say that never starts is finished with spoken:false and the queue moves 
   s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "one" });
   s.m.onHub({ type: "say", to: "mouth", id: "m2", text: "two" });
   await new Promise((r) => setTimeout(r, 40));
-  assert.deepEqual(s.sent[1], { type: "say_done", re: "m1", spoken: false });
-  assert.equal(s.v.userMessages[1], "[SAY] two");
+  assert.deepEqual(s.sent[WOKE.length], { type: "say_done", re: "m1", spoken: false });
+  assert.equal(s.v.spoken[1], "two");
   await s.m.sleep();
 });
 
@@ -234,7 +240,7 @@ test("unknown types are ignored", async () => {
   const s = await live();
   s.m.onHub({ type: "something_new", to: "mouth", x: 1 });
   s.m.onHub({ type: "say", to: "mouth" }); // no id
-  assert.deepEqual(s.sent, [{ type: "wake" }]);
+  assert.deepEqual(s.sent, WOKE);
   await s.m.sleep();
 });
 
@@ -258,7 +264,7 @@ const sayFrames = (sent: Frame[]) => sent.filter((f) => f.type === "say_started"
 test("a new say drops the queued ones (spoken:false) and only the newest waits; the queue never grows", async () => {
   const s = await live();
   s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "one" }); // idle: sent to the agent at once
-  assert.deepEqual(s.v.userMessages, ["[SAY] one"]);
+  assert.deepEqual(s.v.spoken, ["one"]);
   s.v.cb.onModeChange("speaking");
   for (const id of ["m2", "m3", "m4", "m5"]) s.m.onHub({ type: "say", to: "mouth", id, text: id });
   assert.deepEqual(sayFrames(s.sent), [
@@ -268,7 +274,7 @@ test("a new say drops the queued ones (spoken:false) and only the newest waits; 
     { type: "say_done", re: "m4", spoken: false },
   ]);
   s.v.cb.onModeChange("listening");
-  assert.deepEqual(s.v.userMessages, ["[SAY] one", "[SAY] m5"]); // only the newest is spoken
+  assert.deepEqual(s.v.spoken, ["one", "m5"]); // only the newest is spoken
   s.v.cb.onModeChange("speaking");
   s.v.cb.onModeChange("listening");
   assert.deepEqual(sayFrames(s.sent).slice(4), [
@@ -289,7 +295,7 @@ test("a queued say that hasn't started within sayStaleMs of arriving is dropped"
     { type: "say_done", re: "m2", spoken: false },
   ]);
   s.v.cb.onModeChange("listening");
-  assert.deepEqual(s.v.userMessages, ["[SAY] one"], "the stale line is never sent to the agent");
+  assert.deepEqual(s.v.spoken, ["one"], "the stale line is never sent to the agent");
 });
 
 test("a say sent to the agent that doesn't start within sayStaleMs of arriving gets spoken:false", async () => {
@@ -298,39 +304,17 @@ test("a say sent to the agent that doesn't start within sayStaleMs of arriving g
   await wait(50);
   assert.deepEqual(sayFrames(s.sent), [{ type: "say_done", re: "m1", spoken: false }]);
   s.m.onHub({ type: "say", to: "mouth", id: "m2", text: "two" }); // the next one goes straight out
-  assert.equal(s.v.userMessages.at(-1), "[SAY] two");
+  assert.equal(s.v.spoken.at(-1), "two");
 });
 
 test("a say that arrives when idle goes to the agent at once and starts when Bobby speaks", async () => {
   let t = 1000;
   const s = await live({ now: () => t });
   s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "Finding Gmail." });
-  assert.deepEqual(s.v.userMessages, ["[SAY] Finding Gmail."]);
+  assert.deepEqual(s.v.spoken, ["Finding Gmail."]);
   t += 300;
   s.v.cb.onModeChange("speaking");
   assert.deepEqual(s.m.sayLatencies, [300]);
-});
-
-// ---------- [SAY] answered instead of spoken ----------
-
-test("an agent reply that doesn't match the [SAY] line still counts as spoken, is logged, and is not re-sent", async () => {
-  const logs: string[] = [];
-  const s = await live({ log: (l: string) => logs.push(l) });
-  s.m.onHub({ type: "say", to: "mouth", id: "m1", text: "Finding Gmail." });
-  s.v.cb.onModeChange("speaking");
-  s.v.cb.onAgentResponse("Yep. On it.");
-  s.v.cb.onModeChange("listening");
-  assert.deepEqual(sayFrames(s.sent), [{ type: "say_started", re: "m1" }, { type: "say_done", re: "m1" }]);
-  assert.deepEqual(s.v.userMessages, ["[SAY] Finding Gmail."]);
-  assert.ok(logs.some((l) => l.includes("answered instead of spoken")));
-});
-
-test("resembles: the spoken line matches, an acknowledgement doesn't", async () => {
-  const { resembles } = await import("../src/mouth");
-  assert.equal(resembles("Finding Gmail.", "Finding Gmail."), true);
-  assert.equal(resembles("Okay, finding Gmail now.", "Finding Gmail."), true);
-  assert.equal(resembles("Yep. On it.", "Finding Gmail."), false);
-  assert.equal(resembles("Sure.", "I'm looking for the word 'Reply' to answer Sarah."), false);
 });
 
 // ---------- push-to-talk ----------

@@ -13,10 +13,6 @@ echo "== type check (package + test app)"
 (cd example && npx tsc --noEmit -p .) > logs/check-tsc.log 2>&1 || { cat logs/check-tsc.log; exit 1; }
 echo "ok"
 
-echo "== setup.mjs dry run"
-node agent/setup.mjs --dry-run > logs/check-setup.log 2>&1 || { cat logs/check-setup.log; exit 1; }
-echo "ok"
-
 echo "== dry-run call through tools/caller.mjs (pretend hub; no call is placed)"
 PORT="${MOUTH_CHECK_PORT:-8797}"
 node fakes/hub.mjs --port "$PORT" --script tools/dry-call.script > logs/check-call-hub.log 2>&1 &
@@ -35,7 +31,7 @@ echo "== voice bench plumbing (dry run, local fake server)"
 node tools/voice-bench.mjs --dry-run --runs 1 > logs/check-bench.log 2>&1 || { tail -20 logs/check-bench.log; exit 1; }
 echo "ok"
 
-echo "== integration with the real Mind (v1 + v2 voice, fake hub/phone/OpenAI)"
+echo "== integration with the real Mind (v2 voice, fake hub/phone/OpenAI)"
 if [[ -d ../mind/node_modules ]]; then
   (cd ../mind && npx tsx ../mouth/tools/integration-with-mind.mts) > logs/check-integration.log 2>&1 || { tail -30 logs/check-integration.log; exit 1; }
   tail -1 logs/check-integration.log

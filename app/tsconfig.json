@@ -6,8 +6,6 @@
     // resolve their bare imports from app/node_modules, as Metro does.
     "paths": {
       "@anthropic-ai/sdk": ["./node_modules/@anthropic-ai/sdk"],
-      "@elevenlabs/client": ["./node_modules/@elevenlabs/client"],
-      "@elevenlabs/react-native": ["./node_modules/@elevenlabs/react-native/dist/index.react-native.d.ts"],
       "@livekit/react-native": ["./node_modules/@livekit/react-native"],
       "@livekit/react-native-webrtc": ["./node_modules/@livekit/react-native-webrtc"]
     }

@@ -1,10 +1,7 @@
-// The Mouth's logic (CONTRACT.md v1, "Mouth" and "Sleeping"), independent of ElevenLabs.
-// Plain TypeScript, timers only: runs in Node tests and in React Native.
+// The Mouth's logic (CONTRACT.md v1 "Mouth" and "Sleeping", protocol v2 in mind/PROTOCOL-V2.md),
+// independent of the voice vendor. Plain TypeScript, timers only: runs in Node tests and in React Native.
 import type { Frame } from "./hub";
 import type { VoiceFactory, VoiceMode, VoiceSession } from "./voice";
-
-export const SAY_TAG = "[SAY]";
-export const CORRECT_TAG = "[CORRECT]";
 
 export interface MouthDeps {
   send(msg: Frame): void; // to the hub (goes to the Mind)
@@ -50,7 +47,6 @@ export class Mouth {
   private micTimer: ReturnType<typeof setTimeout> | null = null;
   private micCap: ReturnType<typeof setTimeout> | null = null;
   private commandCap: ReturnType<typeof setTimeout> | null = null;
-  private answeredWarned = false; // the current say's reply was already checked against the line
   /** Delay from a say arriving to Bobby starting to speak it, in ms (latest first). */
   readonly sayLatencies: number[] = [];
   // ---- protocol v2 (the voice model's tools are the input) ----
@@ -220,7 +216,7 @@ export class Mouth {
         if (!w) return;
         clearTimeout(w.timer);
         this.statusCalls.delete(String(msg.re));
-        this.session!.toolResult?.(w.callId, JSON.stringify({ status: text || "Nothing running." }), true);
+        this.session!.toolResult(w.callId, JSON.stringify({ status: text || "Nothing running." }), true);
         return;
       }
       default:
@@ -231,14 +227,14 @@ export class Mouth {
   // ---------- v2: the voice model's tools ----------
 
   private sendCaps(): void {
-    if (this.session?.tools) this.d.send({ type: "voice_caps", v: 2, tools: V2_TOOLS });
+    this.d.send({ type: "voice_caps", v: 2, tools: V2_TOOLS });
   }
 
   private onToolCall(name: string, args: Record<string, unknown>, callId: string): void {
     if (this.state !== "live" || !this.session) return;
     this.armBackstop();
     const s = this.session;
-    const reply = (o: object, respond: boolean) => s.toolResult?.(callId, JSON.stringify(o), respond);
+    const reply = (o: object, respond: boolean) => s.toolResult(callId, JSON.stringify(o), respond);
     const text = typeof args.text === "string" ? args.text.trim() : "";
     this.d.log(`tool ${name}(${JSON.stringify(args)})`);
     switch (name) {
@@ -348,7 +344,6 @@ export class Mouth {
   private onUserTranscript(text: string): void {
     const t = text.trim();
     if (!/[\p{L}\p{N}]/u.test(t)) return; // "..." and other noise-only transcripts
-    if (t.startsWith(SAY_TAG) || t.startsWith(CORRECT_TAG)) return; // our own instructions
     this.lastHeard = t;
     if (this.pendingAsk) this.pendingAsk.heard = `${this.pendingAsk.heard} ${t}`.trim();
     // A typed test turn may be echoed back as a transcript: it was already sent as heard.
@@ -387,13 +382,6 @@ export class Mouth {
     const t = text.trim();
     if (!t) return;
     this.d.send({ type: "spoke", text: t });
-    // The agent sometimes answers a [SAY] line ("Yep. On it.") instead of speaking it. It still
-    // counts as spoken (it was said, and re-sending would pile up); just log it.
-    const c = this.current;
-    if (c && c.kind === "say" && c.started && !this.answeredWarned) {
-      this.answeredWarned = true;
-      if (!resembles(t, c.text)) this.d.log(`say ${c.id} answered instead of spoken: "${t}" (line: "${c.text}")`);
-    }
   }
 
   private onModeChange(mode: VoiceMode): void {
@@ -451,10 +439,7 @@ export class Mouth {
     const next = this.queue.shift();
     if (!next) return;
     this.current = { ...next, started: false, dispatchedAt: this.now() };
-    this.answeredWarned = false;
-    const s = this.session!;
-    if (s.speak) s.speak(next.kind === "correct" ? `Quick correction: ${next.text}` : next.text);
-    else s.sendUserMessage(`${next.kind === "correct" ? CORRECT_TAG : SAY_TAG} ${next.text}`);
+    this.session!.speak(next.kind === "correct" ? `Quick correction: ${next.text}` : next.text);
     // A say must start within sayStaleMs of arriving, or it is dropped as stale.
     let ms = this.d.sayStartTimeoutMs ?? 8_000;
     if (next.kind === "say") ms = Math.min(ms, Math.max(0, next.queuedAt + this.staleMs() - this.now()));
@@ -574,13 +559,4 @@ export class Mouth {
     if (this.backstop) clearTimeout(this.backstop);
     this.backstop = null;
   }
-}
-
-/** Loosely: does the agent's reply contain most of the line's words? ("Yep. On it." vs "Finding Gmail." -> no) */
-export function resembles(reply: string, line: string): boolean {
-  const words = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((w) => w.length > 1);
-  const want = words(line);
-  if (!want.length) return true;
-  const got = new Set(words(reply));
-  return want.filter((w) => got.has(w)).length / want.length >= 0.5;
 }

@@ -1,5 +1,5 @@
 // The only file that talks to OpenAI Realtime from the phone. React Native only.
-// WebRTC through @livekit/react-native-webrtc (already in the app for ElevenLabs/LiveKit), audio
+// WebRTC through @livekit/react-native-webrtc (installed in the app with LiveKit), audio
 // routing (earbuds first) through @livekit/react-native's AudioSession. Flow, per the docs
 // (developers.openai.com/api/docs/guides/voice-webrtc): mint an ephemeral client secret with the
 // session config, open a peer connection with the microphone track and the "oai-events" data
@@ -55,7 +55,6 @@ export function openAIVoice(apiKey: string, opts: RealtimeOptions, log: (l: stri
     log(`openai realtime: ${opts.model ?? "default model"} connected in ${Date.now() - t0} ms`);
 
     const session: VoiceSession = {
-      tools: true,
       sendUserMessage: (t) => {
         send(ev.userText(t));
         send(ev.respond());

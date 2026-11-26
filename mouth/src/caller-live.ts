@@ -1,5 +1,5 @@
-// The Caller on OpenAI (CALLER_VENDOR=openai, the default): an outbound phone call carried by
-// GPT-Live over a SIP trunk (e.g. Twilio Elastic SIP Trunking), stock voice, no cloning.
+// The real Caller: an outbound phone call carried by GPT-Live over a SIP trunk (e.g. Twilio
+// Elastic SIP Trunking), in a stock voice.
 // Plain TypeScript (fetch, WebSocket, timers): runs on the phone and in Node.
 //
 // Flow (developers.openai.com/api/docs/guides/voice-sip "Place an outbound call", and

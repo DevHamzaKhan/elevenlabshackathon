@@ -1,6 +1,6 @@
 # Bobby
 
-Bobby is a voice assistant that operates an Android phone for you. You double-press the phone's side button and talk to Bobby through your earbuds. He talks with you, and a cursor moves on the phone doing what you asked while Bobby explains each step and why ("I'm looking for the word 'Reply' to answer Sarah"). The demo story: he tells you about your notifications, replies to an email in Gmail, then phones a friend in the owner's cloned voice and reports back what they said.
+Bobby is a voice assistant that operates an Android phone for you. You double-press the phone's side button and talk to Bobby through your earbuds. He talks with you, and a cursor moves on the phone doing what you asked while Bobby explains each step and why ("I'm looking for the word 'Reply' to answer Sarah"). The demo story: he tells you about your notifications, replies to an email in Gmail, then phones a friend with an AI caller that says up front it is an AI assistant calling for the owner, and reports back what they said.
 
 **Everything runs on the phone, in one Expo (React Native) app.** There is no laptop server at the demo. The phone needs internet, because the AI models and the voice run in the cloud.
 
@@ -16,7 +16,7 @@ The human tells you their name. The name decides your part, your folders, your b
 |---|---|---|---|---|---|
 | **Hamza** | **Hands**: a Kotlin module for Expo that reads the screen and does the taps, with a cursor overlay. It also hosts the hub the parts talk through, and builds the final merged app. | `hands/`, `app/` | `roles/hands.md` | 20x | Wajeeh's Mouth |
 | **James C** | **Mind**: a TypeScript package, the slow brain (Claude) that plans tasks and drives the phone one step at a time. Only the Mind may start or cancel a task. | `mind/` | `roles/mind.md` | 10x | James H's Stage |
-| **Wajeeh** | **Mouth**: a TypeScript package, Bobby's voice, an ElevenLabs realtime speech agent started by the side button, and the code that places the phone call. Bobby only talks. | `mouth/` | `roles/mouth.md` | 1x | |
+| **Wajeeh** | **Mouth**: a TypeScript package, Bobby's voice, an OpenAI Realtime speech model started by the side button, and the code that places the phone call. Bobby only talks. | `mouth/` | `roles/mouth.md` | 1x | |
 | **James H** | **Stage**: live dashboard, cursor art, app icon, per-app hints, README material. Nothing depends on it. | `stage/` | `roles/stage.md` | 1x | |
 
 ### Starting
@@ -80,7 +80,7 @@ Inside this repo, these rules come before any personal instructions your human h
 10. **Only the keys you were given.** Use only the variables your brief lists. A new setting that isn't secret is fine: start its name with your part (`HANDS_`, `MIND_`, `MOUTH_`, `CALLER_`, `STAGE_`) and list it in your README. Never ask for a new secret key or account. If you're sure you need one, explain why under "Needs the human" and carry on without it.
 11. **Real-world actions.** Never send a real email or message or place a real call, except in the tests your brief lists, and then at most once per run of that test. Don't touch accounts or devices beyond what your part needs.
 12. **Commit small and often** to `main`: add your folder, commit, `git pull --rebase`, `git push`. Never force-push. If a push fails for any reason other than being behind, note it in `STATUS.md` and keep committing locally.
-13. **Look things up.** The vendor products here are new: ElevenLabs' realtime speech model, Anthropic's newest Claude models, the current Expo SDK and Android SDKs. Read the current official docs before writing integration code instead of relying on memory, and keep model names and ids in variables. Where the docs disagree with your brief about how a product works, follow the docs and note it under "Decisions".
+13. **Look things up.** The vendor products here are new: OpenAI's Realtime and GPT-Live speech models, Anthropic's newest Claude models, the current Expo SDK and Android SDKs. Read the current official docs before writing integration code instead of relying on memory, and keep model names and ids in variables. Where the docs disagree with your brief about how a product works, follow the docs and note it under "Decisions".
 14. **Install what you need.** Install missing developer tools yourself with Homebrew or npm, without asking. Ask only if an install needs the human's password. Use Node and npm for everything that runs on a laptop: scripts are plain `.mjs` or TypeScript files, and each folder has its own `package.json` and lockfile. There is no shared root `package.json`.
 15. **Use the shared versions.** The root `VERSIONS.md` names the Expo SDK version. Create every Expo app and package for exactly that version, add React Native libraries with `npx expo install`, and never upgrade it. The parts get merged into one app at the end, and mismatched versions would break that.
 16. **Write `<your folder>/README.md`** with how to run your part and how to run it against your fakes. Also keep `<your folder>/MERGE.md`, as the contract's "Packages" section describes, so the final app can include your package without asking you anything.

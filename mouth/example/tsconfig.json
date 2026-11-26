@@ -3,12 +3,6 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@elevenlabs/react-native": [
-        "./node_modules/@elevenlabs/react-native/dist/index.react-native.d.ts"
-      ],
-      "@elevenlabs/client": [
-        "./node_modules/@elevenlabs/client"
-      ],
       "@livekit/react-native-webrtc": [
         "./node_modules/@livekit/react-native-webrtc"
       ],

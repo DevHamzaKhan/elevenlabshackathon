@@ -6,7 +6,7 @@ No vendor publishes comparable latency numbers, so `mouth/tools/voice-bench.mjs`
 
 ## Comparison
 
-| | OpenAI `gpt-realtime-2.1-mini` (**default**) | OpenAI `gpt-realtime-2.1` | OpenAI `gpt-live-1.1` (GPT-Live) | ElevenLabs Agents (v1, Realtime v1 Mini) | Gemini Live `gemini-3.8-live` |
+| | OpenAI `gpt-realtime-2.1-mini` (**default**) | OpenAI `gpt-realtime-2.1` | OpenAI `gpt-live-1.1` (GPT-Live) | ElevenLabs Agents (Realtime v1 Mini; **removed** 2026-11-26) | Gemini Live `gemini-3.8-live` |
 |---|---|---|---|---|---|
 | What it is | Speech-to-speech reasoning model with tools, "distilled ... faster, lower-cost" | Full Realtime reasoning model with tools, configurable reasoning effort | Full-duplex voice model that delegates work to your backend | Agent platform (STT + LLM + TTS pipeline, Realtime voice mode) | Audio-to-audio live model |
 | Time to first audio (vendor claim) | none published | none published | none published | Realtime v1 Mini "620ms", Max "570ms"; measured in our emulator: `say` → `say_started` 0.26–0.28 s (mouth/STATUS.md) | "low-latency", no figure |
@@ -15,7 +15,7 @@ No vendor publishes comparable latency numbers, so `mouth/tools/voice-bench.mjs`
 | Price | audio in $10 / out $20 per 1M tokens (cached $0.30); text $0.60/$2.40. ≈ $0.006 per min of user speech + $0.024 per min of Bobby speech, plus the re-sent conversation each turn (mostly cached) | audio in $32 / out $64 per 1M (cached $0.40) ≈ $0.019 + $0.077 per min | $0.05/min active, $0.02/min standby (WebRTC paused), per second; backend billed separately | $0.08/min + LLM tokens (Realtime v1 Mini $0.20/$6.00 per 1M) | audio in $0.005/min, out $0.018/min (text $0.75/$4.50 per 1M) |
 | Session limits | 60 min per Realtime session | 60 min | not listed for WebRTC; SIP: 3 min ringing, 2 h connected | per-agent max duration (configurable) | audio-only 15 min without context compression; connection ~10 min (session resumption) |
 | React Native | WebRTC with any stack: we use `@livekit/react-native-webrtc` (already installed); ephemeral client secret from `/v1/realtime/client_secrets` | same | WebRTC recommended for mobile; session created server-side (`POST /v1/live/sessions`), so the phone would need the key or a small server; third-party RN SDK (Switchboard) is iOS-only | Official `@elevenlabs/react-native` SDK (LiveKit); agent id only, no key on the phone | WebSocket (raw PCM) natively; WebRTC only via partners; ephemeral tokens recommended |
-| Fit for Bobby | Tools map 1:1 to the Mind's protocol; cheapest OpenAI option; no new native code | Better instruction-following if mini mis-routes; ~3x the audio price | OpenAI's recommended path for new voice apps; strongest at "keep talking while the Mind works"; needs a different adapter (delegation + transcripts instead of named tools) | Works today (v1); cloned voice; not all-OpenAI | Cheapest; non-blocking tools are a great match; WebSocket audio plumbing in RN is new work; not OpenAI |
+| Fit for Bobby | Tools map 1:1 to the Mind's protocol; cheapest OpenAI option; no new native code | Better instruction-following if mini mis-routes; ~3x the audio price | OpenAI's recommended path for new voice apps; strongest at "keep talking while the Mind works"; needs a different adapter (delegation + transcripts instead of named tools) | Was the v1 voice; removed from the code base, with voice cloning, on 2026-11-26; not all-OpenAI | Cheapest; non-blocking tools are a great match; WebSocket audio plumbing in RN is new work; not OpenAI |
 
 Sources:
 - OpenAI models: https://developers.openai.com/api/docs/models/gpt-realtime-2.1-mini, https://developers.openai.com/api/docs/models/gpt-realtime-2.1, https://developers.openai.com/api/docs/models/gpt-live-1.1
@@ -31,7 +31,7 @@ Sources:
 
 - **Default: `gpt-realtime-2.1-mini`** (`MOUTH_VOICE_MODEL`). Bobby's voice only acknowledges, relays and reads lines; the reasoning is in the Mind. Mini supports function calling and image/audio input, is about a third of the full model's audio price, and runs over WebRTC with libraries the app already has. Switch to `gpt-realtime-2.1` with one env change if the bench or the phone shows mis-routed tool calls.
 - **Next to evaluate: GPT-Live 1.1 with client delegation.** OpenAI now points new voice apps at it, and full duplex plus background delegation is exactly "keep talking while the phone is driven". It needs a second adapter: `session.delegation.created` → `request` with the transcript since the last turn, `progress` → `session.commentary.append`, `whisper` → `session.thinking.append`, and the confirmation question through `session.instructions.append`. The session is created with the API key (`POST /v1/live/sessions`), so either keep minting on the phone or add a tiny token server.
-- **ElevenLabs** stays selectable (`MOUTH_VOICE_VENDOR=elevenlabs`) until the OpenAI path is proven on the phone.
+- **ElevenLabs** was removed on 2026-11-26 (with the cloned-voice caller); the row above is kept for comparison only.
 
 ## The bench
 

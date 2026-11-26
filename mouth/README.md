@@ -1,6 +1,6 @@
 # bobby-mouth
 
-Bobby's voice and the Caller. **v2 (default): OpenAI.** The voice is an OpenAI Realtime model over WebRTC with Bobby's tools (`request`, `amend`, `cancel`, `confirm`, `answer`, `status`; `mind/PROTOCOL-V2.md`), and the Caller places calls through GPT-Live over a SIP trunk with a stock voice. The v1 ElevenLabs agent and cloned-voice caller stay selectable (`MOUTH_VOICE_VENDOR=elevenlabs`, `CALLER_VENDOR=elevenlabs`). Every call is a dry run unless `CALLER_DRY_RUN=0`. Plain TypeScript with no build step; only `src/openai.ts` and `src/elevenlabs.ts` need React Native.
+Bobby's voice and the Caller, both on OpenAI. The voice is an OpenAI Realtime model over WebRTC with Bobby's tools (`request`, `amend`, `cancel`, `confirm`, `answer`, `status`, `teach`; protocol v2, `mind/PROTOCOL-V2.md`), and the Caller places calls through GPT-Live over a SIP trunk with a stock voice, starting with an AI disclosure. Every call is a dry run unless `CALLER_DRY_RUN=0`. Plain TypeScript with no build step; only `src/openai.ts` needs React Native.
 
 | Path | What |
 |---|---|
@@ -9,11 +9,9 @@ Bobby's voice and the Caller. **v2 (default): OpenAI.** The voice is an OpenAI R
 | `src/openai.ts` | The only file that talks to OpenAI Realtime from the phone (WebRTC, microphone, earbud routing). |
 | `src/realtime.ts` | OpenAI Realtime, plain TS: session config (instructions, tools, VAD, transcription), client secret, SDP, events. |
 | `src/caller-live.ts` | The OpenAI Caller: GPT-Live outbound SIP call, sideband events, AI disclosure, hang-up, summary. |
-| `src/vendors.ts` | `MOUTH_VOICE_VENDOR` / `CALLER_VENDOR` choice. |
-| `src/elevenlabs.ts` | The only file that talks to ElevenLabs (v1 path). |
-| `src/caller.ts` | The Caller: allowlist, Twilio call from `OWNER_NUMBER` connected to the caller agent (fallback: ElevenLabs dials from the bought number), `call_status`, transcript + summary in `call_result`. Dry run by default. |
+| `src/vendors.ts` | `voiceChoice(env)`: the Realtime model and any missing setting. |
+| `src/caller.ts` | The Caller's entry point: allowlist, dry run, `hangup`; real calls go to `caller-live.ts`. Dry run by default. |
 | `src/index.ts` | `startMouth(config)` → `{wake, stop, status}`, `startCaller(config)` → `{stop}`. |
-| `agent/` | `bobby-prompt.md`, `caller-prompt.md` and `setup.mjs`, which creates/updates both agents, the voice clone and the Twilio number import. |
 | `tools/caller.mjs` | Runs the Caller on the laptop against a hub, reading the root `.env`. |
 | `fakes/hub.mjs` | Pretend hub. |
 | `example/` | Expo test app (`dev.bobby.mouth`). |
@@ -22,21 +20,11 @@ Bobby's voice and the Caller. **v2 (default): OpenAI.** The voice is an OpenAI R
 
 ```sh
 npm install                 # in mouth/ (test tools only)
-./check.sh                  # tests, type check, setup dry run, test app build
+./check.sh                  # tests, type check, dry-run call, Mind integration, test app build
 SKIP_BUILD=1 ./check.sh     # without the Android build
 ```
 
-**Set up ElevenLabs** (needs `ELEVENLABS_API_KEY` in the root `.env`; Twilio steps also need `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`):
-
-```sh
-node agent/setup.mjs            # Bobby agent, voice clone (from mouth/private/), caller agent, Twilio number import
-node agent/setup.mjs --dry-run  # every step against a fake API; prints each request, keys redacted
-node agent/setup.mjs --reclone  # make the voice clone again from a new sample
-```
-
-It writes `ELEVENLABS_BOBBY_AGENT_ID`, `ELEVENLABS_CALLER_AGENT_ID` and `ELEVENLABS_PHONE_NUMBER_ID` to the root `.env` (and the Bobby id to `example/.env`), and prints what is still for a person.
-
-Setting `MOUTH_REALTIME_MODEL` in the root `.env` picks the Realtime model (default `eleven_realtime_v1_mini`). Re-run `setup.mjs` after changing the prompt.
+There is no setup script: the voice needs only `OPENAI_API_KEY`, and Bobby's instructions and tools are built in `src/realtime.ts` at the start of each session.
 
 ## Against the pretend hub
 
@@ -48,7 +36,7 @@ Test app, in an Android emulator (the pretend hub is `10.0.2.2` from there):
 
 ```sh
 cd example && npm install
-# example/.env: EXPO_PUBLIC_HUB_URL=ws://10.0.2.2:8766  (setup.mjs adds the agent id)
+# example/.env: EXPO_PUBLIC_HUB_URL=ws://10.0.2.2:8766 and EXPO_PUBLIC_OPENAI_API_KEY=...
 npx expo run:android
 adb shell pm grant dev.bobby.mouth android.permission.RECORD_AUDIO
 ```
@@ -70,7 +58,7 @@ Opening the app connects as `mouth` and `caller` and calls `wake()`. Then in the
 
 See `MERGE.md`.
 
-## Caller on OpenAI (CALLER_VENDOR=openai)
+## Caller on OpenAI
 
 GPT-Live places outbound calls itself through your SIP trunk (`POST /v1/live/sessions` with `transport.type:"sip"`), so **no public endpoint, webhook or bridge is needed** (`mouth/bridge/` would only be needed for the inbound `realtime.call.incoming` webhook flow or a Twilio Media Streams bridge; neither is used). The Caller attaches the sideband WebSocket for call progress and transcripts, speaks an AI disclosure first, hangs up when the model signals the conversation is over (a client delegation), when the Mind sends `hangup`, or after 5 minutes, then summarizes what they said with `CALLER_SUMMARY_MODEL` (default `gpt-6-luna`).
 
@@ -84,9 +72,6 @@ One-time Twilio setup (from Twilio's Elastic SIP Trunking docs; check the curren
 
 ## Settings
 
-**v2:** `OPENAI_API_KEY` (Mouth and Caller), `MOUTH_VOICE_VENDOR`, `MOUTH_VOICE_MODEL` (default `gpt-realtime-2.1-mini`), `MOUTH_VOICE` (default `marin`), `MOUTH_TRANSCRIBE_MODEL` (default `gpt-live-transcribe`), `CALLER_VENDOR`, `CALLER_MODEL` (default `gpt-live-1.1`), `CALLER_VOICE` (default `marin`), `CALLER_SUMMARY_MODEL` (default `gpt-6-luna`), `CALLER_OWNER_NAME` (for the disclosure), `CALLER_SIP_URL`, `CALLER_SIP_USERNAME`, `CALLER_SIP_PASSWORD`.
+Through `config.env`: `OPENAI_API_KEY` (Mouth and Caller), `MOUTH_VOICE_MODEL` (default `gpt-realtime-2.1-mini`), `MOUTH_VOICE` (default `marin`), `MOUTH_TRANSCRIBE_MODEL` (default `gpt-live-transcribe`); for the Caller `CALL_ALLOWLIST`, `CALLER_DRY_RUN`, `OWNER_NUMBER` (the caller number sent on the SIP trunk), `CALLER_MODEL` (default `gpt-live-1.1`), `CALLER_VOICE` (default `marin`), `CALLER_SUMMARY_MODEL` (default `gpt-6-luna`), `CALLER_OWNER_NAME` (for the disclosure), `CALLER_SIP_URL`, `CALLER_SIP_USERNAME`, `CALLER_SIP_PASSWORD`.
 
-**v1:**
-Only these, through `config.env`: `ELEVENLABS_BOBBY_AGENT_ID` (Mouth); `CALL_ALLOWLIST`, `CALLER_DRY_RUN`, `OWNER_NUMBER`, `ELEVENLABS_API_KEY`, `ELEVENLABS_CALLER_AGENT_ID`, `ELEVENLABS_PHONE_NUMBER_ID`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` (Caller).
-
-Laptop-only, non-secret: `MOUTH_REALTIME_MODEL` (Bobby's Realtime model), `MOUTH_CALLER_FALLBACK_VOICE_ID` (caller voice until the sample exists), `MOUTH_CALLER_TTS_MODEL` (optional TTS model for the caller agent), `MOUTH_TWILIO_NUMBER` (which bought number to import, if there are several), `MOUTH_HUB_PORT` (pretend hub default port), `MOUTH_CHECK_PORT` (port for the dry-run call in `check.sh`, default 8797).
+Laptop-only, non-secret: `MOUTH_HUB_PORT` (pretend hub default port), `MOUTH_CHECK_PORT` (port for the dry-run call in `check.sh`, default 8797).

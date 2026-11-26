@@ -182,7 +182,7 @@ Each part is a package that the final app installs from its folder. These entry 
 |---|---|---|---|
 | `bobby-hands` | `hands/` | Expo native module, Kotlin | `configure({token})`, `status()`, `openSettings(which)`, `moveToBack()` |
 | `bobby-mind` | `mind/` | TypeScript only | `startMind(config)` returning `{stop()}` |
-| `bobby-mouth` | `mouth/` | TypeScript, with ElevenLabs' React Native SDK | `startMouth(config)` returning `{wake(), stop()}`, and `startCaller(config)` returning `{stop()}` |
+| `bobby-mouth` | `mouth/` | TypeScript, with OpenAI Realtime over WebRTC (`@livekit/react-native-webrtc`) | `startMouth(config)` returning `{wake(), stop()}`, and `startCaller(config)` returning `{stop()}` |
 
 - **`config`** is always `{hubUrl, token, env, log}`. `env` is a plain object of the variables that part's own instructions list, by the same names. `log` is a function that takes one line of text. `startMind` also takes `hints`, a list of strings.
 - **No package reads files or environment variables at run time on the phone.** Everything arrives through `config`. Only laptop scripts and tests read `.env`.
