@@ -1,5 +1,5 @@
 import Native from './BobbyHandsModule';
-import type { HandsStatus, SettingsPage } from './BobbyHands.types';
+import type { HandsStatus, SettingsPage, UnlockStatus } from './BobbyHands.types';
 
 export * from './BobbyHands.types';
 
@@ -44,7 +44,37 @@ export function clearOpenedFromNotification(): void {
   Native.clearOpenedFromNotification();
 }
 
+/** Whether Bobby's locked-phone unlock is set up and armed. Never returns the PIN or phrase. */
+export function unlockStatus(): UnlockStatus {
+  return Native.unlockStatus();
+}
+
+/**
+ * Opens the native setup screen, where the owner confirms it's them and enters their PIN,
+ * phrase and earbuds. The PIN stays native: it is never passed to or from JavaScript.
+ */
+export function openUnlockSetup(): void {
+  Native.openUnlockSetup();
+}
+
+/** Forgets the stored PIN, phrase and their key. */
+export function turnOffUnlock(): void {
+  Native.turnOffUnlock();
+}
+
+/**
+ * Called when the side button is held on a locked phone with the unlock armed. The app should
+ * wake Bobby (it isn't brought to the front, since the phone is still locked).
+ */
+export function addAssistListener(fn: (e: { locked: boolean }) => void): { remove(): void } {
+  return Native.addListener('onAssist', fn);
+}
+
 export default {
+  unlockStatus,
+  openUnlockSetup,
+  turnOffUnlock,
+  addAssistListener,
   configure,
   status,
   openSettings,

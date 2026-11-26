@@ -1,6 +1,6 @@
 // Safe wrapper around bobby-hands: if the native module is missing (e.g. a build without it),
 // the app still runs and the settings screen says so, instead of crashing on import.
-import type { HandsStatus, SettingsPage } from 'bobby-hands';
+import type { HandsStatus, SettingsPage, UnlockStatus } from 'bobby-hands';
 
 type HandsApi = typeof import('bobby-hands');
 
@@ -38,6 +38,19 @@ export const emptyStatus: HandsStatus = {
   peers: { hands: false, mind: false, mouth: false, caller: false, watch: 0 },
 };
 
+export const emptyUnlock: UnlockStatus = {
+  setUp: false,
+  armed: false,
+  earbuds: '',
+  earbudsConnected: false,
+  disarmedReason: '',
+  lastResult: '',
+  lastAt: 0,
+  secureLockSet: false,
+};
+
+const noSub = { remove() {} };
+
 export const hands = {
   configure: (token: string) => call('configure', undefined, { token }),
   status: (): HandsStatus => call('status', emptyStatus),
@@ -47,4 +60,9 @@ export const hands = {
   stopKeepAlive: () => call('stopKeepAlive', undefined),
   openedFromNotification: (): boolean => call('openedFromNotification', false),
   clearOpenedFromNotification: () => call('clearOpenedFromNotification', undefined),
+  unlockStatus: (): UnlockStatus => call('unlockStatus', emptyUnlock),
+  openUnlockSetup: () => call('openUnlockSetup', undefined),
+  turnOffUnlock: () => call('turnOffUnlock', undefined),
+  addAssistListener: (fn: (e: { locked: boolean }) => void): { remove(): void } =>
+    call('addAssistListener', noSub, fn),
 };

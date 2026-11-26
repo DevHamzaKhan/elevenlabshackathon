@@ -34,3 +34,28 @@ export type HandsStatus = {
   keepAlive: boolean;
   peers: Peers;
 };
+
+/** Bobby's locked-phone unlock (see hands/README.md "Locked-phone unlock"). Never any secret. */
+export type UnlockStatus = {
+  /** A PIN, phrase and earbuds are stored. */
+  setUp: boolean;
+  /** Set up and not disarmed by a failed attempt. */
+  armed: boolean;
+  /** Name of the trusted earbuds. */
+  earbuds: string;
+  /** The trusted earbuds are connected right now. */
+  earbudsConnected: boolean;
+  /** Why it disarmed (empty when armed). */
+  disarmedReason: string;
+  /** The latest outcome, e.g. "unlocked", "skipped: no_earbuds". */
+  lastResult: string;
+  /** When that was (ms since epoch). */
+  lastAt: number;
+  /** The phone has a PIN, pattern or password lock (the feature needs a PIN). */
+  secureLockSet: boolean;
+};
+
+export type BobbyHandsEvents = {
+  /** The side button was held on a locked phone with the unlock armed: wake Bobby. */
+  onAssist: (e: { locked: boolean }) => void;
+};

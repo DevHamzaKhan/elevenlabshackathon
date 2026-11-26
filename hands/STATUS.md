@@ -16,6 +16,7 @@
 - Mouth backup: Extras 2 (real Caller), 3 (rest of `setup.mjs`), 7 (remaining tests) done and pushed in `mouth/`, all against stubs (no keys here).
 
 - **Teaching by showing (James C's AI, at James C's request, 2026-11-26):** `observe` on/off and the `observed` stream (`Observe.kt`: `Recorder`, plain Kotlin, 8 unit tests in `ObserveTest`; glue in `HandsService`: event types added at run time, a debounced settled-screen reader on its own thread, auto-stop after 10 min and on shutdown), `launch` with `fresh:true`, and `observe` / `launch_fresh` in `caps_result.features`. Checked on the `bobby_api35` emulator (Android 15) with real injected touches in Google Contacts: clicks and text changes arrive after the run-time `setServiceInfo`, match their nodes (id, key, label), typing comes out as one frame, and the Mind's replay of the learned steps saved a new contact five runs in a row (`cd mind && npm run teach:phone`). 154 unit tests pass; `assembleDebug` builds.
+- **Locked-phone unlock (James C, 2026-11-26):** side button on a PIN-locked phone wakes Bobby over the lock screen; on hearing the owner's phrase with their trusted earbuds connected, Hands types the PIN once (Keystore-encrypted, set up in a native FLAG_SECURE screen behind biometric/PIN confirmation; a failure disarms). Checked on the `bobby_api35` emulator with a temporary test PIN: `unlock-probe.mjs` finds the full keypad by id from both screen-off and lock screen (`how: icon`); the typing path unlocked with the right PIN and, with a wrong one, typed once (one failed auth), then disarmed. See README "Locked-phone unlock".
 
 ## Doing now
 - Nothing that doesn't need a person: see Needs the human.
@@ -37,6 +38,8 @@
 
 ## Try it yourself
 - `cd hands/example && npx expo run:android`, then `hands/tools/grant.sh dev.bobby.hands`, then `node hands/tools/drive.mjs` and type `screen`.
+
+- Locked-phone unlock on the S21: app settings → "Unlock when locked" → Set up (PIN, phrase, earbuds). Run `node hands/tools/unlock-probe.mjs` with the phone PIN-locked to check One UI's keypad is found (`keypad:true`). Then lock the phone, earbuds in, hold the side button and say the phrase.
 
 ## Decisions
 - Library namespace is `dev.bobby.hands.lib` (Kotlin package stays `dev.bobby.hands`) because the test app's id `dev.bobby.hands` must differ from any library namespace.

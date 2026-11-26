@@ -186,8 +186,10 @@ class HubCore(
 
   private fun deliverToMind(from: String, o: JSONObject, text: String) {
     val mind = current["mind"] ?: return
-    send(mind, text)
+    // Observer first: a `heard` that unlocks the phone queues the unlock on the Hands worker
+    // before the Mind can react and ask for the screen.
     mirror(from, "mind", o)
+    send(mind, text)
   }
 
   private fun mirror(from: String, to: String, msg: JSONObject) {

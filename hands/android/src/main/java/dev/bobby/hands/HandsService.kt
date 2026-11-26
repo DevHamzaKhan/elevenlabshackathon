@@ -54,6 +54,13 @@ class HandsService : AccessibilityService() {
   private var frontAfter: String? = null
   /** True while Hands has hidden the keyboard with the soft-keyboard controller. */
   private var keyboardHiddenByUs = false
+  /** Types the owner's PIN on a locked phone when it hears their phrase (see [LockedUnlock]). */
+  private var unlock: LockedUnlock? = null
+  private val userPresent = object : android.content.BroadcastReceiver() {
+    override fun onReceive(context: android.content.Context?, intent: Intent?) {
+      if (intent?.action == Intent.ACTION_USER_PRESENT) worker.execute { UnlockVault.onUserPresent(this@HandsService) }
+    }
+  }
 
   // Teaching by showing: while a recorder exists, what the user does is reported to the Mind.
   @Volatile private var recorder: Recorder? = null
@@ -71,6 +78,11 @@ class HandsService : AccessibilityService() {
     cursor = CursorOverlay(this).also { it.attach() }
     // In case an earlier run died while the keyboard was hidden.
     try { softKeyboardController.showMode = SHOW_MODE_AUTO } catch (_: Exception) {}
+    UnlockVault.recover(this)
+    unlock = LockedUnlock(this, ::ensureAwake, { cursor?.beginCapture() }, { cursor?.endCapture() })
+    try {
+      registerReceiver(userPresent, android.content.IntentFilter(Intent.ACTION_USER_PRESENT), RECEIVER_NOT_EXPORTED)
+    } catch (e: Exception) { Hub.log("unlock: can't watch for unlocks: ${e.message}") }
     Hub.start(this, ::onHandsFrame)
     Hub.log("Hands service connected")
   }
@@ -89,6 +101,8 @@ class HandsService : AccessibilityService() {
     if (instance !== this) return
     instance = null
     try { stopObserving() } catch (_: Exception) {}
+    try { unregisterReceiver(userPresent) } catch (_: Exception) {}
+    unlock = null
     Hub.stop()
     cursor?.detach()
     cursor = null
@@ -97,13 +111,29 @@ class HandsService : AccessibilityService() {
   override fun onAccessibilityEvent(event: AccessibilityEvent?) {
     val e = event ?: return
     if (Settler.counts(e.eventType, e.packageName?.toString(), packageName)) settler.onEvent(e.eventType)
-    recorder?.let { observeEvent(it, e) }
+    // Never observe a PIN-locked phone: keypad taps (the owner's or Hands' own unlock) would
+    // reach the Mind as `observed` taps and give the PIN away.
+    recorder?.let { if (unlock?.busy != true && !LockedUnlock.secureLocked(this)) observeEvent(it, e) }
   }
 
   override fun onInterrupt() {}
 
   /** Shows Bobby's line (or what he heard) in a caption at the bottom of the screen. */
   fun caption(text: String, heard: Boolean) = cursor?.caption(text, heard)
+
+  /**
+   * The Mouth heard the owner say [text]. On a PIN-locked phone this may be the unlock phrase:
+   * the check (and the unlock) runs on the worker, ahead of whatever the Mind asks for next.
+   */
+  fun onHeard(text: String) {
+    if (!LockedUnlock.secureLocked(this)) return
+    val u = unlock ?: return
+    worker.execute { u.onHeard(text) }
+  }
+
+  /** No "heard" captions on a locked phone with the unlock set up: they'd show the phrase. */
+  fun quietHeardCaption(): Boolean =
+    unlock?.busy == true || (LockedUnlock.secureLocked(this) && UnlockVault.status(this).setUp)
 
 
   // --- frames from the hub ---
@@ -115,6 +145,9 @@ class HandsService : AccessibilityService() {
       "screen" -> worker.execute { reply(safeScreen(o)) }
       "act" -> worker.execute { reply(handleAct(o)) }
       "observe" -> side.execute { reply(handleObserve(o)) }
+      "unlock_probe" -> worker.execute {
+        reply(unlock?.probe(reId(o)) ?: JSONObject().put("type", "unlock_probe_result").put("error", "not ready"))
+      }
       "caps" -> side.execute {
         val (w, h) = screenSize()
         reply(try { Caps.collect(this, reId(o), w, h) } catch (e: Exception) {
@@ -134,7 +167,7 @@ class HandsService : AccessibilityService() {
    * (PIN, pattern, password) stays: see [secureLocked].
    */
   @Suppress("DEPRECATION")
-  private fun ensureAwake() {
+  internal fun ensureAwake() {
     val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
     val km = getSystemService(KEYGUARD_SERVICE) as android.app.KeyguardManager
     if (!pm.isInteractive) {
