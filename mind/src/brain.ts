@@ -948,9 +948,6 @@ export class Brain {
   // ---------- finishing ----------
 
   private async finishTask(task: Task, status: "done" | "failed", line: string, published = true) {
-    if (published && !task.stepStatus[1] && status === "failed" && task.plan.kind === "phone") {
-      // never started on screen: still publish so the dashboard shows it
-    }
     this.o.log(`mind: task ${task.id} ${status}: ${line}`);
     if (published) this.watch({ type: "task", task: task.id, title: task.plan.title, status });
     this.taskUpdate(task, status, line);

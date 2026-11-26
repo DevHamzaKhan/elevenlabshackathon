@@ -203,7 +203,7 @@ export async function liveCall(msg: Frame, d: LiveCallDeps): Promise<void> {
     const text = await res.text();
     if (!res.ok) {
       d.log(`caller: live session create ${res.status}: ${text.slice(0, 200)}`);
-      return void result({ ok: false, error: res.status === 502 || res.status === 504 ? "failed" : "failed" });
+      return void result({ ok: false, error: "failed" });
     }
     sessionId = String(JSON.parse(text)?.session?.id ?? "");
     if (!sessionId) return void result({ ok: false, error: "failed" });
