@@ -1,5 +1,5 @@
-// What the Mouth needs from a speech agent session. One vendor file implements it:
-// openai.ts (OpenAI Realtime over WebRTC, the default) or elevenlabs.ts. Tests use a fake.
+// What the Mouth needs from a speech agent session (protocol v2: a voice model with Bobby's tools).
+// openai.ts implements it (OpenAI Realtime over WebRTC). Tests use a fake.
 
 export type VoiceMode = "speaking" | "listening";
 
@@ -14,13 +14,13 @@ export interface VoiceCallbacks {
   onModeChange(mode: VoiceMode): void;
   onError(message: string): void;
   /** The voice model called one of Bobby's tools (request, amend, cancel, confirm, answer, status). */
-  onToolCall?(name: string, args: Record<string, unknown>, callId: string): void;
+  onToolCall(name: string, args: Record<string, unknown>, callId: string): void;
   /** The user started talking (voice activity), e.g. over Bobby or during a task. */
-  onSpeechStarted?(): void;
+  onSpeechStarted(): void;
 }
 
 export interface VoiceSession {
-  /** A typed user turn: the agent answers it as if spoken. */
+  /** A typed user turn: the agent answers it as if spoken. Test only (`test_user_turn`). */
   sendUserMessage(text: string): void;
   /** Silent background knowledge. */
   sendContextualUpdate(text: string): void;
@@ -29,12 +29,10 @@ export interface VoiceSession {
   /** Push-to-talk: close (true) or open (false) the microphone. The agent keeps speaking. */
   setMicMuted(muted: boolean): void;
   end(): Promise<void>;
-  /** Optional: say this line now (instead of a tagged user message). */
-  speak?(text: string): void;
-  /** Optional: return a tool's result; `respond` lets the model speak after it. */
-  toolResult?(callId: string, output: string, respond: boolean): void;
-  /** Optional: this vendor supports Bobby's tools (protocol v2). */
-  readonly tools?: boolean;
+  /** Say this line now, in Bobby's voice. */
+  speak(text: string): void;
+  /** Return a tool's result; `respond` lets the model speak after it. */
+  toolResult(callId: string, output: string, respond: boolean): void;
 }
 
 export type VoiceFactory = (cb: VoiceCallbacks) => Promise<VoiceSession>;

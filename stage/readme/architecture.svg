@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="780" viewBox="0 0 1000 780" role="img" aria-labelledby="t d">
   <title id="t">Bobby architecture</title>
-  <desc id="d">One Expo app on an Android phone. The Mind, the Mouth and the Caller are WebSocket clients of a hub at ws://127.0.0.1:8765 inside the Hands package. Hands holds the accessibility service, the cursor overlay and the notification listener. The Mind calls the Anthropic API, the Mouth streams audio with ElevenLabs, and a laptop dashboard watches the hub through adb forward.</desc>
+  <desc id="d">One Expo app on an Android phone. The Mind, the Mouth and the Caller are WebSocket clients of a hub at ws://127.0.0.1:8765 inside the Hands package. Hands holds the accessibility service, the cursor overlay and the notification listener. The Mind calls the Anthropic API, the Mouth streams audio with OpenAI Realtime, the Caller places calls through GPT-Live, and a laptop dashboard watches the hub through adb forward.</desc>
   <defs>
     <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
@@ -36,8 +36,8 @@
   <text x="144" y="136" class="name" text-anchor="middle">Anthropic API</text>
   <text x="144" y="156" class="small" text-anchor="middle">Claude Opus 5.5</text>
   <rect x="274" y="112" width="394" height="58" rx="10" fill="#f1f5f9" stroke="#94a3b8"/>
-  <text x="471" y="136" class="name" text-anchor="middle">ElevenLabs</text>
-  <text x="471" y="156" class="small" text-anchor="middle">realtime voice agent · cloned-voice calls (planned)</text>
+  <text x="471" y="136" class="name" text-anchor="middle">OpenAI</text>
+  <text x="471" y="156" class="small" text-anchor="middle">Realtime voice · GPT-Live calls over SIP</text>
 
   <!-- Phone -->
   <rect x="32" y="212" width="660" height="548" rx="28" fill="#eef2ff" stroke="#818cf8" stroke-width="2"/>
@@ -52,15 +52,15 @@
 
   <rect x="274" y="236" width="176" height="100" rx="12" fill="#ffffff" stroke="#db2777" stroke-width="2"/>
   <text x="290" y="262" class="name" style="fill:#be185d">Mouth</text>
-  <text x="290" y="283" class="small">TypeScript · ElevenLabs</text>
+  <text x="290" y="283" class="small">TypeScript · OpenAI</text>
   <text x="290" y="301" class="small">Bobby's voice in your</text>
   <text x="290" y="319" class="small">earbuds. He only talks.</text>
 
   <rect x="492" y="236" width="176" height="100" rx="12" fill="#ffffff" stroke="#ea580c" stroke-width="2"/>
   <text x="508" y="262" class="name" style="fill:#c2410c">Caller</text>
   <text x="508" y="283" class="small">TypeScript · bobby-mouth</text>
-  <text x="508" y="301" class="small">phones a friend in the</text>
-  <text x="508" y="319" class="small">owner's voice (dry run)</text>
+  <text x="508" y="301" class="small">phones a friend as an AI</text>
+  <text x="508" y="319" class="small">assistant (dry run)</text>
 
   <!-- Client to cloud -->
   <line x1="144" y1="234" x2="144" y2="172" class="net" marker-end="url(#ahg)" marker-start="url(#ahg)"/>
@@ -68,7 +68,7 @@
   <line x1="362" y1="234" x2="362" y2="172" class="net" marker-end="url(#ahg)" marker-start="url(#ahg)"/>
   <text x="370" y="202" class="msgg">audio (WebRTC)</text>
   <line x1="580" y1="234" x2="580" y2="172" class="net plan" marker-end="url(#ahg)" marker-start="url(#ahg)"/>
-  <text x="588" y="202" class="msgg">call (planned)</text>
+  <text x="588" y="202" class="msgg">call (SIP)</text>
 
   <!-- Hands package -->
   <rect x="56" y="488" width="612" height="236" rx="16" fill="#f0fdfa" stroke="#0d9488" stroke-width="2"/>

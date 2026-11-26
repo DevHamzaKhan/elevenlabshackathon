@@ -20,7 +20,7 @@ config.resolver.blockList = [
 ];
 config.resolver.nodeModulesPaths = [path.join(appDir, 'node_modules')];
 
-// Fallback for packages that only have an `exports` map and no `main` (e.g. @elevenlabs/client):
+// Fallback for packages that only have an `exports` map and no `main`:
 // Expo's resolver chain falls back to `main` for them and fails, so read `exports` ourselves.
 const CONDITIONS = ['react-native', 'require', 'import', 'default'];
 function pickTarget(t) {

@@ -1,8 +1,7 @@
 // End-to-end on the laptop: the real Mind (scripted fake OpenAI behind its real model door, no
 // API key) + the Mind's fake hub and phone + the REAL Mouth and Caller code, with the voice
-// session simulated. Two passes:
-//   v1: an ElevenLabs-style session (heard/say), Send confirmed by a spoken "yes" after a press.
-//   v2: an OpenAI-Realtime-style session with Bobby's tools (request/confirm), progress lines.
+// session simulated as an OpenAI Realtime session with Bobby's tools (request/confirm/answer)
+// and progress lines from the Mind (protocol v2).
 // Checks the contract between the parts, not the AI. Needs mind/node_modules:
 //   cd mind && npm ci && npx tsx ../mouth/tools/integration-with-mind.mts
 import { fileURLToPath } from "node:url";
@@ -22,8 +21,8 @@ const results: [string, boolean][] = [];
 const check = (name: string, ok: boolean) => { results.push([name, ok]); console.log(`${ok ? "PASS" : "FAIL"}  ${name}`); };
 const until = async (pred: () => boolean, ms = 15000) => { const end = Date.now() + ms; while (!pred() && Date.now() < end) await sleep(50); return pred(); };
 
-async function pass(v2: boolean, port: number) {
-  console.log(`\n== ${v2 ? "v2: tool-calling voice (OpenAI Realtime shape)" : "v1: heard/say voice (ElevenLabs shape)"}`);
+async function pass(port: number) {
+  console.log("\n== v2: tool-calling voice (OpenAI Realtime shape)");
   const hub = startFakeHub({ port, log: log("hub"), speed: 0 });
   await hub.ready;
   const url = `ws://localhost:${port}`;
@@ -33,13 +32,14 @@ async function pass(v2: boolean, port: number) {
   const context: string[] = [];
   let cb: any;
   const talk = (t: string) => {
-    setTimeout(() => { cb.onModeChange("speaking"); spoken.push(t); cb.onAgentResponse(t.replace(/^\[(SAY|CORRECT)\] /, "")); }, 30);
+    setTimeout(() => { cb.onModeChange("speaking"); spoken.push(t); cb.onAgentResponse(t); }, 30);
     setTimeout(() => cb.onModeChange("listening"), 180);
   };
   const voice = async (c: any) => {
     cb = c;
     return {
-      ...(v2 ? { tools: true, speak: talk, toolResult: (_id: string, out: string) => lines.push(`voice: tool result ${out}`) } : {}),
+      speak: talk,
+      toolResult: (_id: string, out: string) => lines.push(`voice: tool result ${out}`),
       sendUserMessage: talk,
       sendContextualUpdate(t: string) { context.push(t); },
       interrupt() { lines.push("voice: (hush)"); },
@@ -52,24 +52,16 @@ async function pass(v2: boolean, port: number) {
   mouth = new Mouth({ send: (m: any) => mouthHub.send(m), voice, log: log("mouth"), listenSettleMs: 50 });
   const caller = startCallerWith({ hubUrl: url, token: "t", log: log("caller"), env: { CALL_ALLOWLIST: "+14155550123" }, stepMs: 50 });
   const wire = () => hub.wire.map((w: any) => `${w.from}->${w.to} ${w.msg.type}`);
-  const tag = v2 ? "v2" : "v1";
+  const tag = "v2";
 
   await until(() => mouthHub.state === "live");
   hub.notify("com.google.android.gm", "Sarah Chen", "Running late, can we push to 3?");
   await sleep(300);
   await mouth.wake();
   check(`${tag}: Mind gets wake from the Mouth`, await until(() => wire().includes("mouth->mind wake")));
-  if (v2) check(`${tag}: Mouth announces voice_caps v2`, wire().includes("mouth->mind voice_caps"));
+  check(`${tag}: Mouth announces voice_caps v2`, wire().includes("mouth->mind voice_caps"));
 
-  if (!v2) {
-    cb.onUserTranscript("Reply to Sarah and tell her 3 works");
-    check(`${tag}: heard reaches the Mind`, await until(() => wire().includes("mouth->mind heard")));
-    check(`${tag}: Mind asks before sending (say)`, await until(() => spoken.some((s) => /Should I go ahead/.test(s)), 15000));
-    await mouth.wake();
-    cb.onUserTranscript("yes, send it");
-    check(`${tag}: task runs on the phone to done (email sent)`, await until(() => hub.phone.sent?.text === "3 works for me.", 15000));
-    check(`${tag}: Mouth answers says with say_started and say_done`, wire().includes("mouth->mind say_started") && wire().includes("mouth->mind say_done"));
-  } else {
+  {
     cb.onUserTranscript("send an email to Hamza saying I'm late");
     cb.onToolCall("request", { text: "Send an email to Hamza saying I'm late" }, "call_1");
     check(`${tag}: request reaches the Mind (no debounce)`, await until(() => wire().includes("mouth->mind request"), 2000));
@@ -84,31 +76,26 @@ async function pass(v2: boolean, port: number) {
   }
 
   await mouth.wake();
-  if (v2) {
+  {
     cb.onUserTranscript("Call Alex and tell him I'm running late");
     cb.onToolCall("request", { text: "Call Alex and tell him I'm running late" }, "call_3");
     await until(() => context.filter((c) => /CONFIRM id=/.test(c)).length >= 2, 5000);
     const id = /CONFIRM id=(\S+):/.exec(context.filter((c) => /CONFIRM id=/.test(c))[1] ?? "")?.[1];
     cb.onUserTranscript("yes");
     cb.onToolCall("confirm", { id, answer: "yes" }, "call_4");
-  } else {
-    cb.onUserTranscript("Call Alex and tell him I'm running late");
-    await until(() => spoken.filter((s) => /Should I go ahead/.test(s)).length >= 2, 10000);
-    await mouth.wake();
-    cb.onUserTranscript("yes");
   }
   check(`${tag}: Mind sends call to the Caller`, await until(() => wire().includes("mind->caller call")));
   check(`${tag}: Caller answers with call_status and call_result`, await until(() => wire().includes("caller->mind call_result")));
 
   // A question back to the user: two contacts are called Sam, so the Mind asks which, with options.
   const asked = () => spoken.some((s) => /Which Sam\? Option one: Sam Lee\. Option two: Sam Park\./.test(s));
-  const confirms = () => (v2 ? context.filter((c) => /CONFIRM id=/.test(c)).length : spoken.filter((s) => /Should I go ahead/.test(s)).length);
+  const confirms = () => context.filter((c) => /CONFIRM id=/.test(c)).length;
   const before = confirms();
   await mouth.wake();
   cb.onUserTranscript("text Sam I'm running late");
-  if (v2) cb.onToolCall("request", { text: "Text Sam I'm running late" }, "call_5");
+  cb.onToolCall("request", { text: "Text Sam I'm running late" }, "call_5");
   check(`${tag}: the Mind's question is spoken with its options`, await until(asked, 8000));
-  if (v2) {
+  {
     const qid = /QUESTION id=(\S+):/.exec(context.find((c) => /QUESTION id=/.test(c)) ?? "")?.[1];
     cb.onUserTranscript("uh, the second one");
     cb.onToolCall("answer", { id: qid, option: 2, text: "the second one" }, "call_6");
@@ -117,33 +104,15 @@ async function pass(v2: boolean, port: number) {
     const id = /CONFIRM id=(\S+):/.exec(context.filter((c) => /CONFIRM id=/.test(c)).pop() ?? "")?.[1];
     cb.onUserTranscript("yes");
     cb.onToolCall("confirm", { id, answer: "yes" }, "call_7");
-  } else {
-    await sleep(300);
-    await mouth.wake();
-    cb.onUserTranscript("the second one");
-    await until(() => confirms() > before, 10000);
-    await sleep(300);
-    await mouth.wake();
-    cb.onUserTranscript("yes");
   }
   check(`${tag}: the text goes to the Sam the user picked`, await until(() => hub.phone.texts.some((x: any) => x.to === "+14155550155"), 8000) && !hub.phone.texts.some((x: any) => x.to === "+14155550144"));
 
-  if (!v2) {
-    await mouth.wake();
-    cb.onUserTranscript("thanks, bye");
-    check(`${tag}: Mind sends sleep, Mouth answers asleep`, await until(() => wire().includes("mouth->mind asleep"), 15000));
-    await sleep(300);
-    const sayIds = hub.wire.filter((w: any) => w.msg.type === "say").map((w: any) => w.msg.id);
-    const doneIds = hub.wire.filter((w: any) => w.msg.type === "say_done").map((w: any) => w.msg.re);
-    check(`${tag}: every say got exactly one say_done (${sayIds.length} says)`, sayIds.length === doneIds.length && sayIds.every((id: string) => doneIds.filter((r: string) => r === id).length === 1));
-  }
   console.log(`Bobby said ${spoken.length} lines, e.g.: ${spoken.slice(0, 4).join(" | ")}`);
   mind.stop(); mouthHub.stop(); caller.stop(); await mouth.stop();
   await hub.close();
 }
 
-await pass(false, 18790);
-await pass(true, 18791);
+await pass(18791);
 const failed = results.filter(([, ok]) => !ok).length;
 console.log(`\n${failed ? "FAIL" : "PASS"}: ${results.length - failed}/${results.length}`);
 if (failed) for (const l of lines.slice(-40)) console.log(l);

@@ -1,7 +1,7 @@
 // Test app for bobby-mouth. Opening it starts the Mouth and the Caller and calls wake(),
-// like the final app does. Config comes from example/.env (written by agent/setup.mjs):
+// like the final app does. Config comes from example/.env:
 //   EXPO_PUBLIC_HUB_URL=ws://10.0.2.2:8765
-//   EXPO_PUBLIC_ELEVENLABS_BOBBY_AGENT_ID=...
+//   EXPO_PUBLIC_OPENAI_API_KEY=...
 //   EXPO_PUBLIC_HUB_TOKEN=anything      (pretend hubs accept any token)
 import { useEffect, useRef, useState } from "react";
 import { Button, PermissionsAndroid, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -10,7 +10,7 @@ import BackgroundService from "react-native-background-actions";
 import { startCaller, startMouth } from "bobby-mouth";
 
 const env = {
-  ELEVENLABS_BOBBY_AGENT_ID: process.env.EXPO_PUBLIC_ELEVENLABS_BOBBY_AGENT_ID,
+  OPENAI_API_KEY: process.env.EXPO_PUBLIC_OPENAI_API_KEY,
   CALL_ALLOWLIST: process.env.EXPO_PUBLIC_CALL_ALLOWLIST,
 };
 const hubUrl = process.env.EXPO_PUBLIC_HUB_URL || "ws://10.0.2.2:8765";
@@ -81,7 +81,7 @@ export default function App() {
     <View style={styles.root}>
       <Text style={styles.title}>Bobby Mouth (test app)</Text>
       <Text testID="status" style={styles.status}>{status}</Text>
-      <Text style={styles.small}>hub {hubUrl} · agent {env.ELEVENLABS_BOBBY_AGENT_ID ? "set" : "MISSING"} · mic {mic ? "granted" : "not granted"}</Text>
+      <Text style={styles.small}>hub {hubUrl} · OpenAI key {env.OPENAI_API_KEY ? "set" : "MISSING"} · mic {mic ? "granted" : "not granted"}</Text>
       {!mic && (
         <Button
           title="Allow microphone"

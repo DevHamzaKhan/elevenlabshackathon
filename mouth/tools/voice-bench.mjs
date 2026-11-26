@@ -16,7 +16,7 @@
 //     session.started (ms), then session.commentary.append (a Mind line) -> ms to first audio.
 //     GPT-Live takes audio, not typed user turns, so the tool round trip needs recorded speech:
 //     reported as null.
-// ElevenLabs and Gemini Live are reference points in VOICE-VENDORS.md; not benched here.
+// Gemini Live (and the removed ElevenLabs voice) are reference points in VOICE-VENDORS.md; not benched here.
 import { WebSocket, WebSocketServer } from "ws";
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

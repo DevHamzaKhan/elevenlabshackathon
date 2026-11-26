@@ -4,7 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Mouth } from "../src/mouth";
-import { dryRunCall, realCall } from "../src/caller";
+import { dryRunCall } from "../src/caller";
+import { liveCall, type SocketLike } from "../src/caller-live";
 import { connectHub } from "../src/hub";
 import type { Frame } from "../src/hub";
 
@@ -32,13 +33,14 @@ test("Mouth examples: everything the Mind sends is handled; everything we send h
   assert.deepEqual(fromMouth.map((f) => f.type).sort(), ["asleep", "heard", "say_done", "say_started", "spoke", "wake"]);
 
   const sent: Frame[] = [];
-  const m = new Mouth({ send: (f) => sent.push(f), log: () => {}, voice: async () => ({ sendUserMessage() {}, sendContextualUpdate() {}, interrupt() {}, setMicMuted() {}, async end() {} }) });
+  const m = new Mouth({ send: (f) => sent.push(f), log: () => {}, voice: async () => ({ sendUserMessage() {}, sendContextualUpdate() {}, speak() {}, toolResult() {}, interrupt() {}, setMicMuted() {}, async end() {} }) });
   for (const f of toMouth) m.onHub(f); // asleep
   await m.wake();
   for (const f of toMouth) m.onHub(f); // live
   await new Promise((r) => setImmediate(r));
   const shapes = new Map(fromMouth.map((f) => [f.type, Object.keys(f).sort().join(",")]));
   for (const f of sent) {
+    if (f.type === "voice_caps") continue; // protocol v2 (mind/PROTOCOL-V2.md), not in CONTRACT.md v1
     const keys = Object.keys(f).sort().join(",");
     const want = shapes.get(f.type)!;
     assert.ok(keys === want || (f.type === "say_done" && keys === "re,spoken,type"), `${f.type}: ${keys} vs ${want}`);
@@ -90,13 +92,13 @@ test("Connecting/Routing examples: our hello matches, welcome makes us live, pee
   }
   // The Mouth ignores peers (and anything else it doesn't know) without sending anything.
   const out: Frame[] = [];
-  const m = new Mouth({ send: (f) => out.push(f), log: () => {}, voice: async () => ({ sendUserMessage() {}, sendContextualUpdate() {}, interrupt() {}, setMicMuted() {}, async end() {} }) });
+  const m = new Mouth({ send: (f) => out.push(f), log: () => {}, voice: async () => ({ sendUserMessage() {}, sendContextualUpdate() {}, speak() {}, toolResult() {}, interrupt() {}, setMicMuted() {}, async end() {} }) });
   m.onHub(peers);
   m.onHub({ type: "brand_new", to: "mouth" });
   assert.deepEqual(out, []);
 });
 
-test("Caller examples: the real Caller's frames (fetch stubbed) match the contract's shapes too", async () => {
+test("Caller examples: the real Caller's frames (fetch and the sideband socket stubbed) match the contract's shapes too", async () => {
   const ex = blocks(section("Caller"));
   const call = ex.find((f) => f.type === "call")!;
   const status = ex.find((f) => f.type === "call_status")!;
@@ -105,20 +107,33 @@ test("Caller examples: the real Caller's frames (fetch stubbed) match the contra
   const allowedStatuses = [...statusText.matchAll(/`(\w+)`/g)].map((x) => x[1]);
   assert.deepEqual(allowedStatuses, ["dialing", "answered", "ended", "failed"]);
   const sent: Frame[] = [];
-  const twilio = ["ringing", "in-progress", "completed"];
-  const fetch = async (url: string, init: { method?: string } = {}) => {
-    let body: unknown = {};
-    if (url.endsWith("/register-call")) body = "<Response/>";
-    else if (url.endsWith("/Calls.json")) body = { sid: "CA1" };
-    else if (url.includes("/Calls/CA1.json")) body = { status: twilio.length > 1 ? twilio.shift() : twilio[0] };
-    else if (url.includes("/conversations?")) body = { conversations: [{ conversation_id: "c1" }] };
-    else if (url.endsWith("/conversations/c1")) body = { status: "done", transcript: [{ role: "agent", message: "Hey Alex..." }, { role: "user", message: "Sure, 3 is fine." }], analysis: { data_collection_results: { their_answer: { value: "Alex said 3pm works." } } } };
-    const text = typeof body === "string" ? body : JSON.stringify(body);
-    return { ok: true, status: init.method === "POST" ? 201 : 200, text: async () => text };
+  const sock: SocketLike & { emit(e: object): void } = {
+    onopen: null, onmessage: null, onclose: null, onerror: null,
+    send() {}, close() {},
+    emit(e: object) { this.onmessage?.({ data: JSON.stringify(e) }); },
   };
-  await realCall(call, {
-    env: { CALLER_DRY_RUN: "0", CALL_ALLOWLIST: String(call.number), ELEVENLABS_API_KEY: "k", ELEVENLABS_CALLER_AGENT_ID: "a", TWILIO_ACCOUNT_SID: "AC1", TWILIO_AUTH_TOKEN: "t", OWNER_NUMBER: "+14155550100" },
-    send: (f) => sent.push(f), log: () => {}, fetch, sleep: async () => {},
+  const fetch = async (url: string) => {
+    let body: unknown = "";
+    if (url.endsWith("/live/sessions")) body = { session: { id: "live_1" } };
+    else if (url.endsWith("/hangup")) setTimeout(() => sock.emit({ type: "session.closed", event_id: "e9" }), 5);
+    else if (url.endsWith("/responses")) body = { output: [{ type: "message", content: [{ type: "output_text", text: "Alex said 3pm works." }] }] };
+    return { ok: true, status: 200, text: async () => (typeof body === "string" ? body : JSON.stringify(body)) };
+  };
+  await liveCall(call, {
+    env: { CALLER_DRY_RUN: "0", CALL_ALLOWLIST: String(call.number), OPENAI_API_KEY: "k", CALLER_SIP_URL: "sips:trunk.example:5061", CALLER_SIP_USERNAME: "u", CALLER_SIP_PASSWORD: "p", OWNER_NUMBER: "+14155550100" },
+    send: (f) => sent.push(f), log: () => {}, fetch,
+    connect: () => {
+      setTimeout(() => {
+        sock.emit({ type: "transport.answered", event_id: "e1" });
+        sock.emit({ type: "session.output_transcript.delta", event_id: "e2", delta: "Hey Alex..." });
+        sock.emit({ type: "session.input_transcript.delta", event_id: "e3", delta: "Sure, 3 is fine." });
+        sock.emit({ type: "session.delegation.created", event_id: "e4", delegation: { id: "d1", type: "delegation", target: "client" } });
+      }, 5);
+      return sock;
+    },
+    sleep: (ms) => new Promise((r) => setTimeout(r, Math.min(ms, 10))),
+    goodbyeMs: 20,
+    maxCallMs: 3000,
   });
   for (const f of sent) {
     const ref = f.type === "call_status" ? status : result;

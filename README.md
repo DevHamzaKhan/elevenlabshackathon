@@ -10,7 +10,7 @@ This page is for the four of us. The AIs read [CLAUDE.md](CLAUDE.md), [CONTRACT.
 |---|---|---|---|---|
 | **Hamza** | **Hands**: a Kotlin module for Expo that reads the screen, taps, and draws the cursor. It also hosts the hub and builds the final app. | `hands/`, then `app/` | Its test app on the S21 | The S21 plugged in. No accounts. |
 | **James C** | **Mind**: the brain, a TypeScript package | `mind/` | Node on a laptop, plus Expo Go in an emulator | Anthropic API key. No phone. |
-| **Wajeeh** | **Mouth and the call**: Bobby's voice and the cloned-voice caller, a TypeScript package | `mouth/` | Its test app in an emulator | ElevenLabs, Twilio. No phone. |
+| **Wajeeh** | **Mouth and the call**: Bobby's voice and the AI caller, a TypeScript package | `mouth/` | Its test app in an emulator | OpenAI API key, Twilio. No phone. |
 | **James H** | **Stage**: live dashboard, cursor art, app icon, app hints, README material | `stage/` | A browser | Nothing. No phone. |
 
 The app is Expo (React Native, TypeScript). Kotlin is used only inside Hands, because reading and tapping other apps needs native Android code. Everything runs on the phone, with no laptop server.
@@ -40,9 +40,8 @@ The app is Expo (React Native, TypeScript). Kotlin is used only inside Hands, be
 
 **Wajeeh**
 
-- ElevenLabs: an account on a plan that allows voice cloning, and an API key.
-- Twilio: an upgraded account, the phone owner's mobile verified as a caller ID, and one bought number.
-- The phone owner's voice recording, 1 to 2 minutes.
+- An OpenAI API key with billing (the voice and the calls).
+- Twilio: an upgraded account, one bought number, and an Elastic SIP Trunk for calls (`mouth/README.md`, "Caller on OpenAI").
 - One teammate who agrees to take a test call.
 - Send your filled-in `.env` lines to Hamza in a direct message, since Hamza's AI finishes the call.
 
@@ -55,7 +54,7 @@ The app is Expo (React Native, TypeScript). Kotlin is used only inside Hands, be
    ```sh
    cp env/hands.env .env    # Hamza
    cp env/mind.env .env     # James C
-   cp env/mouth.env .env    # Wajeeh, who also puts the voice recording in mouth/private/
+   cp env/mouth.env .env    # Wajeeh
    ```
 3. **Open Claude Code in the clone and say your name**: `I'm Hamza`, `I'm James C`, `I'm Wajeeh` or `I'm James H`. Accept the "trust this folder" question once.
 4. **Walk away.** When the AI has done everything it can without you, it stops and says so in `<your folder>/STATUS.md`:

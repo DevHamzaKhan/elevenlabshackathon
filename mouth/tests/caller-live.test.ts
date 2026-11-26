@@ -1,8 +1,7 @@
-// The OpenAI caller (GPT-Live over SIP) with fetch and the sideband socket stubbed. No call is placed.
+// The real Caller (GPT-Live over SIP) with fetch and the sideband socket stubbed. No call is placed.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { liveCall, liveSessionBody, failureOf, addDelta, disclosure, type SocketLike } from "../src/caller-live";
-import { callerChoice } from "../src/vendors";
 import type { Frame } from "../src/hub";
 import type { Line } from "../src/caller";
 
@@ -148,7 +147,7 @@ test("transport.failed (busy), never answered, not allowed, not configured", asy
   assert.deepEqual(frames, [{ type: "call_result", re: "m9", ok: false, error: "not_configured" }]);
 });
 
-test("helpers: failure mapping, transcript merging, disclosure, vendor choice", () => {
+test("helpers: failure mapping, transcript merging, disclosure", () => {
   assert.equal(failureOf({ code: "no_answer" }), "no_answer");
   assert.equal(failureOf({ message: "486 Busy Here" }), "busy");
   assert.equal(failureOf({ message: "weird" }), "failed");
@@ -158,8 +157,6 @@ test("helpers: failure mapping, transcript merging, disclosure, vendor choice", 
   addDelta(lines, "them", " Hello");
   assert.deepEqual(lines, [{ who: "me", text: "Hi there" }, { who: "them", text: "Hello" }]);
   assert.match(disclosure({}), /AI assistant/);
-  assert.equal(callerChoice({}), "openai");
-  assert.equal(callerChoice({ CALLER_VENDOR: "ElevenLabs" }), "elevenlabs");
 });
 
 test("after a hangup, a session.closed that never comes stops the wait 10 s later, not at the call deadline", async () => {

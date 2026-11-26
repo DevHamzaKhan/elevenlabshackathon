@@ -18,7 +18,7 @@ Phone: Developer options on, USB debugging on, plugged in, `adb devices` shows i
                                         # they need; also bundles stage/hints/*.md
    ```
    `mind/` and `mouth/` need no `npm install` for the app: their runtime deps
-   (`@anthropic-ai/sdk`, ElevenLabs, LiveKit, WebRTC) are installed in `app/` and Metro never reads
+   (`@anthropic-ai/sdk`, LiveKit, WebRTC) are installed in `app/` and Metro never reads
    a sibling's `node_modules`.
 2. **Packages.** All three are real now (`src/packages.ts`). If a package's `MERGE.md` changes,
    redo what it says here (deps with exact versions, plugins, permissions).
@@ -37,8 +37,8 @@ Phone: Developer options on, USB debugging on, plugged in, `adb devices` shows i
    Bobby and press each "Grant" on the settings screen: accessibility (turn on "Bobby Hands"),
    notification access, post notifications, microphone.
 5. **Keys.** Put every key in the repo-root `.env` (copy from `env/*.env`). At least
-   `ANTHROPIC_API_KEY` (Mind) and `ELEVENLABS_BOBBY_AGENT_ID` (Mouth; written by
-   `node mouth/agent/setup.mjs`), plus `CONTACTS` / `CALL_ALLOWLIST` if used. Then
+   `ANTHROPIC_API_KEY` (Mind) and `OPENAI_API_KEY` (Mouth and Caller), plus `CONTACTS` /
+   `CALL_ALLOWLIST` if used. Then
    ```sh
    node tools/push-config.mjs           # or: npm run push-config
    ```
@@ -120,10 +120,10 @@ reaches the Mouth, calls are refused, 4001 replacement), and `.env` parsing / ba
 
 `metro.config.js`:
 - watches `../hands`, `../mind`, `../mouth`, and blocks their own `node_modules` (one copy of react,
-  react-native, expo, `@elevenlabs/client`, LiveKit);
+  react-native, expo, LiveKit);
 - resolves every bare import made from those folders as if it came from `app/`;
 - falls back to reading a package's `exports` map itself when Expo's resolver fails on a package
-  that has `exports` but no `main` (`@elevenlabs/client`, `@elevenlabs/react-native`), picking the
+  that has `exports` but no `main` (a generic fallback; it was added for the since-removed ElevenLabs SDK), picking the
   `react-native`, `require`, `import`, `default` conditions in that order.
 
 `tsconfig.json` maps those packages' deps to `app/node_modules` for the same reason.

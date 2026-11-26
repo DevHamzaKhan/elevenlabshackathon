@@ -10,7 +10,6 @@ import { BOBBY_TOOLS, ev, exchangeSdp, mintClientSecret, sessionConfig, translat
 import { voiceChoice } from "../src/vendors";
 
 class ToolVoice implements VoiceSession {
-  readonly tools = true;
   cb!: VoiceCallbacks;
   spoken: string[] = [];
   context: string[] = [];
@@ -204,10 +203,9 @@ test("server events -> callbacks: transcripts, speaking/listening, tool calls on
   assert.equal(ev.context("x").item.role, "system");
 });
 
-test("voice vendor choice from env", () => {
-  assert.deepEqual(voiceChoice({ OPENAI_API_KEY: "k" }), { vendor: "openai", model: "gpt-realtime-2.1-mini", missing: null });
-  assert.equal(voiceChoice({ MOUTH_VOICE_MODEL: "gpt-realtime-2.1" }).missing, "OPENAI_API_KEY");
-  assert.equal(voiceChoice({ MOUTH_VOICE_VENDOR: "elevenlabs", ELEVENLABS_BOBBY_AGENT_ID: "a" }).vendor, "elevenlabs");
+test("voice model choice from env", () => {
+  assert.deepEqual(voiceChoice({ OPENAI_API_KEY: "k" }), { model: "gpt-realtime-2.1-mini", missing: null });
+  assert.deepEqual(voiceChoice({ MOUTH_VOICE_MODEL: "gpt-realtime-2.1" }), { model: "gpt-realtime-2.1", missing: "OPENAI_API_KEY" });
 });
 
 test("a confirmation is dropped when its task finishes, so speech can barge in again", async () => {

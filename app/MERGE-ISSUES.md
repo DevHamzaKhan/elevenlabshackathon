@@ -6,22 +6,10 @@ should make. The app works around each one meanwhile. Last checked 2026-11-22, a
 
 ## bobby-mouth (`mouth/`)
 
-1. **`@elevenlabs/client` and `@elevenlabs/react-native` don't resolve under the final app's Metro.**
-   Both packages have only an `exports` map and no `main`. In this app Expo's resolver falls back to
-   `main` (`index`) and fails with "Unable to resolve "@elevenlabs/client"". This happens even with a
-   plain `getDefaultConfig()` metro config and an import from inside `app/`, so it isn't caused by the
-   app's custom resolver.
-   - Workaround in the app: `metro.config.js` catches the failure and resolves through the package's
-     `exports` itself, trying the conditions `react-native`, `require`, `import`, `default` in that
-     order. The bundle then has the right files (`client/dist/platform/react-native/index.js`,
-     `react-native/dist/index.react-native.js`) and one copy of each.
-   - Fix for Mouth: run `npx expo export --platform android` in `mouth/example` with a clean
-     `npm install`. If it fails the same way, add the same fallback (or an `extraNodeModules` /
-     `resolveRequest` entry) to the example's `metro.config.js` and to step 2 of `MERGE.md`.
-2. **Not verified from the back yet** (your MERGE.md section 5). The app starts Hands' keep-alive
+1. **Not verified from the back yet** (your MERGE.md section 5). The app starts Hands' keep-alive
    (foreground service type `microphone|dataSync`; `microphone` when RECORD_AUDIO is granted) before
    `wake()` and `moveToBack()`. Nothing to change in `mouth/`; this needs a test on the phone.
-3. The WebRTC plugin adds a second foreground service of type `mediaProjection` (screen share),
+2. The WebRTC plugin adds a second foreground service of type `mediaProjection` (screen share),
    which is never started. Harmless; noting it in case Play-style checks complain.
 
 ## bobby-mind (`mind/`)
@@ -49,9 +37,9 @@ None open.
 `app/check.sh` passes with the real Hands, Mind (f52515e, 9b60d5f) and Mouth (b0aea73, 328cfdb). No app changes were needed for these commits.
 
 What happened on wake:
-- Mouth: ElevenLabs session started, sent `wake`, heard real speech (`heard`), spoke (`spoke`). Works.
+- Mouth: voice session started, sent `wake`, heard real speech (`heard`), spoke (`spoke`). Works. (That was the earlier voice vendor; the OpenAI voice is not yet tested on the phone.)
 - Mind: started (claude-opus-5-5, 11 hints), connected, sent its notifications `whisper`; its first model call failed with **401 invalid x-api-key**. Checked from the laptop too: the `ANTHROPIC_API_KEY` in the root `.env` is rejected by the API. **Needs a valid key from James C.**
 
-Issue for Mind (James C): when every model call fails, the Mind never sends `sleep`, so the Mouth session (and the microphone, streaming the room to ElevenLabs) stayed live until the app was force-stopped. Suggested fix: the 20 s idle → `sleep` timer should run regardless of model errors (an error turn counts as "no task in progress"). The Mouth's own 5-minute backstop is the only other end.
+Issue for Mind (James C): when every model call fails, the Mind never sends `sleep`, so the Mouth session (and the microphone, streaming the room to the voice vendor) stayed live until the app was force-stopped. Suggested fix: the 20 s idle → `sleep` timer should run regardless of model errors (an error turn counts as "no task in progress"). The Mouth's own 5-minute backstop is the only other end.
 
-Not in `.env` yet (only needed for real calls, `CALLER_DRY_RUN=1` meanwhile): `ELEVENLABS_CALLER_AGENT_ID`, `ELEVENLABS_PHONE_NUMBER_ID` (`node mouth/agent/setup.mjs` writes them).
+Not in `.env` yet (only needed for real calls, `CALLER_DRY_RUN=1` meanwhile): `CALLER_SIP_URL`, `CALLER_SIP_USERNAME`, `CALLER_SIP_PASSWORD` (`mouth/README.md`, "Caller on OpenAI").
