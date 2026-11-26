@@ -38,6 +38,8 @@ data class Act(
   val thenScreen: Boolean = false,
   val compact: Boolean = false,
   val fast: Boolean = false,
+  /** `launch` only: start the app at its first screen instead of resuming where it was. */
+  val fresh: Boolean = false,
 )
 
 /** One entry of `screen_result.nodes`. `bounds` is [left, top, right, bottom]. */
@@ -219,6 +221,7 @@ object Protocol {
       thenScreen = o.optBoolean("then_screen", false),
       compact = o.optBoolean("compact", false),
       fast = o.optBoolean("fast", false),
+      fresh = o.optBoolean("fresh", false),
     )
     when (what) {
       "tap", "long_press", "point" -> if (on == null) throw BadRequest("$what needs on")

@@ -5,13 +5,15 @@
 // Caller, corrections, sleeping, and the v1 Mouth messages for compatibility.
 
 import type { HandsAct, ModelFn, Msg, SubgoalSpec, TaskPlan, Timing } from "./types";
-import { ROUTER_SCHEMA, checkSystem, escalateSystem, execSystem, routerSystem } from "./prompts";
+import { ROUTER_SCHEMA, TEACH_SCHEMA, checkSystem, escalateSystem, execSystem, routerSystem, teachSystem } from "./prompts";
 import { appLabel, checkScreen, fingerprint } from "./screen";
 import { Executor, subgoalFromModel, type ActResult, type SubgoalResult, type SubgoalRun } from "./exec";
 import { ShortcutIndex, packageFor } from "./shortcuts";
 import { escapeRe, findContact, parseContactBook, parseContacts as parseContactsV1, type Contact } from "./contacts";
 import { InMemoryStore, Memory, type KeyValueStore } from "./memory";
 import { RecipeBook } from "./recipes";
+import { closeOverlay, firstTargetVisible, runScript } from "./script";
+import { SkillBook, buildSkill, cleanMeta, fallbackMeta, forgetIntent, readDemo, teachEnd, teachInput, teachIntent, type TeachMode } from "./teach";
 
 export type HubLike = {
   send(m: Msg): boolean;
@@ -33,6 +35,22 @@ export type BrainOptions = {
   confirm?: ConfirmPolicy;
   storage?: KeyValueStore;
   now?: () => Date;
+  /** How taught skills run: script first, then the model with the demo as a guide (default). */
+  teachMode?: TeachMode;
+};
+
+/** A demo being watched: what was said, and everything Hands has reported so far. */
+type Teaching = {
+  name: string;
+  heard: string;
+  notes: string[];
+  events: Msg[];
+  initial: Msg | null;
+  startedAt: number;
+  lastActionAt: number;
+  actions: number;
+  phase: "starting" | "watching" | "ending";
+  task: string;
 };
 
 type Notif = { app: string; title: string; text: string; at: number };
@@ -132,17 +150,28 @@ export class Brain {
   shortcuts = new ShortcutIndex();
   memory: Memory;
   recipes: RecipeBook;
+  skills: SkillBook;
+  teaching: Teaching | null = null;
+  /** Resolves when the demo that just ended has been turned into a skill (or dropped). Tests await it. */
+  teachDone: Promise<void> = Promise.resolve();
+  private teachSys = teachSystem();
   private book: Contact[];
   private exec: Executor;
   /** Model calls by role, for the story's numbers. */
-  stats = { route: 0, exec: 0, escalate: 0, check: 0, local: 0, recipe: 0, acts: 0 };
+  stats = { route: 0, exec: 0, escalate: 0, check: 0, local: 0, recipe: 0, acts: 0, script: 0, teach: 0 };
 
   constructor(private o: BrainOptions) {
     this.book = Array.isArray(o.contacts) ? o.contacts : Object.entries(o.contacts).map(([name, phone]) => ({ name, phone }));
     this.routerSys = routerSystem(o.hints, this.shortcuts.catalogue());
     this.systems = { exec: execSystem(o.hints), escalate: escalateSystem(o.hints), check: checkSystem() };
-    this.memory = new Memory(o.storage ?? new InMemoryStore(), o.log);
+    const store = o.storage ?? new InMemoryStore();
+    this.memory = new Memory(store, o.log);
     this.recipes = new RecipeBook(this.memory, o.log);
+    this.skills = new SkillBook(store, this.shortcuts, o.log, o.teachMode ?? "hybrid");
+    // A taught skill is a new line in the router's catalogue.
+    this.skills.onChange = () => {
+      this.routerSys = routerSystem(o.hints, this.shortcuts.catalogue());
+    };
     void this.memory.loaded.then(() => {
       this.facts = [...this.memory.facts.slice(-10), ...this.facts].slice(-40);
     });
@@ -197,6 +226,10 @@ export class Brain {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     if (this.listenTimer) clearTimeout(this.listenTimer);
     if (this.bargeTimer) clearTimeout(this.bargeTimer);
+    if (this.teaching) {
+      this.send({ type: "observe", to: "hands", id: this.o.hub.nextId(), on: false });
+      this.teaching = null;
+    }
     for (const t of [this.current, ...this.queue]) {
       if (!t) continue;
       t.cancelled = true;
@@ -297,6 +330,7 @@ export class Brain {
           if (this.pendingConfirm) this.pendingConfirm.resolve({ ok: false, heard: "" });
         }
         if (!m.hands) for (const id of [...this.handsWaits]) this.o.hub.cancelWait(id);
+        if (!m.hands && this.teaching?.phase === "watching") void this.endTeach(this.teaching.actions > 0);
         if (!handsWas && m.hands) void this.askCaps();
         if (!m.caller && this.current?.callId) this.o.hub.cancelWait(this.current.callId);
         break;
@@ -333,8 +367,19 @@ export class Brain {
         this.mouthV2 = true;
         if (typeof m.text === "string") void this.onAmend(m.text);
         break;
+      case "teach":
+        this.mouthV2 = true;
+        this.onTeach(m);
+        break;
+      case "observed":
+        this.onObserved(m);
+        break;
       case "cancel":
         this.mouthV2 = true;
+        if (this.teaching) {
+          void this.endTeach(false);
+          break;
+        }
         this.resumeIfPaused();
         this.epoch += 1;
         this.cancelTasks(m.scope === "current" ? "current" : "all");
@@ -466,7 +511,8 @@ export class Brain {
       return;
     }
 
-    if (isCancel(text) && text.split(/\s+/).length <= 8) {
+    // While a demo is being watched, "stop" means "stop watching": utter() handles it.
+    if (!this.teaching && isCancel(text) && text.split(/\s+/).length <= 8) {
       const hadPending = this.pendingHeard.length > 0;
       const deciding = this.decidesInFlight > 0 || hadPending;
       const busy = !!this.current || this.queue.length > 0;
@@ -508,6 +554,7 @@ export class Brain {
     this.sleepAt = 0;
     this.awake = true;
     this.resumeIfPaused();
+    if (this.teaching) return void this.utter(text, raw);
     if (this.pendingConfirm && text.split(/\s+/).length <= 6 && (YES_RE.test(text) || NO_RE.test(text))) {
       this.pendingConfirm.resolve({ ok: isAffirmative(text), heard: raw });
       return;
@@ -560,6 +607,7 @@ export class Brain {
   private async utter(text: string, raw: string, amend = false) {
     this.answerPending = true;
     this.pushConvo("user", raw);
+    if (await this.teachTalk(text, raw)) return;
     const epoch = this.epoch;
     if (!amend) {
       const local = this.shortcuts.matchUtterance(text, this.contactsCtx());
@@ -604,6 +652,9 @@ export class Brain {
         break;
       case "status":
         await this.progress(this.current, this.statusLine(), "interrupt");
+        break;
+      case "teach":
+        void this.startTeach(String(d.teach ?? "").trim() || (teachIntent(text)?.name ?? ""), raw, true);
         break;
       case "amend": {
         const t = Array.isArray(d.tasks) && d.tasks[0] ? this.planFromRouter(d.tasks[0]) : null;
@@ -809,7 +860,8 @@ export class Brain {
   private async runSubgoal(task: Task, sg: SubgoalSpec): Promise<SubgoalResult> {
     const run: SubgoalRun = { spec: sg, taskGoal: task.plan.goal, scratch: task.scratch, confirmed: false, budget: SUBGOAL_BUDGET };
     const onlyLaunch = !sg.direct || sg.direct.every((a) => a.do === "launch");
-    if (sg.risk === "safe" && onlyLaunch) {
+    // A taught sub-goal is never "already done": the user asked for it to be done again.
+    if (sg.risk === "safe" && onlyLaunch && !sg.script && !sg.guide) {
       const s = await this.readScreen();
       if (s && checkScreen(sg.done_when, s) === null) {
         this.o.log(`mind: "${sg.goal}" already holds; skipping`);
@@ -825,6 +877,10 @@ export class Brain {
       const r = await this.exec.runDirect(run);
       if (r.ok || !r.degrade || task.cancelled) return r;
     }
+    if (sg.script?.length) {
+      const r = await this.runTaught(task, sg, run);
+      if (r.ok || r.cancelled || task.cancelled || sg.scriptOnly) return r;
+    } else if (sg.guide) run.mustAct = true;
     const appBefore = this.lastScreen?.app ?? "";
     const verBefore = String(this.lastScreen?.app_version ?? "");
     const recipe = this.recipes.lookup(appBefore, sg, task.plan, verBefore);
@@ -839,6 +895,195 @@ export class Brain {
     const r = await this.exec.runGrounded(run, task.history);
     if (r.ok && r.trace.length) this.recipes.save(appBefore, sg, task.plan, r.trace, verBefore);
     return r;
+  }
+
+  /** Replays the steps the user showed, in code. Falls through (ok:false) when the screen doesn't match. */
+  private async runTaught(task: Task, sg: SubgoalSpec, run: SubgoalRun): Promise<SubgoalResult> {
+    const steps = sg.script ?? [];
+    const slots = task.plan.slots ?? {};
+    const id = task.plan.shortcut;
+    let screen = await this.readScreen();
+    if (task.cancelled) return { ok: false, cancelled: true, reason: "cancelled", say: "" };
+    const taps = { act: (a: HandsAct, o: { fast: boolean }) => this.act(a, o), log: this.o.log };
+    if (!steps.some((s) => s.pixel)) screen = (await closeOverlay(screen, taps, task.history)) ?? screen;
+    if (sg.scriptApp && !steps.some((s) => s.pixel) && !firstTargetVisible(steps, slots, screen)) {
+      // The app came back where it was left, not where the demo began: start it from its first screen.
+      this.o.log(`mind: "${sg.goal}": the first step isn't on this screen; restarting ${appLabel(sg.scriptApp)} from its first screen`);
+      await this.act({ do: "launch", app: sg.scriptApp, fresh: true }, { fast: true });
+      if (task.cancelled) return { ok: false, cancelled: true, reason: "cancelled", say: "" };
+      // Still not there? The script closes a tip or looks further down the page itself before giving up.
+    }
+    const out = await runScript(steps, slots, sg, task.history, {
+      act: (a, o) => this.act(a, o),
+      read: () => this.readScreen(),
+      screen: () => this.lastScreen,
+      narrate: (t) => this.narrate(t),
+      gate: () => this.gate(task),
+      isDone: (dw, s) => this.exec.isDone(dw, s),
+      log: this.o.log,
+    });
+    if (out.ok) {
+      this.stats.script += 1;
+      this.skills.note(id, true);
+      this.o.log(`mind: "${sg.goal}" done from the taught steps (${out.ran} steps, no model call)`);
+      return out;
+    }
+    if (out.cancelled) return out;
+    this.o.log(`mind: taught steps stopped after ${out.ran} of ${steps.length} (${out.reason})${sg.scriptOnly ? "" : "; the executor takes over with the demo as a guide"}`);
+    this.skills.note(id, false);
+    run.mustAct = out.ran === 0;
+    return sg.scriptOnly ? { ...out, say: "That didn't go the way you showed me, so I've stopped." } : out;
+  }
+
+  // ---------- teaching: the user shows, Hands watches, a skill comes out ----------
+
+  /** The voice model's teach(action, text) tool. */
+  private onTeach(m: Msg) {
+    const action = String(m.action ?? "");
+    const heard = typeof m.heard === "string" && m.heard ? m.heard : this.lastHeardRaw || String(m.text ?? "");
+    this.lastActivity = Date.now();
+    this.awake = true;
+    if (action === "start") void this.startTeach(String(m.text ?? "").trim(), heard, false);
+    else if (action === "done") void this.endTeach(true);
+    else if (action === "cancel") void this.endTeach(false);
+  }
+
+  /**
+   * What the user says around a demo. True when it was dealt with here: starting one ("I'm going
+   * to show you how to..."), ending one ("done", "never mind"), a remark made while showing
+   * (kept as a note for naming the skill), or "forget how to...".
+   */
+  private async teachTalk(text: string, raw: string): Promise<boolean> {
+    const t = this.teaching;
+    if (t) {
+      const end = teachEnd(text) ?? teachEnd(raw);
+      if (end) void this.endTeach(end === "done");
+      else if (teachIntent(text)) await this.progress(null, "I'm watching. Say done when you're finished.", "when_idle");
+      else {
+        t.notes.push(raw);
+        this.o.log(`mind: teaching: noted "${raw}"`);
+      }
+      return true;
+    }
+    const forget = forgetIntent(text);
+    if (forget) {
+      const s = this.skills.find(forget);
+      if (s) this.skills.remove(s.id);
+      this.o.log(`mind: forget "${forget}": ${s ? `removed ${s.id}` : "no such skill"}`);
+      await this.progress(null, s ? `Okay, I've forgotten how to ${lower(s.title)}.` : "I haven't learned anything like that.", "when_idle");
+      this.sleepSoon();
+      return true;
+    }
+    const intent = teachIntent(text) ?? teachIntent(raw);
+    if (!intent) return false;
+    // With a v2 Mouth the voice model has only said "On it": the invitation to start is ours.
+    void this.startTeach(intent.name, raw, true);
+    return true;
+  }
+
+  /** Asks Hands to start reporting what the user does. `speak`: say "show me" ourselves. */
+  private async startTeach(name: string, heard: string, speak: boolean) {
+    if (this.teaching || this.stopped) return;
+    this.lastActivity = Date.now();
+    this.sleepAt = 0;
+    this.sleepAfterReply = false;
+    this.epoch += 1;
+    if (this.current || this.queue.length) this.cancelTasks("all", true);
+    if (!this.peers.hands) {
+      await this.progress(null, "The phone isn't ready yet, so I can't watch right now.", "when_idle");
+      this.sleepSoon();
+      return;
+    }
+    this.taskSeq += 1;
+    const t: Teaching = { name, heard, notes: [], events: [], initial: null, startedAt: Date.now(), lastActionAt: Date.now(), actions: 0, phase: "starting", task: `t${this.taskSeq}` };
+    this.teaching = t;
+    const id = this.o.hub.nextId();
+    const wait = this.waitHands(id, this.o.timing.observeMs);
+    this.send({ type: "observe", to: "hands", id, on: true });
+    const r = await wait;
+    if (this.teaching !== t || t.phase !== "starting") return;
+    if (!r || r.type !== "observe_result" || r.ok === false) {
+      this.teaching = null;
+      this.o.log(`mind: teaching: Hands can't observe (${r ? String(r.error ?? "refused") : "no reply; older Hands"})`);
+      await this.progress(null, "I can't watch what you do on this phone yet, so I can't learn it that way.", "when_idle");
+      this.sleepSoon();
+      return;
+    }
+    if (r.screen && typeof r.screen === "object") t.initial = { type: "screen_result", ...r.screen };
+    t.phase = "watching";
+    t.startedAt = Date.now();
+    t.lastActionAt = Date.now();
+    this.o.log(`mind: teaching: watching the user show "${name || "a new skill"}"`);
+    this.watch({ type: "task", task: t.task, title: `Learning: ${name || "a new skill"}`, status: "started" });
+    await this.progress(null, "Okay, show me. Say done when you're finished.", speak ? "when_idle" : "silent");
+  }
+
+  private onObserved(m: Msg) {
+    const t = this.teaching;
+    if (!t) return;
+    t.events.push(m);
+    if (m.kind === "screen") return;
+    t.lastActionAt = Date.now();
+    this.lastActivity = Date.now();
+    if (m.kind !== "scroll") t.actions += 1;
+  }
+
+  /** Stops the watching and, when `save`, turns what was seen into a skill. */
+  private endTeach(save: boolean, why = ""): Promise<void> {
+    const t = this.teaching;
+    if (!t || t.phase === "ending") return this.teachDone;
+    t.phase = "ending";
+    this.decidesInFlight += 1; // nothing sleeps while the skill is being written
+    this.teachDone = this.finishTeach(t, save, why)
+      .catch((e) => this.o.log(`mind: teaching crashed: ${String(e?.stack ?? e)}`))
+      .finally(() => {
+        this.decidesInFlight -= 1;
+        if (this.teaching === t) this.teaching = null;
+        this.lastActivity = Date.now();
+        this.sleepSoon();
+      });
+    return this.teachDone;
+  }
+
+  private async finishTeach(t: Teaching, save: boolean, why: string) {
+    // Hands flushes typing it was still collecting, then answers; those frames arrive first.
+    const id = this.o.hub.nextId();
+    const wait = this.waitHands(id, this.o.timing.observeMs);
+    this.send({ type: "observe", to: "hands", id, on: false });
+    await wait;
+    this.teaching = null;
+    const title = `Learning: ${t.name || "a new skill"}`;
+    if (!save) {
+      this.o.log("mind: teaching: dropped");
+      this.watch({ type: "task", task: t.task, title, status: "cancelled" });
+      await this.progress(null, "Okay, I'll forget that one.", "when_idle");
+      return;
+    }
+    const launcher = typeof this.caps?.launcher === "string" ? this.caps.launcher : undefined;
+    const demo = readDemo(t.events, { launcher, initial: t.initial });
+    this.o.log(`mind: teaching: ${t.events.length} frames from Hands -> ${demo.steps.length} steps${why ? ` (ended because ${why})` : ""}`);
+    if (demo.steps.length === 0) {
+      this.watch({ type: "task", task: t.task, title, status: "failed" });
+      await this.progress(null, demo.secret ? "That starts with a password, and I don't keep those, so I can't learn it." : "I didn't see you do anything in an app, so there's nothing to learn yet.", "when_idle");
+      return;
+    }
+    const said = { name: t.name, heard: t.heard, notes: t.notes };
+    this.stats.teach += 1;
+    const r = await this.o.model({ purpose: "teach", role: "teach", system: this.teachSys, user: teachInput(demo, said), schema: TEACH_SCHEMA, timeoutMs: 20_000, maxTokens: 1500 });
+    if (this.stopped) return;
+    let meta = cleanMeta(r.json, demo, said);
+    if (!meta) {
+      this.o.log("mind: teaching: the model gave nothing usable; naming the skill and its slots from the demo alone");
+      meta = fallbackMeta(demo, said);
+    }
+    const skill = buildSkill(demo, meta, { heard: t.heard, pixels: this.o.teachMode === "pixels" });
+    this.skills.add(skill);
+    this.watch({ type: "plan", task: t.task, steps: skill.parts.flatMap((p) => p.steps).map((s, i) => ({ n: i + 1, do: s.label, why: "you showed me" })) });
+    this.watch({ type: "task", task: t.task, title: `Learned: ${skill.title}`, status: "done" });
+    const needs = skill.slots.filter((s) => s.required).map((s) => s.desc);
+    const line = `Got it. I've learned how to ${lower(skill.title)}.${needs.length ? ` Next time, just tell me ${needs.join(" and ")}.` : ""}${demo.secret ? " I stopped at the password, though: I don't keep those." : ""}`;
+    this.addFact(`The user taught Bobby a skill by showing it: "${skill.title}" (${skill.parts.reduce((n, p) => n + p.steps.length, 0)} steps in ${appLabel(skill.app)}).`);
+    await this.progress(null, line, "when_idle");
   }
 
   /** Waits while a barge-in has paused the task. */
@@ -934,7 +1179,11 @@ export class Brain {
     const wait = this.waitHands(id);
     this.stats.acts += 1;
     this.send({ type: "act", to: "hands", id, ...a, then_screen: true, compact: true, ...(opts.fast ? { fast: true } : {}) });
+    const t0 = Date.now();
     const r = await wait;
+    // One line per act: on a real phone this is the only record of what was done and how it went.
+    const what = `${a.do}${a.on ? ` ${JSON.stringify(a.on)}` : ""}${a.app ? ` ${a.app}${a.fresh ? " (fresh)" : ""}` : ""}${a.name ? ` ${a.name}` : ""}${a.dir ? ` ${a.dir}` : ""}${a.uri ? ` ${a.uri.slice(0, 60)}` : ""}`;
+    this.o.log(`mind: act ${what} -> ${!r ? "no reply" : r.ok ? "ok" : `${r.error}${r.why ? ` (${r.why})` : ""}`} in ${Date.now() - t0} ms${r?.screen?.app ? `, then ${appLabel(r.screen.app)} with ${Array.isArray(r.screen.nodes) ? r.screen.nodes.length : 0} nodes` : ""}`);
     if (!r) return { ok: false, error: "timeout", screen: null };
     let screen: Msg | null = null;
     if (r.screen && typeof r.screen === "object") {
@@ -1150,6 +1399,15 @@ export class Brain {
   }
 
   private tick() {
+    const t = this.teaching;
+    if (t) {
+      // Never sleep mid-demo; end it when the user has stopped doing things, or after the cap.
+      const now = Date.now();
+      if (t.phase !== "watching") return;
+      if (now - t.startedAt >= this.o.timing.teachMaxMs) void this.endTeach(t.actions > 0, "it has been long enough");
+      else if (t.actions > 0 && now - t.lastActionAt >= this.o.timing.teachIdleMs) void this.endTeach(true, "nothing more was happening");
+      return;
+    }
     if (!this.awake || this.current || this.queue.length || this.pendingConfirm || this.listening || this.decidesInFlight > 0 || this.pendingSays.size > 0) return;
     const now = Date.now();
     if (this.sleepAt && now >= this.sleepAt) {
@@ -1162,6 +1420,7 @@ export class Brain {
 // ---------- helpers ----------
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 function notifLine(n: Notif): string {
   return `${appLabel(n.app)} from ${n.title}: "${n.text}"`;

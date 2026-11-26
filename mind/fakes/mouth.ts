@@ -113,7 +113,7 @@ export function startFakeMouth(opts: FakeMouthOptions) {
     },
     log,
     () => {
-      if (opts.v2) conn.send({ type: "voice_caps", v: 2, tools: ["request", "amend", "cancel", "confirm", "status"] });
+      if (opts.v2) conn.send({ type: "voice_caps", v: 2, tools: ["request", "amend", "cancel", "confirm", "status", "teach"] });
       if (!awake) {
         awake = true;
         conn.send({ type: "wake" });
@@ -122,7 +122,7 @@ export function startFakeMouth(opts: FakeMouthOptions) {
   );
 
   const wake = () => {
-    if (opts.v2) conn.send({ type: "voice_caps", v: 2, tools: ["request", "amend", "cancel", "confirm", "status"] });
+    if (opts.v2) conn.send({ type: "voice_caps", v: 2, tools: ["request", "amend", "cancel", "confirm", "status", "teach"] });
     if (!awake) {
       awake = true;
       conn.send({ type: "wake" });
@@ -161,6 +161,15 @@ export function startFakeMouth(opts: FakeMouthOptions) {
     },
     cancel(scope: "current" | "all" = "all") {
       conn.send({ type: "cancel", scope });
+    },
+    /** v2: the voice model called teach(action, text). */
+    teach(action: "start" | "done" | "cancel", text = "", heard = text) {
+      awake = true;
+      if (heard) {
+        log(`USER: ${heard}`);
+        conn.send({ type: "heard", text: heard });
+      }
+      conn.send({ type: "teach", action, ...(text ? { text } : {}), heard });
     },
     bargeIn() {
       conn.send({ type: "barge_in" });

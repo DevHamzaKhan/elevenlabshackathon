@@ -4,7 +4,7 @@
 export type Msg = { type: string; [k: string]: any };
 
 /** One model call: fixed instructions (cached), the changing part, and the JSON schema of the reply. */
-export type ModelRole = "router" | "exec" | "escalate" | "check";
+export type ModelRole = "router" | "exec" | "escalate" | "check" | "teach";
 
 export type ModelRequest = {
   /** Short label for logs, e.g. "route", "exec", "escalate", "check". */
@@ -78,6 +78,12 @@ export type Timing = {
   confirmMs: number;
   /** A barge-in with nothing after it resumes the task after this long. */
   bargeMs: number;
+  /** Teaching: this long with no new action from the user (after at least one) ends the demo. */
+  teachIdleMs: number;
+  /** Teaching: a demo is never watched for longer than this. */
+  teachMaxMs: number;
+  /** Teaching: how long Hands gets to answer `observe`. */
+  observeMs: number;
 };
 
 export const DEFAULT_TIMING: Timing = {
@@ -93,6 +99,9 @@ export const DEFAULT_TIMING: Timing = {
   sayWaitMs: 4_000,
   confirmMs: 30_000,
   bargeMs: 4_000,
+  teachIdleMs: 25_000,
+  teachMaxMs: 300_000,
+  observeMs: 2_500,
 };
 
 export type PlanStep = { n: number; do: string; why: string };
@@ -138,6 +147,8 @@ export type HandsAct = {
   pkg?: string;
   extras?: Record<string, string | number | boolean | string[]>;
   type_mime?: string;
+  /** `launch` only: restart the app at its first screen instead of resuming where it was. */
+  fresh?: boolean;
 };
 
 /** A condition checked in code against a screen. Every given field must hold. */
@@ -167,6 +178,43 @@ export type SubgoalSpec = {
   confirm?: string;
   /** Bobby's line when this sub-goal starts. */
   say?: string;
+  /** From a skill the user taught by showing: the recorded steps, replayed with every check in code. */
+  script?: ScriptStep[];
+  /** The same steps in words, for the grounded executor when the script can't be followed. */
+  guide?: string;
+  /** Package the script runs in (relaunched fresh when its first target isn't on screen). */
+  scriptApp?: string;
+  /** No fallback when the script fails (comparison bench only). */
+  scriptOnly?: boolean;
+};
+
+/** How to find a recorded control again on a later screen. Any field may be missing. */
+export type Want = {
+  id?: string;
+  key?: string;
+  text?: string;
+  desc?: string;
+  hint?: string;
+  cls?: string;
+  edit?: boolean;
+  /** Where its centre was when recorded: only a tie-break between equal matches. */
+  at?: [number, number];
+};
+
+/** One step of a taught skill. Strings may hold `{{slot}}` placeholders. */
+export type ScriptStep = {
+  /** The Hands act without its target (`on` comes from `want` at run time). */
+  act: HandsAct;
+  want?: Want;
+  expect: Check;
+  /** In words, for guides and logs: `tap "Create"`. */
+  label: string;
+  /** The user scrolled this way to reach the target; do the same when it isn't on screen. */
+  seek?: "up" | "down" | "left" | "right" | "any";
+  /** Tap this exact pixel (the coordinate-macro mode of the comparison bench only). */
+  pixel?: boolean;
+  /** The user closed a tip or pop-up here: do it when it is there, carry on when it isn't. */
+  optional?: boolean;
 };
 
 export type TaskPlan = {

@@ -20,7 +20,8 @@ const mind = startMind({ hubUrl: "ws://127.0.0.1:8765", token, env, log, hints, 
 6. **Escalation** (`MIND_ESCALATE_MODEL`, with a screenshot) after 2 mismatches in a row or on an unreadable tree; may act (pixels allowed), re-plan the sub-goal, or give up with a spoken reason. At most 2 per task.
 7. **Recipes** (`src/recipes.ts`): a grounded success is saved by (app, version, intent) with stable selectors and slot placeholders and replayed next time with zero exec calls; a mismatch falls back and marks it stale, two delete it.
 8. **Confirmation** before send/call/pay/delete/post: `confirm_request` → `confirm_reply` ok **and** an affirmative raw transcript. `MIND_CONFIRM=always|unknown_contacts|never`.
-9. **Calls** go through the Caller (`call`, `hangup`). Notifications digest on wake, corrections, sleeping: as in v1.
+9. **Taught skills** (`src/teach.ts`, `src/script.ts`): "I'm going to show you how to add a project" → Hands reports what the user does → the demo becomes a skill with slots, matched locally or through the router like any shortcut, replayed step by step in code with a check after each, and finished by the executor (with the demo as its guide) when the screen no longer matches. See `TEACHING.md`.
+10. **Calls** go through the Caller (`call`, `hangup`). Notifications digest on wake, corrections, sleeping: as in v1.
 
 ## Layout
 
@@ -31,6 +32,9 @@ const mind = startMind({ hubUrl: "ws://127.0.0.1:8765", token, env, log, hints, 
 | `src/exec.ts` | Direct acts, the grounded multi-action executor, expect checks, escalation. |
 | `src/shortcuts.ts` | The shortcut index (intents, slots, local matcher, router catalogue). |
 | `src/recipes.ts` | Saved recipes. |
+| `src/teach.ts` | Teaching by showing: what the user says, the demo compiler, skills and their store, local matching. |
+| `src/script.ts` | Replays a taught skill: finding controls again, checks, tips, scrolling. |
+| `TEACHING.md` | How teaching works, and the four approaches measured against each other. |
 | `src/memory.ts` | Memory and the `KeyValueStore` interface. |
 | `src/contacts.ts` | `CONTACTS` parsing (number, email or both). |
 | `src/model.ts` | The one door to the models: OpenAI Responses API over fetch. |
@@ -51,6 +55,8 @@ npm run story:sim                # the demo against the fakes with simulated mod
 npm run story                    # same with the real models (needs OPENAI_API_KEY)
 npm run story -- --sim --v1      # with a v1 Mouth (heard/say)
 npm run story -- --sim --only email   # one part: digest | email | recipe | shortcut | chain | call | stop
+npm run teach:bench              # teaching: pixels vs script vs guided vs hybrid on the pretend phone (table in TEACHING.md)
+npm run teach:phone              # teaching on a real phone/emulator over adb: a lesson in Google Contacts, then "add a contact called ..."
 ```
 
 By hand, in four terminals: `npm run hub`, `npm run mind`, `npm run caller`, `npm run mouth` (type what the user says). Hub commands: `notify <app> | <title> | <text>`, `hands on|off`, `where`, `sent`, `reset`, `popup`. Against the real phone hub: `adb forward tcp:8765 tcp:8765`, then `npm run mind`.
@@ -65,6 +71,8 @@ By hand, in four terminals: `npm run hub`, `npm run mind`, `npm run caller`, `np
 | `MIND_ESCALATE_MODEL` | `config.env` | Default `gpt-6.1-terra` (vision). |
 | `MIND_ROUTER_EFFORT`, `MIND_EXEC_EFFORT`, `MIND_ESCALATE_EFFORT`, `MIND_CHECK_EFFORT` | `config.env` | Reasoning effort; defaults `none`, `low`, `medium`, `none`. |
 | `MIND_CONFIRM` | `config.env` | `always` (default), `unknown_contacts`, `never`. |
+| `MIND_TEACH_MODEL`, `MIND_TEACH_EFFORT` | `config.env` | The one call that names a taught skill and finds its slots. Defaults: the escalation model, `low`. |
+| `MIND_TEACH_MODE` | `config.env` | How taught skills run: `hybrid` (default), `script`, `guided`, `pixels`. The others exist for `npm run teach:bench`. |
 | `MIND_OPENAI_BASE_URL` | `config.env` | Optional API base (default `https://api.openai.com/v1`). |
 | `CONTACTS` | `config.env` | `Name=+14155550123,Sam=+1415...\|sam@example.com` (number, email or both). |
 | `HUB_TOKEN`, `HINTS_DIR` | laptop runner only | Hub token; hints folder (default `../stage/hints`). |

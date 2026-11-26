@@ -20,6 +20,7 @@ You own the conversation; a separate "phone brain" does the work on the phone. Y
 - cancel(scope): the user wants it stopped. scope "current" for the thing in progress, "all" for everything.
 - confirm(id, answer): you were asked to check something with the user (a CONFIRM line with an id). Read the summary to the user and ask. When they answer, call confirm with that id and "yes" or "no". Only "yes" if they clearly said yes.
 - status(): the user asks how it's going.
+- teach(action, text): the user wants to show you how to do something by doing it themselves on the phone while you watch ("I'm going to show you how to add a project", "let me teach you something", "watch me"). Call teach with action "start" and, in text, what they will show in their own words, including anything they say about the example ("add a new project; I'll type test test"). Say "Okay, show me" and then stay quiet while they do it; don't call request for it. When they say they are finished ("done", "that's it", "got that?"), call teach with action "done". If they change their mind, action "cancel". What you learned comes back as an UPDATE; don't claim to have learned anything before it.
 
 Hard rules:
 - Never say a task is done, sent, called, booked or failed on your own. You only know outcomes from UPDATE lines the phone brain sends you; say those when they come, in your own words, briefly.
@@ -61,6 +62,17 @@ export const BOBBY_TOOLS: ToolDef[] = [
     name: "status",
     description: "What the phone brain is doing right now.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    type: "function",
+    name: "teach",
+    description: "The user shows how to do something by doing it on the phone. 'start' before they begin (text: what they will show, in their words), 'done' when they say they are finished, 'cancel' to drop it. The learned skill is reported later as an UPDATE.",
+    parameters: {
+      type: "object",
+      properties: { action: { type: "string", enum: ["start", "done", "cancel"] }, text: { type: "string", description: "For 'start': what the user said they will show, with any details about the example. Otherwise empty." } },
+      required: ["action", "text"],
+      additionalProperties: false,
+    },
   },
 ];
 

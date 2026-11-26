@@ -6,6 +6,10 @@
 // additions describe (mind/PROTOCOL-V2.md): `open` intents, `since`/`hash`, `compact`, `image`,
 // `then_screen`, `fast`, stable `key`/`id` targets, stale `n`, and a secure lock.
 // `legacy: true` behaves like v1 Hands: no hash/keys/ids, `open` is a bad_request, extras ignored.
+// For teaching by showing there is a "Projects" app (a list, a "New project" button, a dialog with
+// a name field and Create) and a pretend user: `user.tap()`, `user.type()`, `user.scroll()` change
+// the phone the way a finger would and, while `observe` is on, emit the `observed` frames Hands
+// sends (PROTOCOL-V2.md). `drift` changes the Projects app the way an update would.
 
 type Bounds = [number, number, number, number];
 
@@ -50,18 +54,35 @@ const APPS: Record<string, AppDef> = {
   calculator: { label: "Calculator", pkg: "com.google.android.calculator" },
   contacts: { label: "Contacts", pkg: "com.google.android.contacts" },
   tickets: { label: "Tickets", pkg: "com.example.tickets" },
+  projects: { label: "Projects", pkg: "com.example.projects" },
 };
 
 const PAGES: string[][] = [
   ["clock", "camera", "settings", "contacts"],
   ["maps", "spotify", "calendar", "photos", "folder:google"],
-  ["whatsapp", "gmail", "calculator", "tickets"],
+  ["whatsapp", "gmail", "calculator", "tickets", "projects"],
 ];
 const FOLDER_GOOGLE = ["google", "drive", "youtube", "meet", "keep"];
 const DOCK = ["phone", "messages", "chrome"];
 const LAUNCHER_PKG = "com.google.android.apps.nexuslauncher";
 const GM = "com.google.android.gm:id/";
 const SMS = "com.google.android.apps.messaging:id/";
+const PJ = "com.example.projects:id/";
+
+/** Ways the Projects app can differ from the day the user showed how to use it. */
+export type Drift = {
+  /** A banner pushes everything down and the button moves to the other corner. */
+  moved?: boolean;
+  /** "New project" is now called "Add project" (same resource id). */
+  renamed?: boolean;
+  /** Opening the app shows a "What's new" sheet with a Continue button: a step the demo never had. */
+  interstitial?: boolean;
+  /** A tip ("Got it") covers the app when it opens and again after a project is created, the way
+   *  Google Contacts covers a saved contact: nothing underneath can be read until it is closed. */
+  tip?: boolean;
+  /** The list has grown so long that the button sits below the fold until you scroll. */
+  long?: boolean;
+};
 
 type Screen =
   | { kind: "home"; page: number; folder: boolean }
@@ -82,6 +103,9 @@ type Screen =
   | { kind: "search" }
   | { kind: "settings_page"; page: string }
   | { kind: "tickets" }
+  | { kind: "proj_list" }
+  | { kind: "proj_new" }
+  | { kind: "proj_detail"; name: string }
   | { kind: "app"; app: string };
 
 export type PhoneNotification = { app: string; title: string; text: string; at: number };
@@ -143,6 +167,18 @@ export class Phone {
   navPlace = "";
   query = "";
   ticketSaved = false;
+  projects: string[] = ["Website redesign", "Q3 planning"];
+  projName = "";
+  drift: Drift = {};
+  /** Where the Projects app was left: a plain launch resumes there, a fresh one starts at the list. */
+  private projLeft: Screen = { kind: "proj_list" };
+  private projNews = false;
+  private projTip = false;
+  private projScrolled = false;
+  /** While on, user actions are reported as `observed` frames. */
+  private observing: ((frame: any) => void) | null = null;
+  private obsSeq = 0;
+  private obsSentHash = "";
   private snackbarUntil = 0;
   private snackText = "";
   popup: string | null = null;
@@ -216,6 +252,10 @@ export class Phone {
         return APPS.settings.pkg;
       case "tickets":
         return APPS.tickets.pkg;
+      case "proj_list":
+      case "proj_new":
+      case "proj_detail":
+        return APPS.projects.pkg;
       case "app":
         return APPS[s.app]?.pkg ?? s.app;
     }
@@ -224,6 +264,7 @@ export class Phone {
   where(): string {
     const s = this.screen;
     if (this.popup) return `pop-up "${this.popup}"`;
+    if (s.kind === "proj_detail") return `project "${s.name}"`;
     if (s.kind === "home") return `home page ${s.page + 1}${s.folder ? " with Google folder open" : ""}`;
     if (s.kind === "app") return `${APPS[s.app]?.label ?? s.app} app`;
     return s.kind.replace("_", " ");
@@ -439,6 +480,58 @@ export class Phone {
         out.push({ key: "web", cls: "WebView", bounds: [0, 0, W, H] });
         if (this.ticketSaved) out.push({ key: "web.saved", text: "Ticket saved", cls: "TextView", bounds: [200, 1400, 880, 1500] });
         break;
+      case "proj_list": {
+        statusBar();
+        const dy = this.drift.moved ? 180 : 0;
+        if (this.projNews) {
+          out.push(
+            { key: "pj.news", text: "What's new in Projects", cls: "TextView", bounds: [120, 900, 960, 980] },
+            { key: "pj.news_ok", id: `${PJ}whats_new_ok`, text: "Continue", cls: "Button", bounds: [380, 1260, 700, 1360], tap: true },
+          );
+          break;
+        }
+        if (this.projTip) {
+          out.length = 0; // a modal tip: accessibility sees nothing else
+          out.push(
+            { key: "pj.tip", text: "Tip: long-press a project to archive it.", cls: "TextView", bounds: [63, 325, 919, 487] },
+            { key: "pj.tip_x", desc: "Got it", cls: "ImageView", bounds: [951, 324, 1014, 387], tap: true },
+          );
+          break;
+        }
+        out.push({ key: "pj.title", text: "Projects", cls: "TextView", bounds: [40, 120, 600, 220] });
+        if (this.drift.moved) out.push({ key: "pj.banner", text: "Try the new timeline view", cls: "TextView", bounds: [40, 240, 1040, 380] });
+        const rows = this.drift.long && !this.projScrolled ? this.projects.slice(0, 6) : this.projects;
+        rows.forEach((name, i) => {
+          const y = 300 + dy + i * 160;
+          out.push({ key: `pj.row:${name}`, id: `${PJ}project_row`, text: name, cls: "TextView", bounds: [40, y, 1040, y + 140], tap: true });
+        });
+        const fab = !this.drift.long || this.projScrolled;
+        if (fab) {
+          const b: Bounds = this.drift.moved ? [60, 2060, 400, 2200] : [700, 2100, 1040, 2240];
+          out.push({ key: this.drift.renamed ? "pj.fab2" : "pj.fab", id: `${PJ}fab_new`, text: this.drift.renamed ? "Add project" : "New project", cls: "Button", bounds: b, tap: true });
+        }
+        out.push({ key: "pj.list", id: `${PJ}list`, cls: "RecyclerView", bounds: [0, 280, 1080, 2000], scroll: true });
+        snack();
+        break;
+      }
+      case "proj_new":
+        statusBar();
+        out.push(
+          { key: "pj.dlg_title", text: "Create a project", cls: "TextView", bounds: [120, 800, 960, 880] },
+          { key: "pj.name", id: `${PJ}name_input`, text: this.projName, hint: "Project name", cls: "EditText", bounds: [120, 920, 960, 1040], tap: true, edit: true, focused: this.focusedKey === "pj.name" },
+          { key: "pj.cancel", id: `${PJ}cancel`, text: "Cancel", cls: "Button", bounds: [420, 1100, 660, 1200], tap: true },
+          { key: "pj.create", id: `${PJ}create`, text: "Create", cls: "Button", bounds: [700, 1100, 960, 1200], tap: true },
+        );
+        break;
+      case "proj_detail":
+        statusBar();
+        out.push(
+          { key: "up", desc: "Navigate up", cls: "ImageButton", bounds: [20, 120, 120, 220], tap: true },
+          { key: "pj.d_title", text: s.name, cls: "TextView", bounds: [160, 120, 900, 220] },
+          { key: "pj.d_empty", text: "No tasks yet", cls: "TextView", bounds: [40, 400, 1040, 500] },
+          { key: "pj.d_add", id: `${PJ}add_task`, text: "Add task", cls: "Button", bounds: [700, 2100, 1040, 2240], tap: true },
+        );
+        break;
       case "app": {
         statusBar();
         const label = APPS[s.app]?.label ?? s.app;
@@ -499,8 +592,99 @@ export class Phone {
 
   caps(): any {
     if (this.legacy) return null;
-    return { sdk: 35, oem: "Fake", model: "Pretend 1", locale: "en-US", size: [W, H], density: 2.625, launcher: LAUNCHER_PKG, ime: "com.google.android.inputmethod.latin", secureLock: true, locked: this.locked, gestureNav: true, imeTyping: true, screenshot: true };
+    return { sdk: 35, oem: "Fake", model: "Pretend 1", locale: "en-US", size: [W, H], density: 2.625, launcher: LAUNCHER_PKG, ime: "com.google.android.inputmethod.latin", secureLock: true, locked: this.locked, gestureNav: true, imeTyping: true, screenshot: true, features: ["open", "since", "compact", "then_screen", "fast", "target_id", "target_key", "locked", "caps", "observe", "launch_fresh"] };
   }
+
+  // ---------- observing the user (teaching by showing) ----------
+
+  /** `observe` on/off. Returns the `observe_result` body, or null for a v1 Hands (no reply). */
+  observe(on: boolean, emit: (frame: any) => void): any | null {
+    if (this.legacy) return null;
+    if (on) {
+      this.observing = emit;
+      this.obsSeq = 0;
+      const screen = this.read({ compact: true });
+      this.obsSentHash = screen.hash;
+      return { ok: true, screen };
+    }
+    if (this.observing) this.emitScreen();
+    this.observing = null;
+    return { ok: true, count: this.obsSeq };
+  }
+
+  private emitScreen() {
+    if (!this.observing) return "";
+    const screen = this.read({ compact: true });
+    if (screen.hash !== this.obsSentHash) {
+      this.obsSentHash = screen.hash;
+      this.observing({ type: "observed", seq: ++this.obsSeq, kind: "screen", screen });
+    }
+    return String(screen.hash);
+  }
+
+  private emitAction(kind: string, node: PNode | null, extra: Record<string, unknown> = {}) {
+    if (!this.observing) return;
+    const hash = this.emitScreen();
+    const shown = node ? this.read({ compact: true }).nodes.find((x: any) => x.key === node.key) : undefined;
+    this.observing({ type: "observed", seq: ++this.obsSeq, kind, app: this.currentApp(), hash, at: Date.now(), ...(shown ? { node: shown } : {}), ...extra });
+  }
+
+  private byLabel(q: string): PNode | null {
+    const t = this.findTarget({ key: q });
+    if (t && t !== "pixel" && t !== "stale") return t;
+    const u = this.findTarget({ text: q });
+    return u && u !== "pixel" && u !== "stale" ? u : null;
+  }
+
+  /** The pretend user's finger. Each call changes the phone and, while observed, reports it. */
+  user = {
+    /** Taps the control with this key or label. Throws when it isn't on screen (a broken test). */
+    tap: (what: string, kind: "tap" | "long_press" = "tap") => {
+      const node = this.byLabel(what);
+      if (!node) throw new Error(`user.tap: "${what}" is not on ${this.where()}`);
+      this.emitAction(kind, node);
+      this.tapNode(node);
+      this.log(`phone: (user) ${kind} "${label(node)}"; now on ${this.where()}`);
+      this.emitScreen();
+    },
+    /** Types into the focused field (or the one named). Reported once, with the final text. */
+    type: (text: string, into?: string) => {
+      const key = into ? this.byLabel(into)?.key : this.focusedKey;
+      const node = this.nodes().find((n) => n.key === key);
+      if (!node?.edit) throw new Error(`user.type: no field to type into on ${this.where()}`);
+      const hash = this.emitScreen();
+      const shown = this.read({ compact: true }).nodes.find((x: any) => x.key === node.key);
+      this.focusedKey = node.key;
+      if (node.key === "pj.name") this.projName = text;
+      else if (node.key === "gm.body") this.compose.body = text;
+      else if (node.key === "body_field") this.replyText = text;
+      else if (node.key === "sms.field") this.sms.body = text;
+      this.log(`phone: (user) typed "${text}"`);
+      if (this.observing) this.observing({ type: "observed", seq: ++this.obsSeq, kind: "type", app: this.currentApp(), hash, at: Date.now(), node: shown, text });
+      this.emitScreen();
+    },
+    scroll: (dir: "up" | "down") => {
+      const list = this.nodes().find((n) => n.scroll) ?? null;
+      this.emitAction("scroll", list, { dir });
+      if (this.screen.kind === "proj_list") this.projScrolled = dir === "up";
+      this.emitScreen();
+    },
+    home: () => {
+      this.history = [];
+      this.screen = { kind: "home", page: 0, folder: false };
+      this.emitScreen();
+    },
+    /** Opens an app the way a person does: home, find the icon, tap it. */
+    open: (app: string) => {
+      const id = Object.keys(APPS).find((a) => APPS[a].label.toLowerCase() === app.toLowerCase());
+      if (!id) throw new Error(`user.open: no app "${app}"`);
+      const page = PAGES.findIndex((p) => p.includes(id));
+      this.history = [];
+      this.screen = { kind: "home", page: Math.max(0, page), folder: false };
+      this.emitScreen();
+      this.user.tap(`open:${id}`);
+    },
+  };
 
   private findTarget(on: any): PNode | null | "pixel" | "stale" {
     if (!on || typeof on !== "object") return null;
@@ -538,12 +722,23 @@ export class Phone {
     this.history.push(this.screen);
     this.screen = next;
     this.focusedKey = null;
+    if (next.kind === "proj_list" || next.kind === "proj_detail") this.projLeft = next;
   }
 
   private openApp(id: string) {
     if (id === "gmail") return this.go({ kind: "gmail_inbox" });
     if (id === "tickets") return this.go({ kind: "tickets" });
     if (id === "clock") return this.go({ kind: "clock" });
+    if (id === "projects") {
+      // Like a real app: it comes back where it was left, unless it is started fresh.
+      this.projNews = !!this.drift.interstitial;
+      this.projTip = !!this.drift.tip;
+      this.projScrolled = false;
+      const left = this.projLeft;
+      this.go({ kind: "proj_list" });
+      if (left.kind === "proj_detail") this.go(left);
+      return;
+    }
     this.go({ kind: "app", app: id });
   }
 
@@ -572,6 +767,7 @@ export class Phone {
       this.screen = { kind: "home", page: 1, folder: true };
       return;
     }
+    if (k.startsWith("pj.row:")) return this.go({ kind: "proj_detail", name: k.slice(7) });
     if (k.startsWith("notif:")) {
       const app = k.slice(6);
       if (app === APPS.gmail.pkg) {
@@ -587,6 +783,36 @@ export class Phone {
       case "shade_clear":
         this.notifications = [];
         return;
+      case "pj.news_ok":
+        this.projNews = false;
+        return;
+      case "pj.tip_x":
+        this.projTip = false;
+        return;
+      case "pj.fab":
+      case "pj.fab2":
+        this.projName = "";
+        this.go({ kind: "proj_new" });
+        this.focusedKey = "pj.name";
+        return;
+      case "pj.name":
+        this.focusedKey = k;
+        return;
+      case "pj.cancel":
+        return this.back();
+      case "pj.create": {
+        const name = this.projName.trim();
+        if (!name) return;
+        this.projects.push(name);
+        this.log(`phone: PROJECT CREATED "${name}"`);
+        this.history.pop();
+        this.screen = { kind: "proj_list" };
+        this.projLeft = this.screen;
+        this.focusedKey = null;
+        this.projTip = !!this.drift.tip;
+        this.snackbar("Project created");
+        return;
+      }
       case "row_sarah":
         return this.go({ kind: "gmail_email" });
       case "row_google":
@@ -685,6 +911,7 @@ export class Phone {
     }
     this.screen = this.history.pop() ?? { kind: "home", page: 0, folder: false };
     this.focusedKey = null;
+    if (this.screen.kind === "proj_list" || this.screen.kind === "proj_detail") this.projLeft = this.screen;
   }
 
   /** Runs one `act` and returns the `act_result` body (without `re`). */
@@ -829,6 +1056,7 @@ export class Phone {
         else if (key === "gm.body") this.compose.body = m.text;
         else if (key === "sms.field") this.sms.body = m.text;
         else if (key === "cal.title") this.calDraft.title = m.text;
+        else if (key === "pj.name") this.projName = m.text;
         this.log(`phone: typed "${m.text}"`);
         return { ok: true };
       }
@@ -837,6 +1065,7 @@ export class Phone {
         if (!["left", "right", "up", "down"].includes(dir)) return { ok: false, error: "bad_request" };
         await this.glide([W / 2, H / 2], fast);
         const s = this.screen;
+        if (s.kind === "proj_list" && !this.popup) this.projScrolled = dir === "up" ? true : dir === "down" ? false : this.projScrolled;
         if (s.kind === "home" && !s.folder && !this.popup) {
           if (dir === "left" && s.page < PAGES.length - 1) this.screen = { ...s, page: s.page + 1 };
           else if (dir === "right" && s.page > 0) this.screen = { ...s, page: s.page - 1 };
@@ -882,9 +1111,10 @@ export class Phone {
         if (!id) return { ok: false, error: "not_found" };
         this.popup = null;
         this.history = [];
+        if (m.fresh && !this.legacy && id === "projects") this.projLeft = { kind: "proj_list" };
         this.openApp(id);
-        await sleep(250 * d);
-        this.log(`phone: launched ${APPS[id].label}`);
+        await sleep((m.fresh && !this.legacy ? 600 : 250) * d);
+        this.log(`phone: launched ${APPS[id].label}${m.fresh && !this.legacy ? " (fresh)" : ""}`);
         return { ok: true };
       }
       case "open": {

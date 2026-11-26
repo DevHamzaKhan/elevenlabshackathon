@@ -45,7 +45,23 @@ test("wake announces voice_caps v2 (tools) before wake", async () => {
   const s = await live();
   assert.deepEqual(s.sent.slice(0, 2).map((f) => f.type), ["voice_caps", "wake"]);
   assert.equal(s.sent[0].v, 2);
-  assert.deepEqual(s.sent[0].tools, ["request", "amend", "cancel", "confirm", "status"]);
+  assert.deepEqual(s.sent[0].tools, ["request", "amend", "cancel", "confirm", "status", "teach"]);
+});
+
+test("teach tool -> `teach` start/done/cancel with the raw transcript; Bobby invites the demo", async () => {
+  const s = await live();
+  s.v.cb.onUserTranscript("hey tibby i'm going to show you how to add a new project i'll type test test");
+  s.v.cb.onToolCall!("teach", { action: "start", text: "add a new project; they'll type test test" }, "t1");
+  assert.deepEqual(s.of("teach")[0], { type: "teach", action: "start", text: "add a new project; they'll type test test", heard: "hey tibby i'm going to show you how to add a new project i'll type test test" });
+  assert.equal(s.v.results[0].respond, true);
+  assert.match(s.v.results[0].output.note, /show me/i);
+  s.v.cb.onUserTranscript("okay done");
+  s.v.cb.onToolCall!("teach", { action: "done", text: "" }, "t2");
+  assert.deepEqual(s.of("teach")[1], { type: "teach", action: "done", heard: "okay done" });
+  s.v.cb.onToolCall!("teach", { action: "cancel", text: "" }, "t3");
+  assert.equal(s.of("teach")[2].action, "cancel");
+  assert.equal(s.of("request").length, 0, "a lesson is not a request");
+  assert.ok(BOBBY_TOOLS.some((t) => t.name === "teach"), "the voice model is offered the tool");
 });
 
 test("request tool -> `request` with the raw transcript; the model may acknowledge (respond:true)", async () => {
@@ -134,7 +150,7 @@ test("session config: model from env, semantic VAD, transcription, Bobby's five 
   assert.equal(c.audio.output.voice, "cedar");
   assert.equal(c.audio.input.turn_detection.type, "semantic_vad");
   assert.ok(c.audio.input.transcription.model);
-  assert.deepEqual(c.tools.map((t) => t.name), ["request", "amend", "cancel", "confirm", "status"]);
+  assert.deepEqual(c.tools.map((t) => t.name), ["request", "amend", "cancel", "confirm", "status", "teach"]);
   for (const t of BOBBY_TOOLS) assert.equal(t.type, "function");
   assert.match(c.instructions, /Never say a task is done/);
   assert.equal(sessionConfig().model, "gpt-realtime-2.1-mini");

@@ -38,7 +38,7 @@ npx tsc --noEmit || fail "typecheck"
 
 step "unit tests (stand-ins against hands/tools/fakehub.mjs, settings parsing)"
 npm test >"$LOGS/app-test.log" 2>&1 || { tail -30 "$LOGS/app-test.log"; fail "tests"; }
-grep -E "^# (pass|fail)" "$LOGS/app-test.log"
+grep -E "^(#|ℹ) (pass|fail)" "$LOGS/app-test.log"
 
 step "build (log: logs/app-gradle.log)"
 if [ "$CLEAN" = 1 ] || [ ! -d android ]; then

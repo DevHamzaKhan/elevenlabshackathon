@@ -6,12 +6,14 @@ import { parseContactBook } from "./contacts";
 import { HubClient } from "./hub";
 import { DEFAULT_MODELS, makeModel, modelOptionsFromEnv } from "./model";
 import { DEFAULT_TIMING, type MindConfig, type ModelFn } from "./types";
+import type { TeachMode } from "./teach";
 
 export type { MindConfig, ModelFn, ModelRequest, ModelReply } from "./types";
 export { makeModel, modelOptionsFromEnv, DEFAULT_MODELS, DEFAULT_EFFORTS } from "./model";
 export { describeScreen, describeCompact } from "./screen";
 export { InMemoryStore, type KeyValueStore } from "./memory";
 export { ShortcutIndex } from "./shortcuts";
+export { teachIntent, teachEnd, type Skill, type TeachMode } from "./teach";
 
 /** `ws://127.0.0.1:8765` + role and token, unless hubUrl already names the role. */
 export function mindUrl(hubUrl: string, token: string): string {
@@ -27,6 +29,14 @@ function confirmPolicy(v: string | undefined, log: (l: string) => void): Confirm
   if (p === "always" || p === "unknown_contacts" || p === "never") return p;
   log(`mind: MIND_CONFIRM="${v}" is not always|unknown_contacts|never; using always`);
   return "always";
+}
+
+function teachMode(v: string | undefined, log: (l: string) => void): TeachMode {
+  const p = (v ?? "").trim().toLowerCase();
+  if (!p) return "hybrid";
+  if (p === "hybrid" || p === "script" || p === "guided" || p === "pixels") return p;
+  log(`mind: MIND_TEACH_MODE="${v}" is not hybrid|script|guided|pixels; using hybrid`);
+  return "hybrid";
 }
 
 export function startMind(config: MindConfig): { stop(): void; brain: Brain } {
@@ -59,6 +69,7 @@ export function startMind(config: MindConfig): { stop(): void; brain: Brain } {
     timing,
     confirm: confirmPolicy(env.MIND_CONFIRM, log),
     storage: config.storage,
+    teachMode: teachMode(env.MIND_TEACH_MODE, log),
   });
   hub.start();
   log(

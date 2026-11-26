@@ -15,7 +15,7 @@ import org.json.JSONObject
  */
 object Caps {
   /** Protocol additions this Hands understands, so a Mind can check before relying on them. */
-  val FEATURES = listOf("open", "since", "compact", "then_screen", "fast", "target_id", "target_key", "locked", "caps")
+  val FEATURES = listOf("open", "since", "compact", "then_screen", "fast", "target_id", "target_key", "locked", "caps", "observe", "launch_fresh")
 
   /** "com.samsung.android.honeyboard/.service.HoneyBoardService" -> "com.samsung.android.honeyboard". */
   fun imePackage(id: String?): String? = id?.substringBefore('/')?.trim()?.ifEmpty { null }

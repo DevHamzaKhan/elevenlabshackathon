@@ -9,6 +9,8 @@
 - **Hands:** the Mind now sends v2 fields (`open`, `since`, `compact`, `image`, `then_screen`, `fast`, `caps`, `key`/`id` targets) and falls back when Hands doesn't support them (`PROTOCOL-V2.md`).
 - **Mouth:** a v2 Mouth (OpenAI Realtime) talks to the Mind with `request`/`confirm_reply`/...; a v1 Mouth keeps working.
 
+- **Teaching by showing (2026-11-26):** nothing new to install or permit. Taught skills are kept through the same `config.storage`, under a second key (`bobby-mind/skills/v1`; `mindStorage` maps it to a valid SecureStore key already). Optional env: `MIND_TEACH_MODEL`, `MIND_TEACH_EFFORT`, `MIND_TEACH_MODE`. It needs the Hands from this branch (`observe`); with an older Hands Bobby says he can't watch on this phone. See `TEACHING.md`.
+
 The v1 notes below still apply except where they mention the Anthropic SDK.
 
 **Ready to swap in.** The two bobby-mind items in `app/MERGE-ISSUES.md` (checked before the Mind landed) are resolved:

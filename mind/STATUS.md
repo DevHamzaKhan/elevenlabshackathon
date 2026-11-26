@@ -1,5 +1,14 @@
 # Mind: status (James C, 10x)
 
+## Teaching by showing (2026-11-26, branch `teach-by-showing`, rebased on main, in a pull request)
+James's request: "tell Tibby I'm teaching him a skill, show it on my phone, and have him remember it"; compare ways of doing it and build the best for reliability and speed. Touches Hands and Mouth as well as the Mind (at James C's request). Write-up and numbers: `TEACHING.md`. Wire additions: `PROTOCOL-V2.md`, "Teaching by showing".
+- **What was built.** Hands: `observe` (the accessibility service reports the user's taps, typing, scrolls and the settled screens between them as `observed` frames) and `launch` `fresh:true`. Mouth: a `teach` tool for the voice model. Mind: `src/teach.ts` (what the user says, the demo compiler, skills with slots, their store, local matching) and `src/script.ts` (replay in code: find each control again, act, check; close tips; scroll to find; restart the app at its first screen), wired into `brain.ts` (the lesson, the router's `teach` route, taught sub-goals: script → saved recipe → grounded executor with the demo as a guide).
+- **Compared** (`npm run teach:bench`, pretend phone at real speed, simulated latencies, 8 ways the app can differ from the day of the demo): coordinate macro 3/8; selector script with checks and code-only recovery 7/8, median 2.2 s, 0 model calls; model-guided every time 8/8, median 4.3 s, 1-3 calls; **hybrid (built as the default) 8/8, median 2.2 s**, 0 calls in 6 of 8, 1 router call when asked in other words, 2 executor calls when the flow itself changed.
+- **Seen working on a device.** `npm run teach:phone` on the Android 15 emulator, real injected touches in Google Contacts: Hands recorded the lesson (tap Create contact, type a first name, tap Save), the Mind learned "Add a contact" with a `name` slot, and "add a contact called X" then ran from the script in 4.6-6.4 s with zero model calls; exactly one new contact each time, checked in the phone's contacts database; five passes in a row. Those runs are what found the tip problem (a modal tip hides the whole app from accessibility), blank mid-transition reads, and a too-loose label match; all three are fixed and have tests.
+- **Checks.** `mind/check.sh` 91 tests after the rebase (15 new in `test/teach.test.ts`); Hands 154 unit tests (8 new) and `assembleDebug`; `mouth/check.sh` all green (1 new test, Mind integration 19/19).
+- **Final app.** `app/check.sh --build-only` passes: type check, tests, release APK with the new Hands, Mind and Mouth (`app/android/app/build/outputs/apk/release/app-release.apk`). It needed two fixes that had nothing to do with teaching and were already broken on this branch: `app/metro.config.js` (release bundling died with "getPackageForModule is not a function" at the Mouth's WebRTC import; the same error with the pre-teaching sources) and `app/check.sh` (its test-summary grep didn't know Node 26's format). The APK has not been installed on anything.
+- **Not done.** No run with a real voice session or the real teach/router models (no `OPENAI_API_KEY` here), and nothing on the S21.
+
 ## v2 rebuild on OpenAI (2026-11-24, worktree branch, not pushed)
 Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 grounded multi-action executor, M5 escalation, M6 voice front end (Mouth), M7 recipes, M8 caller, M9 voice comparison.
 - M1 done: `src/model.ts` is an OpenAI Responses API client over plain fetch (no SDK), strict JSON-schema outputs, developer-message prefix for implicit prompt caching (`prompt_cache_key` per role), per-role model + reasoning effort from env (`MIND_ROUTER_MODEL`/`MIND_EXEC_MODEL`/`MIND_ESCALATE_MODEL`, `MIND_*_EFFORT`), image input for escalation, one retry on 429/5xx/timeout. `@anthropic-ai/sdk` removed. `test/model.test.ts` (fake fetch).
@@ -38,20 +47,25 @@ Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 
 - Backing up Stage: extras 1 (hints for six apps), 2 (app icon), 3 (README draft + architecture diagram), 5 (cursor preview) and two experiments (voice-cursor timing strip, record button) done. Details in `stage/STATUS.md`.
 
 ## Doing now
-- v2 rebuild (M1-M9) is committed on the worktree branch, not pushed; `check.sh` (74 tests) and `npm run story:sim` (7/7) pass. Waiting on an `OPENAI_API_KEY` for real runs.
+- Teaching by showing is built, on branch `teach-by-showing` (rebased on main after pull request #3) and up as a pull request against `main`. Everything that needs no person is done; what's left needs a key, a voice or the phone. The emulator lesson was last run before the rebase: another session had put its own Hands build on the emulator, so it was not re-run after.
 
 ## Open
+00. Teaching, with a key: `npm run teach:phone -- --real` (real teach model: does it name the skill sensibly and pick the right slot from "I'll type test test"?), then by voice in the final app. Then on the S21: apps built with Compose, Flutter or React Native (do their clicks reach the recorder with a usable node?) and Samsung's keyboard.
 0. v2 with real models: run `npm run story` (real OpenAI) and tune the router/executor prompts on its logs; then on the phone with the v2 Hands (open intents, then_screen, keys). Check the contract questions in `PROTOCOL-V2.md`.
 1. Tune against Hamza's real Hands hub once the phone build is up (real screens have many more nodes and real labels). Needs the phone, so it waits for stitching day.
 2. Stage extra 4: fix hints from `hands/HINTS-CHECK.md` once Hands writes it (it doesn't exist yet).
 3. Optional Stage experiments not done: phone-shaped cursor panel, sound effects, hints for more apps.
 
 ## Needs the human
+- **Install the rebuilt final app on the phone** so it gets the Hands that can observe: with the phone on USB, `JAVA_HOME=/opt/homebrew/opt/openjdk@17 app/check.sh` (builds, installs, grants, pushes the config). Until then Bobby answers a lesson with "I can't watch what you do on this phone yet".
 - **Add `OPENAI_API_KEY` to the root `.env`** (the Mind now runs on OpenAI; `ANTHROPIC_API_KEY` is no longer read). Nothing real has been called yet: every v2 check runs against fakes.
 - Root `.env` has `ANTHROPIC_API_KEY` (now unused), `CONTACTS` and `HUB_TOKEN`. For the email shortcut to fill the To field, give contacts an email: `Hamza=+1...|hamza@example.com`.
 - Your working copy of `env/mind.env` (a committed template) holds your real API key. It is not committed; please clear it there and keep the key only in the root `.env`, so nobody `git add`s it by accident.
 
 ## Try it yourself
+- Teaching, no key or phone: `cd mind && npm run teach:bench` (the comparison table, about a minute).
+- Teaching on the emulator or a phone on USB, no key: install the Hands test app (`hands/check.sh`), then `cd mind && npm run teach:phone -- --name Zed`. It leaves two contacts ("Testy", "Zed") on the device.
+- Teaching by voice, in the final app, once it is rebuilt and has a key: double-press, "I'm going to show you how to add a new project, I'll type test test", do it, double-press, "done". Then: "add a project called Apollo". "Forget how to add a project" removes it.
 - `cd mind && npm ci && npm run story:sim` (about 35 s, no key: simulated latencies, prints the timing table). With a key: `npm run story`.
 - `npm run story -- --flaky --flaky-rate 0.35 --only email` to watch it recover from failed taps and pop-ups.
 - By hand: `npm run hub`, `npm run mind`, `npm run caller`, `npm run mouth` in four terminals, then type to the mouth.
@@ -76,6 +90,18 @@ Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 
 8. **Small things.** "Bye" gives Bobby 2.5 s to answer before `sleep`. Request ids carry a random session part, so a late reply to an old Mind can't match a new request. The system prompt uses the 1-hour cache life.
 
 ## Decisions
+- Teaching: **hybrid** (script first, the guided executor when it can't go on) over a coordinate macro, a script alone, or the model every time, on the bench numbers in `TEACHING.md`: the script's speed where it holds, the model's reach where it doesn't.
+- The demo is read from **accessibility events**, not a screen recording or raw touches: no extra consent, every tap arrives with the control it hit, and it is exactly what the replay acts through. Cost: what accessibility can't see can't be taught.
+- The compiler is **code**; the model is asked once per lesson only for what code can't know (a name, trigger words, which values were examples). A skill still gets saved if that call fails.
+- A taught skill is a **shortcut** (`skill.<name>`), so the existing local matcher, router catalogue, queue, confirmations and recipes all apply to it unchanged. Its local match is deliberately strict (every trigger group hit, no unknown word, "called X" for the slot): a wrong instant match is worse than a 700 ms router call.
+- Controls are found again **in the Mind** on the screen it already holds (id and label must agree; position only breaks ties; never a guess), then tapped by key: Hands has no "id and label" target, and the Mind already has the screen from the previous act.
+- Checks prefer **what the user typed** over any other new label, and "done" compares the end of the demo with its start, not just the last tap: a list that was there all along must not count as "the new project is in the list". (Found by a test where the executor closed a sheet and the task was called done.)
+- Tips: closed when they are in the way; only "Close", "Got it", "Not now", "Skip" and the like count as a way out, never "OK", "Cancel" or "Allow", which are decisions.
+- A taught sub-goal is never skipped as "already done", and its executor fallback must act before the screen can count as finished.
+- When the first control isn't on screen the app is **restarted at its first screen** (`fresh`) rather than driven back by the model: a second or so, deterministic. The cost is that anything unsaved in that app is lost; it only happens for an app the user taught a skill in, when it isn't where the demo began.
+- Skills are stored under their own key (`bobby-mind/skills/v1`), apart from recipes and facts, so recipe churn can't lose them; 40 at most.
+- "stop" during a lesson means stop watching and save; "never mind" / "cancel" drops it.
+- Every Hands act is now logged (`mind: act tap {...} -> ok in 870 ms, then Contacts with 16 nodes`): on a real phone it is the only record of what was done.
 - v2 models (developers.openai.com/api/docs/models, 2026-11-24): router and executor `gpt-6-luna` ("our most efficient model", $0.10/$0.50 per 1M, cached input $0.01, image input, structured outputs, prompt caching, effort `none`..`max`; the latency guide names it for routing-type tasks). Router at effort `none` (classification + slot filling), executor at `low` (grounded on a text tree, a few actions). Escalation `gpt-6.1-terra` ("visual reasoning, precise computer use", $1/$5) at `medium`. `gpt-6.2-sol` is the alternative for escalation via `MIND_ESCALATE_MODEL` if Terra struggles. All ids in env.
 - Responses API over plain fetch, not the SDK: nothing to shim in React Native, one small file. Non-streaming: React Native's fetch doesn't stream bodies, and first-action latency is attacked instead by the local shortcut match (0 calls), batching (4 actions per call) and recipes (0 exec calls).
 - Prompt caching: the static instructions go first as a developer message (the implicit breakpoint lands after them), one `prompt_cache_key` per role, effort fixed per role so the prefix never changes.
@@ -104,6 +130,7 @@ Milestones from James's brief: M1 model layer, M2 shortcuts, M3 queue+goals, M4 
 - Kept the official SDK (the brief asks for it) even though its circular imports need a dev-build shim in Expo; the shim is documented in MERGE.md and isn't needed in release builds.
 
 ## Contract questions
+- Teaching adds `teach` (Mouth → Mind), `observe` / `observe_result` / `observed` (Mind ↔ Hands) and `fresh` on `launch`; documented in `PROTOCOL-V2.md`, question 5 there.
 - Hands sends an extra `hint` field on nodes (an empty field's placeholder). The Mind now reads it. Worth adding to the contract's `screen_result` so the other parts know.
 - Hang-up: now sent as `{"type":"hangup","to":"caller","re":"m9"}` and handled by the v2 Caller. Please add it to the contract.
 - v2 messages (Mouth and Caller) and the Hands additions the Mind relies on are in `mind/PROTOCOL-V2.md`, with four open questions at the end.
