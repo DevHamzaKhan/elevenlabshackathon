@@ -96,3 +96,17 @@ test("hangup {re} ends a dry-run call in progress with exactly one call_result (
   c.stop();
   wss.close();
 });
+
+test("a WebSocket constructor that throws is retried, not thrown", async () => {
+  let tries = 0;
+  class Boom {
+    constructor() {
+      tries++;
+      throw new Error("bad url");
+    }
+  }
+  const hub = connectHub({ hubUrl: "ws://x", token: "t", role: "mouth", log: () => {}, onMessage: () => {}, WebSocketImpl: Boom as any, delays: [5] });
+  await new Promise((r) => setTimeout(r, 40));
+  hub.stop();
+  assert.ok(tries >= 2, `retried (${tries} tries)`);
+});

@@ -51,7 +51,15 @@ export function connectHub(o: HubOptions): Hub {
   const open = () => {
     if (state === "stopped" || state === "replaced") return;
     setState("connecting");
-    const sock = new WS(url);
+    let sock: WebSocketLike;
+    try {
+      sock = new WS(url);
+    } catch (e) {
+      o.log(`hub connect error: ${String(e)}`);
+      setState("disconnected");
+      timer = setTimeout(open, delays[Math.min(attempt++, delays.length - 1)]);
+      return;
+    }
     ws = sock;
     sock.onopen = () => sock.send(JSON.stringify({ type: "hello", role: o.role, v: 1 }));
     sock.onmessage = (ev) => {
