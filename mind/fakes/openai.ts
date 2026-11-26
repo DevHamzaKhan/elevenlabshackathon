@@ -34,7 +34,8 @@ export function fakeOpenAI(opts: { latency?: Partial<Record<string, number>> } =
       json = r(user, body);
       if (json) break;
     }
-    if (!json) json = role === "route" ? route(user) : role === "escalate" ? escalate(user, images) : role === "check" ? check(user) : exec(user);
+    const system = String(body?.input?.[0]?.content?.[0]?.text ?? "");
+    if (!json) json = role === "route" ? route(user, system) : role === "escalate" ? escalate(user, images) : role === "check" ? check(user) : role === "teach" ? teach(user) : exec(user);
     const text = JSON.stringify(json);
     const out = {
       status: "completed",
@@ -58,7 +59,7 @@ export function fakeOpenAI(opts: { latency?: Partial<Record<string, number>> } =
 
 // ---------- router ----------
 
-const NONE = { whisper: "", say: "", cancel_scope: "", tasks: [] as any[] };
+const NONE = { whisper: "", teach: "", say: "", cancel_scope: "", tasks: [] as any[] };
 const dw = (o: Partial<{ app: string; text_present: string; text_absent: string; describe: string }>) => ({ app: "", text_present: "", text_absent: "", describe: "", ...o });
 
 export function replyToSarahTask(n: string) {
@@ -78,9 +79,25 @@ export function replyToSarahTask(n: string) {
   };
 }
 
-function route(user: string): any {
+/** Skills the user taught, read from the catalogue in the router's instructions. */
+function taughtSkills(system: string): { id: string; words: string[]; slots: string[] }[] {
+  return [...system.matchAll(/^- (skill\.[\w-]+): (.*?) Slots: (.*)\.$/gm)].map((m) => ({
+    id: m[1],
+    words: m[2].toLowerCase().replace(/[^a-z ]+/g, " ").split(/\s+/).filter((w) => w.length > 3 && !["taught", "user", "this", "that", "with"].includes(w)),
+    slots: m[3].split(";").map((s) => s.trim().split(/[?\s]/)[0]).filter(Boolean),
+  }));
+}
+
+function route(user: string, system = ""): any {
   const heard = (/The user just said: "([\s\S]*?)"\n/.exec(user)?.[1] ?? "").trim();
   const h = heard.toLowerCase();
+  if (/\b(show|teach)(ing)? you\b/.test(h)) return { ...NONE, route: "teach", teach: (/how to ([^.]+)/.exec(h)?.[1] ?? "").trim() };
+  for (const s of taughtSkills(system)) {
+    const said = h.replace(/[^a-z ]+/g, " ").split(/\s+/).map((w) => w.replace(/s$/, ""));
+    if (!s.words.some((w) => said.includes(w.replace(/s$/, "")))) continue;
+    const value = ((/\b(?:called|named|titled)\s+(.+)$/i.exec(heard) ?? /\bfor\s+(.+)$/i.exec(heard))?.[1] ?? "").replace(/[.!?]+$/, "").trim();
+    return { ...NONE, route: "tasks", say: "On it.", tasks: [{ title: "Taught skill", goal: heard, done_say: "", shortcut_id: s.id, slots: s.slots.slice(0, 1).map((name) => ({ name, value })), app: "", subgoals: [] }] };
+  }
   if (h.startsWith("change the running task:")) {
     const n = /\b(\d{1,2})\b/.exec(h)?.[1] ?? "3";
     return { ...NONE, route: "amend", say: "Got it, changing it.", tasks: [replyToSarahTask(n)] };
@@ -152,12 +169,58 @@ const X = { app: "", text_present: "", text_absent: "", field_label: "", field_v
 export const action = (o: any) => ({ do: "tap", n: -1, target_text: "", text: "", dir: "", key: "", app: "", ms: -1, irreversible: false, ...o, expect: { ...X, ...(o.expect ?? {}) } });
 export const actReply = (actions: any[], say = "", note = "") => ({ status: "act", say, note, actions });
 
+/**
+ * A sub-goal that carries the steps the user once showed. The pretend model does what a real one
+ * is asked to: get to where the steps start (close a sheet, go back, scroll), then follow them,
+ * matching a renamed control by what it obviously is, and batching what it can predict.
+ */
+function followGuide(user: string, nodes: N[]): any | null {
+  const block = /How the user showed this[^\n]*\n((?:\d+\. .*\n?)+)/.exec(user)?.[1];
+  if (!block) return null;
+  const steps = block.trim().split("\n").map((l) => l.replace(/^\d+\.\s*/, "").trim());
+  const tried = /Tried so far[^\n]*\n((?:- .*\n?)+)/.exec(user)?.[1] ?? "";
+  const done = (s: string) => tried.split("\n").some((l) => l.startsWith(`- ${s} -> ok`));
+  const find = (re: RegExp) => nodes.find((x) => re.test(x.line));
+  const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const sheet = find(/^"(Got it|Not now|Dismiss|Skip)"/);
+  if (sheet) return actReply([action({ n: sheet.n })], "Closing that first.");
+  const todo = steps.filter((s) => !done(s));
+  if (todo.length === 0) return { status: "done", say: "", note: "", actions: [] };
+  const out: any[] = [];
+  for (const [i, s] of todo.slice(0, 3).entries()) {
+    const type = /^type "(.*)" into "(.*)"$/.exec(s);
+    const tap = /^(?:tap|long-press) "(.*)"$/.exec(s);
+    if (type) {
+      const field = find(new RegExp(`hint="${esc(type[2])}"|^"${esc(type[2])}"`));
+      if (i === 0 && !field) break;
+      out.push(action({ do: "type", ...(i === 0 ? { n: field!.n } : { target_text: type[2] }), text: type[1], expect: { text_present: type[1] } }));
+    } else if (tap) {
+      let node = find(new RegExp(`^"${esc(tap[1])}"`));
+      // The label changed: the button that is obviously the same thing.
+      const noun = tap[1].toLowerCase().split(/\s+/).pop() ?? "";
+      if (!node && noun.length > 3) node = find(new RegExp(`^"[^"]*${esc(noun)}[^"]*" \\(Button\\)`, "i"));
+      if (i === 0 && !node) break;
+      if (i > 0 && !node) out.push(action({ target_text: tap[1] }));
+      else out.push(action(i === 0 ? { n: node!.n } : { target_text: /^"([^"]*)"/.exec(node!.line)?.[1] ?? tap[1] }));
+    } else if (/^press (\w+)$/.test(s)) out.push(action({ do: "key", key: /^press (\w+)$/.exec(s)![1] }));
+  }
+  if (out.length) return actReply(out, "Doing it the way you showed me.");
+  // The first step isn't on this screen: go back if this is a sub-page, else look further down.
+  const up = find(/^"Navigate up"/);
+  if (up) return actReply([action({ n: up.n })], "Going back.");
+  if (find(/scroll/)) return actReply([action({ do: "swipe", dir: "up" })], "Looking for it.");
+  return null;
+}
+
 function exec(user: string): any {
   const goal = /^Sub-goal: (.*)$/m.exec(user)?.[1] ?? "";
   const app = /^App: (.*)$/m.exec(user)?.[1] ?? "";
   const nodes = nodesOf(user);
   const find = (re: RegExp) => nodes.find((x) => re.test(x.line));
   const quoted = /"([^"]+)"/.exec(goal)?.[1] ?? "";
+
+  const guided = followGuide(user, nodes);
+  if (guided) return guided;
 
   const notNow = find(/^"Not now"/);
   if (notNow) return actReply([action({ n: notNow.n, expect: { text_absent: "Update available" } })], "Closing a pop-up.");
@@ -224,4 +287,26 @@ function escalate(user: string, images: number): any {
 
 function check(user: string): any {
   return { done: /Ticket saved|Sent/.test(user), why: "checked the screen" };
+}
+
+// ---------- teach: naming a demonstrated skill and finding its slots ----------
+
+const FAKE_SYNONYMS = [["add", "create", "make", "new", "start"], ["delete", "remove"], ["open", "show"], ["send", "post"]];
+
+function teach(user: string): any {
+  const name = (/Skill name as heard: "(.*)"/.exec(user)?.[1] ?? "").replace("(none given)", "").trim();
+  const steps = [...user.matchAll(/^(\d+)\. (.*)$/gm)].map((m) => ({ n: Number(m[1]), text: m[2] }));
+  const typed = steps.map((s) => /^type "(.*)" into "(.*)"/.exec(s.text)).filter(Boolean) as RegExpExecArray[];
+  const title = (name || "do that").replace(/\b(a|an|the) new\b/, "$1");
+  const content = title.toLowerCase().split(/\s+/).filter((w) => !["a", "an", "the", "my", "new", "to"].includes(w));
+  return {
+    title: title.charAt(0).toUpperCase() + title.slice(1),
+    intent: `${title.charAt(0).toUpperCase() + title.slice(1)} in the ${/^Apps?: (\w+)/m.exec(user)?.[1] ?? "app"} app.`,
+    say: "Doing it the way you showed me.",
+    done_say: "Done, just like you showed me.",
+    keywords: content.slice(0, 3).map((w) => FAKE_SYNONYMS.find((g) => g.includes(w)) ?? [w.replace(/s$/, "")]),
+    slots: typed.map((t, i) => ({ name: i === 0 ? "name" : `text${i + 1}`, desc: /name/i.test(t[2]) ? `the ${content[content.length - 1] ?? "thing"}'s name` : t[2].toLowerCase(), example: t[1], required: true })),
+    irreversible: [],
+    drop: [],
+  };
 }

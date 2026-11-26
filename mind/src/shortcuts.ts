@@ -596,6 +596,14 @@ export class ShortcutIndex {
   get(id: string): Shortcut | undefined {
     return this.byId.get(id);
   }
+  /** Skills the user taught join the index at run time (teach.ts); the same id replaces. */
+  add(s: Shortcut) {
+    this.byId.delete(s.id);
+    this.byId.set(s.id, s);
+  }
+  remove(id: string) {
+    this.byId.delete(id);
+  }
   all(): Shortcut[] {
     return [...this.byId.values()];
   }
@@ -644,7 +652,7 @@ export class ShortcutIndex {
 /** "open Spotify, then text Alex I'm late, and then call Mom" -> three commands. */
 export function splitChain(text: string): string[] {
   return text
-    .replace(/^\s*(?:hey\s+)?bobby[,\s]+/i, "")
+    .replace(/^\s*(?:hey\s+)?(?:bobby|tibby)[,\s]+/i, "")
     .split(/\s*(?:,\s*)?\b(?:and then|then|after that|afterwards)\b[,\s]*/i)
     .map((s) => s.trim().replace(/^(?:and|also)\s+/i, "").replace(/[,.;]+$/, "").trim())
     .filter(Boolean);

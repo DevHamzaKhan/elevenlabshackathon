@@ -119,6 +119,12 @@ export function startFakeHub(opts: FakeHubOptions = {}): FakeHub {
     } else if (m.type === "caps") {
       const c = phone.caps();
       if (c) fromHands({ type: "caps_result", re: m.id, ...c });
+    } else if (m.type === "observe") {
+      const r = phone.observe(m.on !== false, fromHands);
+      if (r) {
+        log(`hub: observing the user ${m.on !== false ? "on" : `off (${r.count} frames)`}`);
+        fromHands({ type: "observe_result", re: m.id, ...r });
+      }
     } else if (m.type === "cursor") {
       log(`phone: cursor ${m.show ? "shown" : "hidden"}`);
     }

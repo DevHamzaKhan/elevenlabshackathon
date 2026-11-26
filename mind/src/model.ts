@@ -7,6 +7,7 @@
 //   exec     - grounded executor: screen + sub-goal -> a few actions        (MIND_EXEC_MODEL)
 //   escalate - screenshot + tree + history -> re-plan or actions            (MIND_ESCALATE_MODEL)
 //   check    - cheap yes/no "is this sub-goal done?" when code can't tell   (uses the exec model)
+//   teach    - once per demo: names a taught skill and finds its slots     (MIND_TEACH_MODEL, else escalate)
 
 import type { ModelFn, ModelReply, ModelRequest, ModelRole } from "./types";
 
@@ -21,13 +22,14 @@ export const DEFAULT_EFFORTS: Record<ModelRole, string> = {
   exec: "low",
   escalate: "medium",
   check: "none",
+  teach: "low",
 };
 export const OPENAI_BASE = "https://api.openai.com/v1";
 
 export type ModelOptions = {
   apiKey: string;
   /** Model id per role. Missing roles use DEFAULT_MODELS. */
-  models?: Partial<Record<"router" | "exec" | "escalate", string>>;
+  models?: Partial<Record<"router" | "exec" | "escalate" | "teach", string>>;
   /** Reasoning effort per role ("none", "low", "medium", ...). Missing roles use DEFAULT_EFFORTS. */
   efforts?: Partial<Record<ModelRole, string>>;
   log: (line: string) => void;
@@ -47,12 +49,14 @@ export function modelOptionsFromEnv(env: Record<string, string | undefined>): Om
       router: pick("MIND_ROUTER_MODEL"),
       exec: pick("MIND_EXEC_MODEL"),
       escalate: pick("MIND_ESCALATE_MODEL"),
+      teach: pick("MIND_TEACH_MODEL"),
     },
     efforts: {
       router: pick("MIND_ROUTER_EFFORT"),
       exec: pick("MIND_EXEC_EFFORT"),
       escalate: pick("MIND_ESCALATE_EFFORT"),
       check: pick("MIND_CHECK_EFFORT"),
+      teach: pick("MIND_TEACH_EFFORT"),
     },
     baseUrl: pick("MIND_OPENAI_BASE_URL"),
   };
@@ -66,13 +70,13 @@ export function roleOf(req: ModelRequest): ModelRole {
 export function makeModel(opts: ModelOptions): ModelFn {
   const doFetch = opts.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
   const base = (opts.baseUrl || OPENAI_BASE).replace(/\/+$/, "");
-  const models = { ...DEFAULT_MODELS, ...stripUndef(opts.models ?? {}) };
+  const models: Record<"router" | "exec" | "escalate", string> & { teach?: string } = { ...DEFAULT_MODELS, ...stripUndef(opts.models ?? {}) };
   const efforts = { ...DEFAULT_EFFORTS, ...stripUndef(opts.efforts ?? {}) };
   const retries = opts.retries ?? 1;
 
   return async (req: ModelRequest): Promise<ModelReply> => {
     const role = roleOf(req);
-    const model = role === "check" ? models.exec : models[role];
+    const model = role === "check" ? models.exec : role === "teach" ? models.teach || models.escalate : models[role];
     const effort = req.effort ?? efforts[role];
     const t0 = Date.now();
     const userContent: any[] = [{ type: "input_text", text: req.user }];

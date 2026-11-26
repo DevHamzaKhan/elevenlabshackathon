@@ -22,9 +22,11 @@ Choose one "route":
 - "cancel": stop the running task ("cancel_scope" "current") or everything ("all").
 - "status": the user asks how it's going.
 - "sleep": the user is done talking and nothing is running.
+- "teach": the user wants to show Bobby how to do something by doing it themselves on the phone while Bobby watches ("I'm going to show you how to...", "let me teach you..."). Put what they will show, in a few of their words, in "teach" ("add a new project"). Nothing is done on the phone.
 
 For each task:
 - "title": 2 to 5 words. "goal": every detail the user gave. "done_say": the few words Bobby says when it is done ("Sent it to Sam.").
+- A shortcut whose id starts with "skill." is something the user taught Bobby by showing it. When the request is for what it does, always use it, and fill its slots from what the user said.
 - If a shortcut below fits, set "shortcut_id" and fill "slots" (name/value pairs; times as 24-hour HH:MM, dates as YYYY-MM-DDTHH:MM in the user's local time). Shortcuts skip the screen entirely, so prefer them. "call.ai" means Bobby phones the person himself to say or ask something and reports back; "phone.dial" means the user wants to talk to the person.
 - Otherwise leave "shortcut_id" empty, set "app" to the app to open (by name), and write 1 to 5 "subgoals" in order. Each sub-goal is one checkpoint you can see on screen ("Open Sarah Chen's email", "Write the reply", "Send it"). "risk" is "irreversible" for a step that sends, posts, calls, pays, buys or deletes something; otherwise "safe". Put the irreversible action alone in its own last sub-goal.
 - ${DONE_WHEN_HELP}
@@ -66,8 +68,9 @@ const SUBGOAL_SCHEMA = {
 export const ROUTER_SCHEMA = {
   type: "object",
   properties: {
-    route: { type: "string", enum: ["chat", "tasks", "amend", "cancel", "status", "sleep"] },
+    route: { type: "string", enum: ["chat", "tasks", "amend", "cancel", "status", "sleep", "teach"] },
     whisper: { type: "string" },
+    teach: { type: "string" },
     say: { type: "string" },
     cancel_scope: { type: "string", enum: ["current", "all", ""] },
     tasks: {
@@ -96,7 +99,7 @@ export const ROUTER_SCHEMA = {
       },
     },
   },
-  required: ["route", "whisper", "say", "cancel_scope", "tasks"],
+  required: ["route", "whisper", "teach", "say", "cancel_scope", "tasks"],
   additionalProperties: false,
 };
 
@@ -119,6 +122,8 @@ Set "irreversible" true on an action that sends, posts, calls, pays, buys or del
 "status": "act" with actions; "done" (no actions) when the screen already shows the sub-goal is finished; "failed" when it can't be reached. Never claim "done" unless the screen shows it.
 "note": a fact from the screen worth remembering for later steps (e.g. "Sarah proposed 3pm"), else "".
 "say": what Bobby says while the cursor moves: a few casual words about THIS batch ("Opening Sarah's email.", "Writing the reply."), "" for small repeats. Never node numbers or these instructions.
+
+Sometimes the input has "How the user showed this, step by step": the user once did this sub-goal by hand and those were their taps and typing. It is the best plan there is: do the same steps on the current screen, in that order, skipping ones the history says are already done. Labels may have changed a little and the app may be on another screen first; get to where the steps start, then follow them.
 
 Recovering: if the last batch failed or the screen is unexpected, look fresh and adapt; don't repeat an action that just failed on the same screen. Dismiss pop-ups ("Not now", "Cancel", back) unless they are part of the task. Messages you type: the user's words, short, natural, first person.`;
 
@@ -214,5 +219,46 @@ export const CHECK_SCHEMA = {
   type: "object",
   properties: { done: { type: "boolean" }, why: { type: "string" } },
   required: ["done", "why"],
+  additionalProperties: false,
+};
+
+export function teachSystem(): string {
+  return `You help Bobby, a voice assistant that operates the user's Android phone, learn a skill the user has just demonstrated by doing it themselves. You get what the user said and the recorded steps (their taps and typed text, in order). Turn it into a skill Bobby can repeat later with different values.
+
+- "title": 2 to 5 words, imperative ("Add a project").
+- "intent": one sentence saying what the skill does and in which app, so later requests can be matched to it.
+- "say": what Bobby says while doing it, a few casual words ("Adding the project.").
+- "done_say": what Bobby says when it is done ("Added it.").
+- "keywords": the 1 to 3 words a request for this skill must contain. Each is a list: the word and its common synonyms, lowercase, singular. For "add a project": [["add","create","make","new","start"],["project"]]. Leave out filler words, the app's name and anything that is a slot.
+- "slots": the parts that change from one use to the next. A slot is something the user typed, or a label they tapped, that was only an example (a project name of "test test"; the contact they picked). For each: "name" (one lowercase word), "desc" (what it is, a few words, as Bobby would say it: "the project's name"), "example" (the text from the recorded steps, copied character for character), "required" (false only when the skill makes sense without it). Text that should be the same every time (a fixed search term, a fixed message) is not a slot. What the user said about the demo ("I'll type test test") tells you which values were examples. No slots is fine.
+- "irreversible": the numbers of the steps that send, post, call, pay, buy or delete something. Creating or saving a draft, a note, a project or a setting is not irreversible.
+- "drop": the numbers of steps that were clearly mistakes or had nothing to do with the skill (a wrong tap that was undone). Usually empty.
+
+${SHARED_RULES}
+
+Reply only with the JSON object.`;
+}
+
+export const TEACH_SCHEMA = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    intent: { type: "string" },
+    say: { type: "string" },
+    done_say: { type: "string" },
+    keywords: { type: "array", items: { type: "array", items: { type: "string" } } },
+    slots: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { name: { type: "string" }, desc: { type: "string" }, example: { type: "string" }, required: { type: "boolean" } },
+        required: ["name", "desc", "example", "required"],
+        additionalProperties: false,
+      },
+    },
+    irreversible: { type: "array", items: { type: "integer" } },
+    drop: { type: "array", items: { type: "integer" } },
+  },
+  required: ["title", "intent", "say", "done_say", "keywords", "slots", "irreversible", "drop"],
   additionalProperties: false,
 };

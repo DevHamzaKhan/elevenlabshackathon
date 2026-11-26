@@ -38,14 +38,16 @@ export type SubgoalRun = {
   confirmed: boolean;
   /** Most actions for this sub-goal. */
   budget: number;
+  /** A taught sub-goal nothing has been done for yet: the screen can't already show it finished. */
+  mustAct?: boolean;
 };
 
 export type SubgoalResult =
-  | { ok: true; trace: TraceStep[]; how: "already" | "direct" | "grounded" | "recipe" }
+  | { ok: true; trace: TraceStep[]; how: "already" | "direct" | "grounded" | "recipe" | "script" }
   | { ok: false; cancelled?: boolean; reason: string; say: string; replan?: SubgoalSpec[]; degrade?: boolean };
 
 const MAX_BATCH = 4;
-const IRREVERSIBLE_LABEL = /^\s*(send|send sms|send message|post|publish|pay|buy|purchase|place order|delete|remove|call|submit|confirm purchase)\b/i;
+export const IRREVERSIBLE_LABEL = /^\s*(send|send sms|send message|post|publish|pay|buy|purchase|place order|delete|remove|call|submit|confirm purchase)\b/i;
 
 export class Executor {
   constructor(private d: ExecDeps) {}
@@ -113,7 +115,7 @@ export class Executor {
       }
       if (screen.locked) return { ok: false, reason: "locked", say: "Your phone is locked, so I can't do that. Unlock it and ask me again." };
       const doneWhy = checkScreen(spec.done_when, screen);
-      if (doneWhy === null) return { ok: true, trace, how: "grounded" };
+      if (doneWhy === null && !(run.mustAct && steps === 0)) return { ok: true, trace, how: "grounded" };
 
       const stuck = mismatches >= 2 || unreadableNow(screen);
       let reply: any = null;
@@ -241,6 +243,7 @@ export class Executor {
     const checks = [dw.app && `app ${dw.app} in front`, dw.text_present?.length && `"${dw.text_present.join('" or "')}" visible`, dw.text_absent?.length && `"${dw.text_absent.join('", "')}" gone`].filter(Boolean);
     lines.push(`Done when: ${dw.describe}${checks.length ? ` (${checks.join(", ")})` : ""}`);
     if (run.spec.risk === "irreversible") lines.push(run.confirmed ? "This sub-goal is the irreversible step; the user has confirmed it." : "This sub-goal is irreversible.");
+    if (run.spec.guide) lines.push(`How the user showed this, step by step (do the same where the screen allows; adapt when it differs):\n${run.spec.guide}`);
     if (run.scratch.length) lines.push(`Notes from earlier steps:\n${run.scratch.slice(-6).map((s) => `- ${s}`).join("\n")}`);
     if (history.length) {
       const start = Math.max(0, history.length - 8);
