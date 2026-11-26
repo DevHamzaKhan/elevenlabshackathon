@@ -128,3 +128,5 @@ Hands.clearOpenedFromNotification();
 - Laptop tools for the final app need its token: `HUB_TOKEN` in the root `.env`
   (`app/tools/push-config.mjs` adds it), then `node hands/tools/drive.mjs`.
 - The release build bundles the JS (no Metro); the hub and accessibility service never need JS.
+- Teaching by showing (`observe`) needs no new permission, manifest entry or accessibility XML
+  change: the extra event types are switched on at run time, only while a lesson is being watched.

@@ -641,7 +641,9 @@ export class ShortcutIndex {
   }
   matchOne(text: string, ctx: ShortcutCtx): LocalMatch | null {
     const t = text.trim().replace(/[.!]+$/, "");
-    for (const s of this.byId.values()) {
+    // What the user taught comes first: its match is strict, and it is their own way of doing it.
+    const all = [...this.byId.values()];
+    for (const s of [...all.filter((x) => x.id.startsWith("skill.")), ...all.filter((x) => !x.id.startsWith("skill."))]) {
       const m = s.match?.(t, ctx);
       if (m) return m;
     }

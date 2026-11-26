@@ -30,7 +30,7 @@ type Item =
   | { kind: "line"; text: string };
 
 /** Bobby's tools (protocol v2), announced in `voice_caps`. */
-export const V2_TOOLS = ["request", "amend", "cancel", "confirm", "status"];
+export const V2_TOOLS = ["request", "amend", "cancel", "confirm", "status", "teach"];
 
 export class Mouth {
   private state: State = "asleep";
@@ -249,6 +249,14 @@ export class Mouth {
         this.statusCalls.set(id, { callId, timer });
         this.d.send({ type: "status", id });
         return;
+      }
+      case "teach": {
+        // Teaching by showing (mind/PROTOCOL-V2.md): the Mind has Hands watch what the user does.
+        const action = args.action === "done" || args.action === "cancel" ? args.action : "start";
+        this.d.send({ type: "teach", action, ...(text ? { text } : {}), heard: this.lastHeard });
+        if (action === "start") return reply({ accepted: true, note: "Say 'Okay, show me. Tell me when you're done.' Then say nothing while they do it." }, true);
+        if (action === "done") return reply({ accepted: true, note: "Say 'Got it.' and nothing more. What was learned comes as an UPDATE." }, true);
+        return reply({ accepted: true, note: "Say you've dropped it." }, true);
       }
       default:
         return reply({ error: `unknown tool ${name}` }, false);

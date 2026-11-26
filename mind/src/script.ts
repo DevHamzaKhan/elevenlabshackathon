@@ -24,6 +24,8 @@ export type ScriptOutcome = SubgoalResult & {
 };
 
 const MAX_SEEK = 6;
+/** With no scroll in the demo: how far down to look anyway before giving up (lists grow). */
+const MAX_LOOK = 3;
 const SETTLE_TRIES = 3;
 const SETTLE_MS = 400;
 const FOLD = " · ";
@@ -121,6 +123,11 @@ export function overlayExit(screen: { [k: string]: any } | null): ScreenNode | n
   return exits.length === 1 ? exits[0] : null;
 }
 
+function canScroll(screen: { [k: string]: any } | null): boolean {
+  const nodes: any[] = Array.isArray(screen?.nodes) ? screen!.nodes : [];
+  return nodes.some((n) => n.scroll && (!Array.isArray(n.scrollDirs) || n.scrollDirs.length === 0 || n.scrollDirs.includes("down")));
+}
+
 /** A screen caught between two pages: nothing on it has a label. Never something to check against. */
 export function blank(screen: { [k: string]: any } | null): boolean {
   const nodes: any[] = Array.isArray(screen?.nodes) ? screen!.nodes : [];
@@ -163,10 +170,13 @@ export async function runScript(
     else if (step.want) {
       const want: Want = mapStrings(step.want, (s) => fill(s, slots));
       let node = locate(screen, want);
-      if (!node && step.seek) {
-        const dirs = step.seek === "any" ? ["up", "down"] : [step.seek];
+      if (!node && !step.optional && !overlayExit(screen) && (step.seek || canScroll(screen))) {
+        // The way the user scrolled to reach it; or, when they didn't have to, a look further down:
+        // a list that has grown since the demo pushes its last rows and buttons off the screen.
+        const dirs = !step.seek ? ["up"] : step.seek === "any" ? ["up", "down"] : [step.seek];
+        const most = step.seek ? MAX_SEEK : MAX_LOOK;
         seek: for (const dir of dirs) {
-          for (let k = 0; k < MAX_SEEK; k++) {
+          for (let k = 0; k < most; k++) {
             const before = screen?.hash;
             const r = await d.act({ do: "swipe", dir }, { fast: true });
             if (!r.ok) break;

@@ -28,6 +28,8 @@
 - Core 2: `agent/setup.mjs` + `agent/bobby-prompt.md`: creates/updates the public "Bobby" agent, tries Realtime (`MOUTH_REALTIME_MODEL`, default `eleven_realtime_v1_mini`) and falls back to the standard mode, writes the id to `.env` and `example/.env`. Dry run checked; **not yet run for real: no API key** (see Needs the human).
 - Core 1: pretend hub `fakes/hub.mjs` (say, whisper, correct, hush, sleep, call, plus test-only `user`, `wait`, `expect`, `mark`). Smoke-tested from Node.
 
+- **`teach` tool (James C's AI, at James C's request, 2026-11-26):** the Realtime voice model gets `teach(action: start|done|cancel, text)` and a paragraph on when to use it ("I'm going to show you how to…"); the Mouth sends `{"type":"teach",action,text,heard}` and lists `teach` in `voice_caps.tools`. One new test; `check.sh` passes (unit tests, type check, Mind integration 19/19, test app build). Not yet heard with a real voice session (needs `OPENAI_API_KEY`); if the voice model calls `request` instead, the Mind recognises the sentence itself. The ElevenLabs (v1) path needs no change: the Mind reads `heard`.
+
 ## Doing now
 - Core is done. Stopped (1x budget). Extras are open to Hamza.
 

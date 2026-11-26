@@ -15,6 +15,8 @@
 - **Protocol additions (2026-11-24, for James C's Mind rewrite; README "Protocol additions"):** `caps`; `do:"open"` intents (mailto/sms SENDTO, tel DIAL, else VIEW; CALL becomes DIAL); `launch` label ranking (exact > prefix > word prefix > contains, launcher-visible on ties) and `app` in act_result; fresh `{n}` (`why:"stale"`) and accessibility-click fallback when a gesture is cancelled; `{id}`/`{key}` targets; node folding, `checked`/`disabled`/`focused`/`selected`/`password`/`id`/`key`/`scrollDirs`; `hash`, `since` (`same:true`), `compact`, `then_screen`, `fast`; event-driven settle (Settler: lock/condition, 400/150/2000 ms) plus a two-reads-agree check after window changes; secure lock → `locked:true` screen and `no_permission`/`locked` acts; screenshot hides the overlay, retries once on rate limit, `image_error:"secure"`; keep-alive wake lock renewed every 25 min; keyboard hidden with the soft-keyboard controller before Back; WebView by class; cover rule tolerant of taskbars/split screen. Checked on the `bobby_api35` emulator: `check.sh` PASS (146 unit tests, hub-test 14/14 on the device), `tools/v2.txt` and `tools/v2-emu.txt` pass (Maps/Chrome/Gmail opened by intent, stale tap, launch ranking, then_screen equals the next read, key stable across sessions, PIN lock reported, swipe lock still cleared, cursor absent from `image`).
 - Mouth backup: Extras 2 (real Caller), 3 (rest of `setup.mjs`), 7 (remaining tests) done and pushed in `mouth/`, all against stubs (no keys here).
 
+- **Teaching by showing (James C's AI, at James C's request, 2026-11-26):** `observe` on/off and the `observed` stream (`Observe.kt`: `Recorder`, plain Kotlin, 8 unit tests in `ObserveTest`; glue in `HandsService`: event types added at run time, a debounced settled-screen reader on its own thread, auto-stop after 10 min and on shutdown), `launch` with `fresh:true`, and `observe` / `launch_fresh` in `caps_result.features`. Checked on the `bobby_api35` emulator (Android 15) with real injected touches in Google Contacts: clicks and text changes arrive after the run-time `setServiceInfo`, match their nodes (id, key, label), typing comes out as one frame, and the Mind's replay of the learned steps saved a new contact five runs in a row (`cd mind && npm run teach:phone`). 154 unit tests pass; `assembleDebug` builds.
+
 ## Doing now
 - Nothing that doesn't need a person: see Needs the human.
 
@@ -22,7 +24,8 @@
 1. With keys: run the real Mind + Mouth on the phone end to end (wake, notifications, Gmail reply by voice).
 2. Mouth Extras 4, 5, 6 (need the phone + keys + a person); Extra 1 claimed by Wajeeh.
 3. Protocol additions, still to see on the S21 (only the emulator so far): `tools/v2.txt` and `tools/v2-emu.txt` (adjust app names), Samsung's `navigation_mode`/`gestureNav`, One UI transition timing with the new settle, the keyboard-controller hide (no emulator app put a target under the keyboard), the click fallback after a cancelled gesture, and `open mailto:` into a signed-in Gmail (opens a compose screen only; nothing is sent).
-4. Then-keep-going leftovers: open a chat in Messages/WhatsApp to check field/send labels (would need a real conversation; reading only).
+4. Observing on the S21 (emulator only so far): One UI apps and Samsung's keyboard (its package must be the one in `Settings.Secure.DEFAULT_INPUT_METHOD`, or key taps would be reported), Compose/Flutter/React Native apps (do their clicks carry a source node?), and scroll deltas from Samsung lists.
+5. Then-keep-going leftovers: open a chat in Messages/WhatsApp to check field/send labels (would need a real conversation; reading only).
 
 ## Needs the human
 0. **`ANTHROPIC_API_KEY` in the root `.env` is invalid** (the API answers 401). Get a working key from James C, put it in `.env`, then `node app/tools/push-config.mjs`. Until then the Mind can't answer, and a woken session doesn't go back to sleep by itself (force-stop the app, then `hands/tools/grant.sh dev.bobby.app`).
@@ -54,6 +57,10 @@
 - The 150 ms quiet window ends mid-transition (slide-in animations send no accessibility events), so acts that changed a window, and launch/open, also wait until two reads 100 ms apart hash the same (bounded: 600 ms, 3.5 s for launch/open). Seen on the emulator: without it `then_screen` after `launch settings` had bounds 69 px off.
 - Accessibility events narrowed to window state/content/windows changes: nothing else consumes events (notifications come from the NotificationListenerService), and since Android 9 the framework still delivers cache-critical events to keep node caches fresh.
 - Keys bucket position on an 8 x 16 grid: identical on an unchanged screen, but a scroll that moves an element across a cell changes its key (use `id` or `text` across scrolls).
+
+- Observing changes the service's event types at run time instead of in the XML: outside a lesson the service still hears only window changes, as before, and installing the update needs no new consent.
+- A click is matched against the last **settled** screen, read 200 ms after the last change, not a fresh read: by the time the click event arrives the screen has usually already moved on.
+- Tried and backed out: treating a full-screen window whose content is tooltip-sized as see-through. Google Contacts' tip looked like that case, but Android itself leaves the app window out of the accessibility window list while a modal tip is up, so the rule changed nothing. The Mind closes such tips instead.
 
 ## Contract questions
 - The protocol additions above are additive and documented in README; James C's lead will write them into CONTRACT.md.

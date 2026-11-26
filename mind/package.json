@@ -17,6 +17,7 @@
     "story": "tsx scripts/story.ts",
     "story:sim": "tsx scripts/story.ts --sim",
     "teach:phone": "tsx scripts/teach-phone.ts",
+    "teach:bench": "tsx scripts/teach-bench.ts",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "bash check.sh"

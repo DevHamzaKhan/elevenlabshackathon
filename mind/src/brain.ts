@@ -909,15 +909,9 @@ export class Brain {
     if (sg.scriptApp && !steps.some((s) => s.pixel) && !firstTargetVisible(steps, slots, screen)) {
       // The app came back where it was left, not where the demo began: start it from its first screen.
       this.o.log(`mind: "${sg.goal}": the first step isn't on this screen; restarting ${appLabel(sg.scriptApp)} from its first screen`);
-      const r = await this.act({ do: "launch", app: sg.scriptApp, fresh: true }, { fast: true });
+      await this.act({ do: "launch", app: sg.scriptApp, fresh: true }, { fast: true });
       if (task.cancelled) return { ok: false, cancelled: true, reason: "cancelled", say: "" };
-      screen = (await closeOverlay(r.screen, taps, task.history)) ?? r.screen;
-      if (!firstTargetVisible(steps, slots, screen)) {
-        this.o.log(`mind: "${sg.goal}": still not there; leaving it to the executor with the demo as a guide`);
-        this.skills.note(id, false);
-        run.mustAct = true;
-        return { ok: false, reason: "script: its first step isn't on screen", say: sg.scriptOnly ? "That screen looks different from when you showed me, so I've stopped." : "" };
-      }
+      // Still not there? The script closes a tip or looks further down the page itself before giving up.
     }
     const out = await runScript(steps, slots, sg, task.history, {
       act: (a, o) => this.act(a, o),

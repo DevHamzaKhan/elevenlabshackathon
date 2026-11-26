@@ -71,6 +71,16 @@ them, so a Mind can check before relying on one.
 | `act` | `then_screen:true` (+ `compact`) | The `act_result` carries `screen`: a screen_result body (no `type`/`re`) read after settling; it also becomes the `{n}` reference. |
 | `act` | `fast:true` | Cursor glide 120-250 ms instead of 400-900 ms. |
 | `act` (secure lock) | | Any act except `wait`: `ok:false,"error":"no_permission","why":"locked"`. Swipe lock: woken and dismissed as before. |
+| `act` `do:"launch"` | `fresh:true` | Starts the app at its first screen instead of resuming where it was left (`FLAG_ACTIVITY_CLEAR_TASK`). |
+| request | `{"type":"observe","to":"hands","id":"m3","on":true}` | Teaching by showing: report what the **user** does as `observed` frames (taps, typed text, scrolls, and the settled screens between them) until `on:false` or 10 minutes. Replies `observe_result` (`ok`, and `screen` on start / `count` on stop). Frames and rules: `mind/PROTOCOL-V2.md`, "Teaching by showing". |
+
+**Observing** (`Observe.kt`): while it is on, the service adds `TYPE_VIEW_CLICKED`, `TYPE_VIEW_LONG_CLICKED`,
+`TYPE_VIEW_TEXT_CHANGED` and `TYPE_VIEW_SCROLLED` to its event types at run time (`setServiceInfo`; the
+XML and the permission are unchanged) and takes them off again afterwards. A click is matched to the
+node of the last settled screen it came from (same platform node, else same resource id at that
+place, else the tappable node under it, else its words). Typing is one frame per burst with the
+final text; password fields send `password:true` and no text. Nothing from this app or the keyboard
+is reported. `Recorder` is plain Kotlin and unit-tested (`ObserveTest`).
 
 **Settling** (all acts): event-driven, not polled. Only `TYPE_WINDOW_STATE_CHANGED`,
 `TYPE_WINDOWS_CHANGED` and `TYPE_WINDOW_CONTENT_CHANGED` count, not from system UI or this app.
