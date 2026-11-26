@@ -139,3 +139,12 @@ per mouth/MERGE.md (only matters for debug builds).
 ## Settings
 
 Non-secret settings this app adds: none. Keys come only from the pushed `.env`.
+
+## Dashboard screen (branch `in-app-dashboard`)
+
+"Open dashboard" on the home screen shows Stage's live dashboard full screen, watching the hub on this
+phone. `tools/gen-dashboard.mjs` bundles `../stage/dashboard/index.html` into `generated/dashboard.ts`
+(with the chosen cursor inlined) whenever hints are bundled; a `react-native-webview` loads it and
+injects `window.BOBBY_HUB = {hub: 'ws://127.0.0.1:8765', token}`. Close it with Close or Back.
+While Bobby drives another app, Bobby is in the background: open the dashboard before or after a task,
+and use a laptop (`adb forward`) to watch during one.

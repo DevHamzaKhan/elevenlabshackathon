@@ -115,6 +115,7 @@ body.no-phone main { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minm
 
 #rec { font: inherit; font-size: 14px; font-weight: 700; padding: 4px 12px; border-radius: 999px;
   border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; }
+.in-app #rec { display: none; }
 #rec.on { color: #fff; background: var(--bad); border-color: var(--bad); }
 /* Voice-cursor sync strip */
 #sync { display: flex; flex-direction: column; gap: 6px; }
@@ -205,8 +206,11 @@ body.no-phone #phone-panel { display: none; }
 <script>
 "use strict";
 const params = new URLSearchParams(location.search);
-const hub = (params.get("hub") || "ws://localhost:8765").replace(/\/+$/, "");
-const hubUrl = (/^wss?:\/\//.test(hub) ? hub : "ws://" + hub) + "/watch?token=" + encodeURIComponent(params.get("token") || "");
+// Inside the Bobby app there is no URL query: the app injects window.BOBBY_HUB = {hub, token} instead.
+const embed = (typeof window.BOBBY_HUB === "object" && window.BOBBY_HUB) || {};
+if (embed.hub) document.documentElement.classList.add("in-app");
+const hub = (embed.hub || params.get("hub") || "ws://localhost:8765").replace(/\/+$/, "");
+const hubUrl = (/^wss?:\/\//.test(hub) ? hub : "ws://" + hub) + "/watch?token=" + encodeURIComponent(embed.token || params.get("token") || "");
 if (params.get("theme")) document.documentElement.dataset.theme = params.get("theme");
 
 const $ = (id) => document.getElementById(id);

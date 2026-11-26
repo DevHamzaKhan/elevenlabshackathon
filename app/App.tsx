@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import {
   AppState,
+  BackHandler,
   Linking,
   PermissionsAndroid,
   Platform,
@@ -13,6 +14,9 @@ import {
   View,
 } from 'react-native';
 import type { SettingsPage } from 'bobby-hands';
+import { WebView } from 'react-native-webview';
+
+import { dashboardHtml } from './generated/dashboard';
 
 import {
   getState,
@@ -75,8 +79,43 @@ function useSubscribe(sub: (fn: () => void) => () => void) {
   useEffect(() => sub(() => setN((n) => n + 1)), [sub]);
 }
 
+/** Stage's live dashboard (stage/dashboard/index.html), watching the hub on this phone. */
+function Dashboard({ token, onClose }: { token: string; onClose: () => void }) {
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onClose]);
+  // The page reads window.BOBBY_HUB when it has no ?hub= in its URL.
+  const inject = `window.BOBBY_HUB = ${JSON.stringify({ hub: HUB_URL, token })}; true;`;
+  return (
+    <View style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.dashBar}>
+        <Text style={styles.dashTitle}>Dashboard</Text>
+        <Pressable style={styles.btn} onPress={onClose}>
+          <Text style={styles.btnText}>Close</Text>
+        </Pressable>
+      </View>
+      <WebView
+        style={styles.web}
+        originWhitelist={['*']}
+        source={{ html: dashboardHtml, baseUrl: 'http://localhost/' }}
+        injectedJavaScriptBeforeContentLoaded={inject}
+        javaScriptEnabled
+        domStorageEnabled
+        mixedContentMode="always"
+        onMessage={() => {}}
+      />
+    </View>
+  );
+}
+
 export default function App() {
   const started = useRef(false);
+  const [showDash, setShowDash] = useState(false);
   useTick(1000);
   useSubscribe(onState);
   useSubscribe(onLog);
@@ -141,6 +180,8 @@ export default function App() {
   ];
   const names = Object.keys(st.env).sort();
 
+  if (showDash) return <Dashboard token={st.env.HUB_TOKEN || ''} onClose={() => setShowDash(false)} />;
+
   return (
     <View style={styles.screen}>
       <StatusBar style="dark" />
@@ -191,6 +232,11 @@ export default function App() {
             <Text style={styles.btnText}>Stop keep-alive</Text>
           </Pressable>
         </View>
+        {dashboardHtml ? (
+          <Pressable style={[styles.btn, styles.dashBtn]} onPress={() => setShowDash(true)}>
+            <Text style={styles.btnText}>Open dashboard</Text>
+          </Pressable>
+        ) : null}
 
         <Text style={styles.h}>Hub</Text>
         <Text style={styles.small}>{HUB_URL}</Text>
@@ -231,5 +277,9 @@ const styles = StyleSheet.create({
   lights: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
   light: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   small: { fontSize: 13, color: '#444' },
+  dashBtn: { alignSelf: 'flex-start', marginTop: 6 },
+  dashBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 48, paddingBottom: 8 },
+  dashTitle: { fontSize: 20, fontWeight: '700', color: '#1B1640' },
+  web: { flex: 1 },
   mono: { fontFamily: Platform.OS === 'android' ? 'monospace' : 'Menlo', fontSize: 11, color: '#333' },
 });
