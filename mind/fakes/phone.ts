@@ -75,8 +75,11 @@ export type Drift = {
   moved?: boolean;
   /** "New project" is now called "Add project" (same resource id). */
   renamed?: boolean;
-  /** Opening the app shows a "What's new" sheet that has to be closed first. */
+  /** Opening the app shows a "What's new" sheet with a Continue button: a step the demo never had. */
   interstitial?: boolean;
+  /** A tip ("Got it") covers the app when it opens and again after a project is created, the way
+   *  Google Contacts covers a saved contact: nothing underneath can be read until it is closed. */
+  tip?: boolean;
   /** The list has grown so long that the button sits below the fold until you scroll. */
   long?: boolean;
 };
@@ -170,6 +173,7 @@ export class Phone {
   /** Where the Projects app was left: a plain launch resumes there, a fresh one starts at the list. */
   private projLeft: Screen = { kind: "proj_list" };
   private projNews = false;
+  private projTip = false;
   private projScrolled = false;
   /** While on, user actions are reported as `observed` frames. */
   private observing: ((frame: any) => void) | null = null;
@@ -482,7 +486,15 @@ export class Phone {
         if (this.projNews) {
           out.push(
             { key: "pj.news", text: "What's new in Projects", cls: "TextView", bounds: [120, 900, 960, 980] },
-            { key: "pj.news_ok", id: `${PJ}whats_new_ok`, text: "Got it", cls: "Button", bounds: [380, 1260, 700, 1360], tap: true },
+            { key: "pj.news_ok", id: `${PJ}whats_new_ok`, text: "Continue", cls: "Button", bounds: [380, 1260, 700, 1360], tap: true },
+          );
+          break;
+        }
+        if (this.projTip) {
+          out.length = 0; // a modal tip: accessibility sees nothing else
+          out.push(
+            { key: "pj.tip", text: "Tip: long-press a project to archive it.", cls: "TextView", bounds: [63, 325, 919, 487] },
+            { key: "pj.tip_x", desc: "Got it", cls: "ImageView", bounds: [951, 324, 1014, 387], tap: true },
           );
           break;
         }
@@ -720,6 +732,7 @@ export class Phone {
     if (id === "projects") {
       // Like a real app: it comes back where it was left, unless it is started fresh.
       this.projNews = !!this.drift.interstitial;
+      this.projTip = !!this.drift.tip;
       this.projScrolled = false;
       const left = this.projLeft;
       this.go({ kind: "proj_list" });
@@ -773,6 +786,9 @@ export class Phone {
       case "pj.news_ok":
         this.projNews = false;
         return;
+      case "pj.tip_x":
+        this.projTip = false;
+        return;
       case "pj.fab":
       case "pj.fab2":
         this.projName = "";
@@ -793,6 +809,7 @@ export class Phone {
         this.screen = { kind: "proj_list" };
         this.projLeft = this.screen;
         this.focusedKey = null;
+        this.projTip = !!this.drift.tip;
         this.snackbar("Project created");
         return;
       }

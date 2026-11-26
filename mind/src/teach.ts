@@ -17,7 +17,7 @@ import type { LocalMatch, Shortcut, ShortcutIndex, SlotDef } from "./shortcuts";
 import { appLabel } from "./screen";
 import { IRREVERSIBLE_LABEL } from "./exec";
 import { escapeRe } from "./contacts";
-import { fill, labelOf, locate, mapStrings } from "./script";
+import { blank, fill, labelOf, locate, mapStrings, overlayExit } from "./script";
 
 // ---------- what the user says ----------
 
@@ -187,7 +187,9 @@ export function readDemo(events: Msg[], opts: { launcher?: string; initial?: Msg
       continue;
     }
     const step: DemoStep = { kind: e.kind === "long_press" ? "long_press" : "tap", app, node: e.node ?? null, pre: a.pre, post: a.post };
-    if (scroll && scroll.pre && e.node && !locate(scroll.pre, wantOf(e.node))) step.seek = scroll.dir;
+    // Apps scroll by themselves too (a list settling as it opens): only a scroll in this app, on a
+    // screen that didn't have the control yet, was the user looking for it.
+    if (scroll && scroll.pre && scroll.pre.app === app && e.node && !locate(scroll.pre, wantOf(e.node))) step.seek = scroll.dir;
     scroll = null;
     steps.push(step);
   }
@@ -227,6 +229,9 @@ export function expectFor(step: DemoStep, typed: string[]): Check {
   const { pre, post } = step;
   if (!post) return {};
   if (step.kind === "type") return step.text ? { text_present: [step.text] } : {};
+  // What followed was a tip covering the app: a one-off, and it hid the real result. Nothing to
+  // pin the step to; the replay closes such a tip and has the end result checked instead.
+  if (overlayExit(post) || blank(post)) return {};
   return changeBetween(pre, post, typed);
 }
 
@@ -468,7 +473,7 @@ export function buildSkill(demo: Demo, meta: SkillMeta, opts: { heard: string; n
     if (!part || part.steps.length === 0) return;
     // Finished means the screen shows what the whole part changed, not just its last tap: a list
     // that was there all along must not count as "the new project is in the list".
-    const change = opts.pixels ? {} : mapStrings(changeBetween(span.from, span.to, typed), sub);
+    const change = opts.pixels || overlayExit(span.to) || blank(span.to) ? {} : mapStrings(changeBetween(span.from, span.to, typed), sub);
     part.done_when = { ...change, describe: `${meta.title}: the steps the user showed are finished` };
     parts.push(part);
   };
@@ -496,6 +501,9 @@ export function buildSkill(demo: Demo, meta: SkillMeta, opts: { heard: string; n
       step.want = w;
     }
     if (s.seek) step.seek = s.seek;
+    // The user closing a tip is not part of the skill: it may not show next time.
+    const exit = s.kind === "tap" ? overlayExit(s.pre) : null;
+    if (exit && s.node && locate({ nodes: [exit] }, wantOf(s.node))) step.optional = true;
     if (opts.pixels) step.pixel = true;
     part.steps.push(step);
     prev = s;
@@ -520,7 +528,7 @@ export function buildSkill(demo: Demo, meta: SkillMeta, opts: { heard: string; n
 
 /** The steps of a part in words, numbered, with the slots filled in. */
 export function guideOf(part: SkillPart, slots: Record<string, string>): string {
-  return part.steps.map((s, i) => `${i + 1}. ${fill(s.label, slots)}`).join("\n");
+  return part.steps.map((s, i) => `${i + 1}. ${fill(s.label, slots)}${s.optional ? " (only if it is showing)" : ""}`).join("\n");
 }
 
 /** A skill and its slot values -> the task the brain runs. */
@@ -550,7 +558,7 @@ export function planSkill(skill: Skill, given: Record<string, string>, mode: Tea
     const guide = guideOf(p, slots);
     const sg: SubgoalSpec = {
       goal: `${skill.title}${skill.parts.length > 1 ? `, part ${i + 1}` : ""}${detail ? ` (${detail})` : ""}`,
-      done_when: mapStrings(p.done_when, (s) => fill(s, slots)),
+      done_when: { ...mapStrings(p.done_when, (s) => fill(s, slots)), describe: `"${skill.title}"${detail ? ` with ${detail}` : ""} has just been done: the screen shows it finished, or shows its result` },
       risk: p.risk,
       guide,
       say: p.risk === "safe" && !subgoals.some((x) => x.script || x.guide) ? skill.say : undefined,

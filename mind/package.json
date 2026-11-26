@@ -16,6 +16,7 @@
     "mind": "tsx scripts/run.ts",
     "story": "tsx scripts/story.ts",
     "story:sim": "tsx scripts/story.ts --sim",
+    "teach:phone": "tsx scripts/teach-phone.ts",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "bash check.sh"

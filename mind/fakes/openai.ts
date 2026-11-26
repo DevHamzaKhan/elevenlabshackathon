@@ -177,12 +177,12 @@ export const actReply = (actions: any[], say = "", note = "") => ({ status: "act
 function followGuide(user: string, nodes: N[]): any | null {
   const block = /How the user showed this[^\n]*\n((?:\d+\. .*\n?)+)/.exec(user)?.[1];
   if (!block) return null;
-  const steps = block.trim().split("\n").map((l) => l.replace(/^\d+\.\s*/, "").trim());
+  const steps = block.trim().split("\n").map((l) => l.replace(/^\d+\.\s*/, "").trim()).filter((l) => !/\(only if it is showing\)$/.test(l));
   const tried = /Tried so far[^\n]*\n((?:- .*\n?)+)/.exec(user)?.[1] ?? "";
   const done = (s: string) => tried.split("\n").some((l) => l.startsWith(`- ${s} -> ok`));
   const find = (re: RegExp) => nodes.find((x) => re.test(x.line));
   const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const sheet = find(/^"(Got it|Not now|Dismiss|Skip)"/);
+  const sheet = find(/^"(Got it|Not now|Dismiss|Skip|Continue)"/);
   if (sheet) return actReply([action({ n: sheet.n })], "Closing that first.");
   const todo = steps.filter((s) => !done(s));
   if (todo.length === 0) return { status: "done", say: "", note: "", actions: [] };
@@ -286,6 +286,10 @@ function escalate(user: string, images: number): any {
 }
 
 function check(user: string): any {
+  // A taught skill's end check names the values it ran with: done when the screen shows one.
+  const values = [...(/has just been done/.test(user) ? (/^Step: .* with (.*?) has just been done/m.exec(user)?.[1] ?? "") : "").matchAll(/\w+: ([^,]+)/g)].map((m) => m[1].trim());
+  const screen = user.split("Current screen:")[1] ?? "";
+  if (values.length) return { done: values.some((v) => screen.includes(`"${v}"`)), why: "looked for what was entered" };
   return { done: /Ticket saved|Sent/.test(user), why: "checked the screen" };
 }
 

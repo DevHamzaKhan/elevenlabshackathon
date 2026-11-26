@@ -17,6 +17,8 @@ import android.view.accessibility.AccessibilityWindowInfo
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 /**
@@ -28,6 +30,12 @@ class HandsService : AccessibilityService() {
     @Volatile var instance: HandsService? = null
       private set
     private const val SCREENSHOT_RETRY_MS = 350L
+    /** Observing: a screen is read this long after the last change, */
+    private const val OBSERVE_QUIET_MS = 200L
+    /** ...or this long after the first one, when the screen never goes quiet. */
+    private const val OBSERVE_MAX_WAIT_MS = 1000L
+    /** Observing stops by itself after this long, in case the Mind never says stop. */
+    private const val OBSERVE_MAX_MS = 10 * 60_000L
   }
 
   /** Thrown while resolving a target: maps to `not_found` with this `why`. */
@@ -46,6 +54,14 @@ class HandsService : AccessibilityService() {
   private var frontAfter: String? = null
   /** True while Hands has hidden the keyboard with the soft-keyboard controller. */
   private var keyboardHiddenByUs = false
+
+  // Teaching by showing: while a recorder exists, what the user does is reported to the Mind.
+  @Volatile private var recorder: Recorder? = null
+  private var observeExec: ScheduledExecutorService? = null
+  private var observeSnap: ScheduledFuture<*>? = null
+  private var observeDirtyAt = 0L
+  private var observeBaseEvents = 0
+  private val observeLock = Any()
 
   // --- lifecycle ---
 
@@ -72,6 +88,7 @@ class HandsService : AccessibilityService() {
   private fun shutdown() {
     if (instance !== this) return
     instance = null
+    try { stopObserving() } catch (_: Exception) {}
     Hub.stop()
     cursor?.detach()
     cursor = null
@@ -80,6 +97,7 @@ class HandsService : AccessibilityService() {
   override fun onAccessibilityEvent(event: AccessibilityEvent?) {
     val e = event ?: return
     if (Settler.counts(e.eventType, e.packageName?.toString(), packageName)) settler.onEvent(e.eventType)
+    recorder?.let { observeEvent(it, e) }
   }
 
   override fun onInterrupt() {}
@@ -96,6 +114,7 @@ class HandsService : AccessibilityService() {
       "cursor" -> cursor?.show(o.optBoolean("show", true))
       "screen" -> worker.execute { reply(safeScreen(o)) }
       "act" -> worker.execute { reply(handleAct(o)) }
+      "observe" -> side.execute { reply(handleObserve(o)) }
       "caps" -> side.execute {
         val (w, h) = screenSize()
         reply(try { Caps.collect(this, reId(o), w, h) } catch (e: Exception) {
@@ -293,6 +312,128 @@ class HandsService : AccessibilityService() {
     return res
   }
 
+  // --- observing the user (teaching by showing) ---
+
+  /**
+   * `{"type":"observe","on":true|false}`. On: the service also asks Android for clicks, long
+   * clicks, text changes and scrolls, and a [Recorder] turns them and the settled screens between
+   * them into `observed` frames. Off: what was still being collected is sent, then the reply.
+   */
+  private fun handleObserve(o: JSONObject): JSONObject {
+    val res = JSONObject().put("type", "observe_result").apply { reId(o)?.let { put("re", it) } }
+    return try {
+      if (o.optBoolean("on", true)) {
+        stopObserving()
+        if (secureLocked()) return res.put("ok", false).put("error", "no_permission").put("why", "locked")
+        val info = serviceInfo ?: return res.put("ok", false).put("error", "no_permission").put("why", "no service info")
+        val ime = Caps.imePackage(android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.DEFAULT_INPUT_METHOD))
+        val rec = Recorder(packageName, ime, { reply(it) })
+        val first = observeSnapshot()
+        rec.start(first)
+        val exec = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "bobby-hands-observe").apply { isDaemon = true } }
+        synchronized(observeLock) {
+          observeBaseEvents = info.eventTypes
+          observeExec = exec
+          observeDirtyAt = 0L
+        }
+        info.eventTypes = info.eventTypes or Recorder.EVENTS
+        serviceInfo = info
+        exec.scheduleWithFixedDelay({ try { rec.idle() } catch (_: Exception) {} }, 300, 300, TimeUnit.MILLISECONDS)
+        exec.schedule({ if (recorder === rec) { Hub.log("observe: stopped after ${OBSERVE_MAX_MS / 60_000} minutes"); stopObserving() } }, OBSERVE_MAX_MS, TimeUnit.MILLISECONDS)
+        recorder = rec
+        Hub.log("observe: on")
+        res.put("ok", true)
+        if (first != null && first.app != packageName) {
+          res.put("screen", Protocol.embedded(Protocol.screenResult(null, first.app, first.width, first.height, first.nodes, first.hash, compact = true)))
+        }
+        res
+      } else {
+        val count = stopObserving()
+        Hub.log("observe: off ($count frames)")
+        res.put("ok", true).put("count", count)
+      }
+    } catch (e: Exception) {
+      Hub.log("observe failed: $e")
+      res.put("ok", false).put("error", "timeout").put("why", e.toString())
+    }
+  }
+
+  private fun observeSnapshot(): Snap? = try {
+    if (secureLocked()) null else snapshotOnce().first.let { Snap(it.app, it.width, it.height, it.nodes, it.hash) }
+  } catch (e: Exception) { null }
+
+  /** Ends observing: a last screen, anything still being typed, then the usual event types again. Returns the frame count. */
+  private fun stopObserving(): Int {
+    val rec = recorder ?: return 0
+    recorder = null
+    val exec: ScheduledExecutorService?
+    synchronized(observeLock) {
+      exec = observeExec
+      observeExec = null
+      observeSnap?.cancel(false)
+      observeSnap = null
+    }
+    try {
+      serviceInfo?.let { it.eventTypes = observeBaseEvents; serviceInfo = it }
+    } catch (e: Exception) { Hub.log("observe: couldn't restore event types: ${e.message}") }
+    // On the recorder's own thread, after anything it still has queued, so frames stay in order.
+    val last = Runnable {
+      observeSnapshot()?.let { rec.screen(it) }
+      rec.flush()
+    }
+    try {
+      if (exec != null && Thread.currentThread().name != "bobby-hands-observe") exec.submit(last).get(1500, TimeUnit.MILLISECONDS) else last.run()
+    } catch (e: Exception) { Hub.log("observe: last flush failed: ${e.message}") }
+    exec?.shutdownNow()
+    return rec.seq
+  }
+
+  /** Main thread: copies what matters out of an event and hands it to the recorder's thread. */
+  private fun observeEvent(rec: Recorder, e: AccessibilityEvent) {
+    val exec = synchronized(observeLock) { observeExec } ?: return
+    val type = e.eventType
+    val pkg = e.packageName?.toString() ?: ""
+    try {
+      if (Recorder.wanted(type)) {
+        val src = try { e.source } catch (_: Exception) { null }
+        val password = e.isPassword || src?.isPassword == true
+        val said = e.text?.joinToString(" ") { it?.toString() ?: "" }?.trim() ?: ""
+        // A field's own text is the whole of what it holds now; the event may carry only the change.
+        val text = when {
+          password -> ""
+          type == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED && src != null -> if (src.isShowingHintText) "" else src.text?.toString() ?: said
+          else -> said
+        }
+        val bounds = src?.let { val r = Rect(); it.getBoundsInScreen(r); intArrayOf(r.left, r.top, r.right, r.bottom) }
+        val seen = SeenEvent(
+          type = type, pkg = pkg,
+          cls = (src?.className ?: e.className)?.toString() ?: "",
+          text = text,
+          desc = (src?.contentDescription ?: e.contentDescription)?.toString() ?: "",
+          ref = src, viewId = src?.viewIdResourceName ?: "", bounds = bounds,
+          password = password, editable = src?.isEditable == true,
+          dx = e.scrollDeltaX.coerceAtLeast(-1_000_000), dy = e.scrollDeltaY.coerceAtLeast(-1_000_000),
+        )
+        exec.execute { try { rec.event(seen) } catch (ex: Exception) { Hub.log("observe: event failed: $ex") } }
+      }
+      // Anything that may have changed the screen: read it once things go quiet.
+      if (pkg != packageName && (Recorder.wanted(type) || Settler.counts(type, pkg, packageName))) scheduleObserveSnap(rec, exec)
+    } catch (_: java.util.concurrent.RejectedExecutionException) {
+      // observing stopped between the check and the hand-off
+    }
+  }
+
+  private fun scheduleObserveSnap(rec: Recorder, exec: ScheduledExecutorService) = synchronized(observeLock) {
+    val now = SystemClock.uptimeMillis()
+    if (observeDirtyAt == 0L) observeDirtyAt = now
+    observeSnap?.cancel(false)
+    val delay = if (now - observeDirtyAt >= OBSERVE_MAX_WAIT_MS) 0L else OBSERVE_QUIET_MS
+    observeSnap = exec.schedule({
+      synchronized(observeLock) { observeDirtyAt = 0L }
+      if (recorder === rec) observeSnapshot()?.let { rec.screen(it) }
+    }, delay, TimeUnit.MILLISECONDS)
+  }
+
   // --- screen reading ---
 
   class Snapshot(val app: String, val width: Int, val height: Int, val nodes: List<ScreenNode>) {
@@ -456,7 +597,7 @@ class HandsService : AccessibilityService() {
     when (a.what) {
       "wait" -> { Thread.sleep(a.ms!!.coerceAtMost(60_000)); return null }
       "key" -> return key(a.name!!)
-      "launch" -> return launch(a.app!!)
+      "launch" -> return launch(a.app!!, a.fresh)
       "open" -> return open(a)
     }
     val target = try { a.on?.let { resolve(it) } } catch (e: NotFound) { return "not_found" to e.why }
@@ -679,7 +820,7 @@ class HandsService : AccessibilityService() {
     }
   }
 
-  private fun launch(app: String): Pair<String, String?>? {
+  private fun launch(app: String, fresh: Boolean = false): Pair<String, String?>? {
     val pm = packageManager
     var intent = try { pm.getLaunchIntentForPackage(app.trim()) } catch (e: Exception) { null }
     if (intent == null) {
@@ -691,6 +832,8 @@ class HandsService : AccessibilityService() {
     }
     if (intent == null) return "not_found" to "no app called '$app'"
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+    // `fresh`: drop whatever screen the app was left on and start at its first one.
+    if (fresh) intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
     val expected = intent.component?.packageName ?: intent.`package`
     val mark = settler.mark()
     try { startActivity(intent) } catch (e: Exception) { return "no_permission" to e.message }

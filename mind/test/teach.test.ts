@@ -67,6 +67,8 @@ test("locate: id and label agree, a shared id needs the label, twins are told ap
   assert.equal(locate(screen, { text: "More" }), null, "twins with nothing to tell them apart");
   assert.equal(locate(screen, { id: "name", hint: "Project name", text: "test test", edit: true })?.n, 5, "a field is found by id and hint, not by what it holds");
   assert.equal(locate(screen, { text: "Delete" }), null);
+  assert.equal(locate(screen, { text: "name" }), null, "a word inside another label is not that control");
+  assert.equal(locate(screen, { text: "Add proj" })?.n, 2, "most of a label is");
 });
 
 test("teach by showing, then ask: the steps replay with the new name and no model call at all", async () => {
@@ -181,7 +183,57 @@ test("the app was left on another screen: it is restarted at its first screen, t
   }
 });
 
-test("the script can't be followed (a new sheet in the way): the executor finishes with the demo as its guide", async () => {
+test("a tip covers the app (as Google Contacts does after Save): the replay closes it and carries on, still no model call", async () => {
+  const t = await setup({ v2: true });
+  try {
+    await teachAddProject(t);
+    t.hub.phone.drift = { tip: true };
+    t.hub.phone.user.home();
+    t.mouth!.request("add a project called Tipped");
+    assert.ok(await until(() => done(t) === 1, 6000));
+    assert.ok(t.hub.phone.projects.includes("Tipped"));
+    assert.equal(t.acts().filter((a) => a.do === "tap").length, 4, "two taps of the skill and the tip closed twice");
+    assert.equal(t.ai.calls.filter((c) => c.role !== "teach").length, 0);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a demo that itself ended under a tip: nothing is pinned to the tip, the result is checked on the real screen", async () => {
+  const t = await setup({ v2: true });
+  try {
+    const p = t.hub.phone;
+    p.drift = { tip: true };
+    t.mouth!.teach("start", "add a new project", SAID);
+    assert.ok(await until(() => t.brain.teaching?.phase === "watching", 3000));
+    p.user.open("Projects");
+    p.user.tap("Got it"); // the user closes the tip to get to the list...
+    p.user.tap("New project");
+    p.user.type("test test");
+    p.user.tap("Create"); // ...and the demo ends with another one up
+    await sleep(60);
+    t.mouth!.teach("done");
+    assert.ok(await until(() => t.brain.skills.all().length === 1, 4000));
+    await t.brain.teachDone;
+    const steps = t.brain.skills.all()[0].parts[0].steps;
+    assert.deepEqual(steps.map((s) => [s.label, !!s.optional]), [['tap "Got it"', true], ['tap "New project"', false], ['type "{{name}}" into "Project name"', false], ['tap "Create"', false]]);
+    assert.deepEqual(steps[3].expect, {}, "the tip is not what Create is checked against");
+
+    for (const tip of [true, false]) {
+      p.drift = { tip };
+      p.user.home();
+      const name = tip ? "With tip" : "Without tip";
+      t.mouth!.request(`add a project called ${name}`);
+      assert.ok(await until(() => p.projects.includes(name) && done(t) === (tip ? 1 : 2), 6000), `done (${name})`);
+      // The end is checked in code on the app's own screen: Create is gone and the name shows in the list.
+      assert.equal(t.ai.calls.filter((c) => c.role !== "teach").length, 0, "no model call");
+    }
+  } finally {
+    await t.close();
+  }
+});
+
+test("the script can't be followed (a new step in the way): the executor finishes with the demo as its guide", async () => {
   const t = await setup({ v2: true });
   try {
     await teachAddProject(t);

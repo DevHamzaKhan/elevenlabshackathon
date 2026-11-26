@@ -213,6 +213,8 @@ export type ScriptStep = {
   seek?: "up" | "down" | "left" | "right" | "any";
   /** Tap this exact pixel (the coordinate-macro mode of the comparison bench only). */
   pixel?: boolean;
+  /** The user closed a tip or pop-up here: do it when it is there, carry on when it isn't. */
+  optional?: boolean;
 };
 
 export type TaskPlan = {

@@ -12,7 +12,7 @@ import { ShortcutIndex, packageFor } from "./shortcuts";
 import { escapeRe, findContact, parseContactBook, parseContacts as parseContactsV1, type Contact } from "./contacts";
 import { InMemoryStore, Memory, type KeyValueStore } from "./memory";
 import { RecipeBook } from "./recipes";
-import { firstTargetVisible, runScript } from "./script";
+import { closeOverlay, firstTargetVisible, runScript } from "./script";
 import { SkillBook, buildSkill, cleanMeta, fallbackMeta, forgetIntent, readDemo, teachEnd, teachInput, teachIntent, type TeachMode } from "./teach";
 
 export type HubLike = {
@@ -904,12 +904,14 @@ export class Brain {
     const id = task.plan.shortcut;
     let screen = await this.readScreen();
     if (task.cancelled) return { ok: false, cancelled: true, reason: "cancelled", say: "" };
+    const taps = { act: (a: HandsAct, o: { fast: boolean }) => this.act(a, o), log: this.o.log };
+    if (!steps.some((s) => s.pixel)) screen = (await closeOverlay(screen, taps, task.history)) ?? screen;
     if (sg.scriptApp && !steps.some((s) => s.pixel) && !firstTargetVisible(steps, slots, screen)) {
       // The app came back where it was left, not where the demo began: start it from its first screen.
       this.o.log(`mind: "${sg.goal}": the first step isn't on this screen; restarting ${appLabel(sg.scriptApp)} from its first screen`);
       const r = await this.act({ do: "launch", app: sg.scriptApp, fresh: true }, { fast: true });
       if (task.cancelled) return { ok: false, cancelled: true, reason: "cancelled", say: "" };
-      screen = r.screen;
+      screen = (await closeOverlay(r.screen, taps, task.history)) ?? r.screen;
       if (!firstTargetVisible(steps, slots, screen)) {
         this.o.log(`mind: "${sg.goal}": still not there; leaving it to the executor with the demo as a guide`);
         this.skills.note(id, false);
@@ -1183,7 +1185,11 @@ export class Brain {
     const wait = this.waitHands(id);
     this.stats.acts += 1;
     this.send({ type: "act", to: "hands", id, ...a, then_screen: true, compact: true, ...(opts.fast ? { fast: true } : {}) });
+    const t0 = Date.now();
     const r = await wait;
+    // One line per act: on a real phone this is the only record of what was done and how it went.
+    const what = `${a.do}${a.on ? ` ${JSON.stringify(a.on)}` : ""}${a.app ? ` ${a.app}${a.fresh ? " (fresh)" : ""}` : ""}${a.name ? ` ${a.name}` : ""}${a.dir ? ` ${a.dir}` : ""}${a.uri ? ` ${a.uri.slice(0, 60)}` : ""}`;
+    this.o.log(`mind: act ${what} -> ${!r ? "no reply" : r.ok ? "ok" : `${r.error}${r.why ? ` (${r.why})` : ""}`} in ${Date.now() - t0} ms${r?.screen?.app ? `, then ${appLabel(r.screen.app)} with ${Array.isArray(r.screen.nodes) ? r.screen.nodes.length : 0} nodes` : ""}`);
     if (!r) return { ok: false, error: "timeout", screen: null };
     let screen: Msg | null = null;
     if (r.screen && typeof r.screen === "object") {
