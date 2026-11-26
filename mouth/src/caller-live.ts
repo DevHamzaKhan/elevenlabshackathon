@@ -181,12 +181,14 @@ export async function liveCall(msg: Frame, d: LiveCallDeps): Promise<void> {
   let failure = "";
   let endRequested = false;
   let hungUp = false;
+  let hungUpAt = 0;
   const seen = new Set<string>();
   let sock: SocketLike | null = null;
 
   const hangup = async (why: string) => {
     if (hungUp || !sessionId) return;
     hungUp = true;
+    hungUpAt = now();
     d.log(`caller: hanging up (${why})`);
     try {
       await f(`${OPENAI_API}/live/sessions/${encodeURIComponent(sessionId)}/hangup`, { method: "POST", headers: auth });
@@ -261,7 +263,7 @@ export async function liveCall(msg: Frame, d: LiveCallDeps): Promise<void> {
       else if (now() > deadline) await hangup("call too long");
       else if (endRequested && !endAt) endAt = now() + (d.goodbyeMs ?? 1500);
       else if (endAt && now() >= endAt) await hangup("conversation over");
-      if (hungUp && now() > (endAt || deadline) + 10_000) break; // closed never came
+      if (hungUp && now() > hungUpAt + 10_000) break; // closed never came
       await sleep(200);
     }
     try {
