@@ -71,8 +71,11 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   const bare = !moduleName.startsWith('.') && !path.isAbsolute(moduleName);
   let ctx = context;
   if (bare && !context.originModulePath.startsWith(appDir + path.sep)) {
-    // Not a spread: some context fields may be inherited.
-    ctx = Object.create(context);
+    // A flat copy of every field, own or inherited: a spread would lose inherited ones, and
+    // Object.create(context) loses all of them as soon as a resolver further down spreads it
+    // ("getPackageForModule is not a function").
+    ctx = {};
+    for (const k in context) ctx[k] = context[k];
     ctx.originModulePath = appOrigin;
   }
   try {
