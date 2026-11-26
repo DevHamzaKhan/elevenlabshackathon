@@ -218,3 +218,14 @@ test("hub client: waits are released the moment the connection drops", async () 
     c.stop();
   }
 });
+
+test("a contact name with regex characters doesn't break routing", async () => {
+  const t = await setup({ contacts: "Mom)=+14155550199,Alex=+14155550123" });
+  try {
+    t.hub.notify("com.google.android.gm", "Sarah Chen", "Running late, can we push to 3?");
+    t.mouth!.hear("reply to Sarah and tell her 3 works");
+    assert.ok(await answerConfirmV1(t, "yes, send it"), "the task started and asked before sending");
+  } finally {
+    await t.close();
+  }
+});

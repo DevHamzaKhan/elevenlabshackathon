@@ -9,7 +9,7 @@ import { ROUTER_SCHEMA, checkSystem, escalateSystem, execSystem, routerSystem } 
 import { appLabel, checkScreen, fingerprint } from "./screen";
 import { Executor, subgoalFromModel, type ActResult, type SubgoalResult, type SubgoalRun } from "./exec";
 import { ShortcutIndex, packageFor } from "./shortcuts";
-import { findContact, parseContactBook, parseContacts as parseContactsV1, type Contact } from "./contacts";
+import { escapeRe, findContact, parseContactBook, parseContacts as parseContactsV1, type Contact } from "./contacts";
 import { InMemoryStore, Memory, type KeyValueStore } from "./memory";
 import { RecipeBook } from "./recipes";
 
@@ -656,7 +656,7 @@ export class Brain {
     }
     if (!subgoals.length) subgoals.push({ goal: String(t.goal || t.title || ""), done_when: { describe: String(t.goal || "") }, risk: "safe" });
     const goal = String(t.goal || t.title || "");
-    const who = this.contactsCtx().contacts.find((c) => new RegExp(`\\b${c.name.split(/\s+/)[0]}\\b`, "i").test(`${t.title} ${goal}`));
+    const who = this.contactsCtx().contacts.find((c) => new RegExp(`\\b${escapeRe(c.name.split(/\s+/)[0])}\\b`, "i").test(`${t.title} ${goal}`));
     return {
       kind: "phone",
       title: String(t.title || "Task"),
@@ -1115,12 +1115,12 @@ export class Brain {
       const first = n.title.split(/\s+/)[0];
       if (/^[A-Z][a-z]+$/.test(first)) people.add(first);
     }
-    const has = (hay: string, name: string) => new RegExp(`\\b${name}\\b`, "i").test(hay);
+    const has = (hay: string, name: string) => new RegExp(`\\b${escapeRe(name)}\\b`, "i").test(hay);
     const subjects = [...people].filter((n) => has(about, n));
     if (subjects.length !== 1 || has(text, subjects[0])) return null;
     for (const other of people) {
       if (other === subjects[0]) continue;
-      const re = new RegExp(`\\b(call(?:ing|ed)?|ring(?:ing)?|phon(?:e|ing|ed)|repl(?:y|ying|ied) to|email(?:ing|ed)?|text(?:ing|ed)?|messag(?:e|ing|ed)|writ(?:e|ing) to|tell(?:ing)?|told|answer(?:ing)?)\\s+${other}\\b`, "i");
+      const re = new RegExp(`\\b(call(?:ing|ed)?|ring(?:ing)?|phon(?:e|ing|ed)|repl(?:y|ying|ied) to|email(?:ing|ed)?|text(?:ing|ed)?|messag(?:e|ing|ed)|writ(?:e|ing) to|tell(?:ing)?|told|answer(?:ing)?)\\s+${escapeRe(other)}\\b`, "i");
       if (re.test(text)) {
         t.correctedName = true;
         return { right: subjects[0], said: other };
